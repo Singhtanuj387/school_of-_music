@@ -96,29 +96,26 @@ export const authConfig: NextAuthConfig = {
 
       try {
         const parsed = new URL(url);
-        // If the redirect points to localhost but the user accessed via a tunnel or custom domain,
-        // convert to relative path so they stay on the public domain!
+        // If the redirect points to localhost, any vercel.app deployment, or cloudflare tunnel,
+        // convert to relative path so the user stays on whatever deployment URL they are currently browsing!
         if (
           parsed.hostname === "localhost" ||
-          parsed.hostname === "127.0.0.1"
+          parsed.hostname === "127.0.0.1" ||
+          parsed.hostname.endsWith(".vercel.app") ||
+          parsed.hostname.endsWith(".trycloudflare.com")
         ) {
           return parsed.pathname + parsed.search + parsed.hash;
         }
 
-        // Allow redirects matching baseUrl origin, vercel preview/prod, or cloudflare tunnel domains
         const base = new URL(baseUrl);
-        if (
-          parsed.origin === base.origin ||
-          parsed.hostname.endsWith(".vercel.app") ||
-          parsed.hostname.endsWith(".trycloudflare.com")
-        ) {
+        if (parsed.origin === base.origin) {
           return url;
         }
       } catch {
         // Fallback
       }
 
-      return url.startsWith("/") ? url : baseUrl;
+      return url.startsWith("/") ? url : "/";
     },
 
 
