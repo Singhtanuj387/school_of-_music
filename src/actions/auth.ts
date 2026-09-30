@@ -396,7 +396,22 @@ export async function loginAction(
       }
     }
 
-    logger.error({ error }, "Unexpected error in loginAction");
+    const errText = error instanceof Error ? error.message : String(error);
+    logger.error({ error, errText }, "Unexpected error in loginAction");
+
+    if (
+      errText.includes("database") ||
+      errText.includes("Can't reach database") ||
+      errText.includes("ECONNREFUSED") ||
+      errText.includes("TLS connection") ||
+      errText.includes("P1011")
+    ) {
+      return {
+        success: false,
+        error: "Unable to connect to the database. Please verify your DATABASE_URL network connection.",
+      };
+    }
+
     return {
       success: false,
       error: "An unexpected error occurred during login. Please try again.",

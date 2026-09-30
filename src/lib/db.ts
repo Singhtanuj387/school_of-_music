@@ -8,10 +8,18 @@ const globalForPrisma = globalThis as unknown as {
   pool: Pool | undefined;
 };
 
-const connectionString = process.env.DATABASE_URL;
+const rawConnectionString = process.env.DATABASE_URL || "";
 const isSupabaseOrSsl =
-  connectionString?.includes("supabase.co") ||
-  connectionString?.includes("sslmode=require");
+  rawConnectionString.includes("supabase.co") ||
+  rawConnectionString.includes("sslmode=");
+
+// Clean connection string so pg driver uses explicit ssl object without forcing verify-full
+let connectionString = rawConnectionString;
+if (isSupabaseOrSsl && connectionString.includes("sslmode=")) {
+  connectionString = connectionString
+    .replace(/([?&])sslmode=[^&]+(&|$)/, "$1")
+    .replace(/[?&]$/, "");
+}
 
 const pool =
   globalForPrisma.pool ??

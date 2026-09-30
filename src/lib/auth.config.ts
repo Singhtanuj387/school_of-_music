@@ -105,10 +105,11 @@ export const authConfig: NextAuthConfig = {
           return parsed.pathname + parsed.search + parsed.hash;
         }
 
-        // Allow redirects matching baseUrl origin or cloudflare tunnel domains
+        // Allow redirects matching baseUrl origin, vercel preview/prod, or cloudflare tunnel domains
         const base = new URL(baseUrl);
         if (
           parsed.origin === base.origin ||
+          parsed.hostname.endsWith(".vercel.app") ||
           parsed.hostname.endsWith(".trycloudflare.com")
         ) {
           return url;
