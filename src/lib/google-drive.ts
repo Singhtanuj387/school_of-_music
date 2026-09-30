@@ -74,9 +74,20 @@ export function extractFolderId(input: string): string | null {
 }
 
 /**
- * Get the configured Google Drive folder ID from PlatformSettings.
+ * Get the configured Google Drive folder ID from environment or PlatformSettings.
  */
 export async function getConfiguredFolderId(): Promise<string | null> {
+  // 1. Check environment variable override
+  if (process.env.GOOGLE_DRIVE_FOLDER_ID) {
+    const extracted = extractFolderId(process.env.GOOGLE_DRIVE_FOLDER_ID);
+    if (extracted) return extracted;
+  }
+  if (process.env.GOOGLE_DRIVE_FOLDER_LINK) {
+    const extracted = extractFolderId(process.env.GOOGLE_DRIVE_FOLDER_LINK);
+    if (extracted) return extracted;
+  }
+
+  // 2. Check PlatformSettings in DB
   const settings = await db.platformSettings.findUnique({
     where: { id: 1 },
     select: { googleDriveFolderId: true },
@@ -108,7 +119,7 @@ export async function uploadToDrive(
 
   if (!folderId) {
     throw new Error(
-      "Google Drive folder not configured. An admin must set the folder link in Platform Settings.",
+      "Google Drive folder not configured. Please set the folder link in Admin > Platform Settings (/admin/settings) or set GOOGLE_DRIVE_FOLDER_ID in environment variables.",
     );
   }
 
@@ -271,4 +282,24 @@ export function isDriveConfigured(): boolean {
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
     process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
   );
+}
+
+/**
+ * Delete a file from Google Drive by its file ID.
+ */
+export async function deleteFromDrive(fileId: string): Promise<boolean> {
+  if (!fileId || !isDriveConfigured()) return false;
+
+  try {
+    const drive = getDriveClient();
+    await drive.files.delete({
+      fileId,
+      supportsAllDrives: true,
+    });
+    logger.info({ fileId }, "File deleted from Google Drive");
+    return true;
+  } catch (error) {
+    logger.warn({ error, fileId }, "Failed to delete file from Google Drive");
+    return false;
+  }
 }

@@ -19,6 +19,8 @@ interface TeacherOnboardingClientProps {
     hourlyRate: number;
     languages: string[];
     isPublished: boolean;
+    approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+    rejectionReason?: string | null;
   };
   availabilityRules: AvailabilityRuleItem[];
   timezone: string;
@@ -134,12 +136,14 @@ export function TeacherOnboardingClient({
   const hasInstruments = allSelectedInstruments.length > 0;
   const hasRate = hourlyRate >= 10;
   const hasAvailability = availabilityRules.length > 0;
+  const isApproved = profile.approvalStatus === "APPROVED";
   const canPublish =
     isEmailVerified &&
     hasBio &&
     hasInstruments &&
     hasRate &&
-    hasAvailability;
+    hasAvailability &&
+    isApproved;
 
   return (
     <div className="space-y-8">
@@ -707,6 +711,42 @@ export function TeacherOnboardingClient({
               </button>
             </div>
           </div>
+
+          {/* Accreditation Review Notice */}
+          {profile.approvalStatus === "PENDING" && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-4 text-xs text-amber-300 space-y-1">
+              <span className="font-bold text-amber-200 uppercase tracking-wider text-[10px]">
+                Faculty Accreditation: Pending Administrative Review
+              </span>
+              <p className="text-amber-300/90 leading-relaxed">
+                Your instructor credentials have been submitted to the Academic Board. You can complete and save your profile details, rates, and schedule now. Publishing your public profile will unlock once Gandharva administration approves your application.
+              </p>
+            </div>
+          )}
+
+          {profile.approvalStatus === "REJECTED" && (
+            <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-xs text-rose-300 space-y-1">
+              <span className="font-bold text-rose-200 uppercase tracking-wider text-[10px]">
+                Application Status: Revision Required
+              </span>
+              <p className="text-rose-300/90 leading-relaxed">
+                {profile.rejectionReason
+                  ? `Feedback from Administration: "${profile.rejectionReason}"`
+                  : "Your application requires updates before accreditation can be completed."}
+              </p>
+            </div>
+          )}
+
+          {profile.approvalStatus === "APPROVED" && (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 p-3 text-xs text-emerald-300 flex items-center justify-between">
+              <span className="font-bold text-emerald-200">
+                ✓ Accredited & Approved Faculty Member
+              </span>
+              <span className="text-[10px] uppercase font-bold text-emerald-400 bg-emerald-900/50 px-2 py-0.5 rounded">
+                Approved
+              </span>
+            </div>
+          )}
 
           {/* Publishing Button / State */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-4">

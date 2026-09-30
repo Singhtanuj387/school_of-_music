@@ -48,6 +48,7 @@ export default async function TeacherProfilePage() {
         hourlyRate: 5000,
         payoutPerSession: 80000,
         isPublished: false,
+        approvalStatus: "PENDING",
       },
     });
   }
@@ -91,6 +92,9 @@ export default async function TeacherProfilePage() {
                 upiId: profile.upiId || "",
                 paymentQrCodeUrl: profile.paymentQrCodeUrl || null,
                 isPublished: profile.isPublished,
+                approvalStatus: profile.approvalStatus,
+                approvedAt: profile.approvedAt ? profile.approvedAt.toISOString() : null,
+                rejectionReason: profile.rejectionReason || null,
               }
             : null
         }

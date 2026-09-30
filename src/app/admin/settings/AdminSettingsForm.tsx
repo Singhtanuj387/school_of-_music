@@ -91,6 +91,25 @@ export function AdminSettingsForm({ initialSettings }: AdminSettingsFormProps) {
     }
   };
 
+  const handleQuickSaveDriveFolder = () => {
+    setErrorMessage(null);
+    setSuccessMessage(false);
+
+    startTransition(async () => {
+      const res = await updatePlatformSettingsAction({
+        freeTrialLessonCount: trialCount,
+        googleDriveFolderLink: driveFolderLink.trim() || null,
+      });
+
+      if (!res.success) {
+        setErrorMessage(res.error || "Failed to update platform settings.");
+      } else {
+        setSuccessMessage(true);
+        setTimeout(() => setSuccessMessage(false), 4000);
+      }
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -227,18 +246,29 @@ export function AdminSettingsForm({ initialSettings }: AdminSettingsFormProps) {
           {/* Test result feedback */}
           {driveTestResult.status === "success" && (
             <div className="space-y-2 animate-fade-in-up">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <p className="text-[11px] text-emerald-700">
-                  <span className="font-bold">Connected!</span>
-                  {driveTestResult.folderName && (
-                    <span>
-                      {" "}
-                      Folder: &ldquo;{driveTestResult.folderName}&rdquo;
-                    </span>
-                  )}
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <p className="text-xs text-emerald-800">
+                    <span className="font-bold">Connected!</span>
+                    {driveTestResult.folderName && (
+                      <span> Folder: &ldquo;{driveTestResult.folderName}&rdquo;</span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickSaveDriveFolder}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold shadow-xs transition-all btn-tactile shrink-0 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save &amp; Activate Folder</span>
+                </button>
               </div>
+              <p className="text-[10px] text-emerald-700 italic">
+                Folder verified. Click &ldquo;Save &amp; Activate Folder&rdquo; above or the Save button below to persist this folder for uploads.
+              </p>
               {driveTestResult.warning && (
                 <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />

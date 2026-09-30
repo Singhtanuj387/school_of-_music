@@ -15,11 +15,46 @@ import {
   Lock,
   Globe,
   ArrowRight,
+  Music,
+  Plus,
+  X,
+  Check,
+  Clock,
+  Sparkles,
+  Award,
 } from "lucide-react";
+import { INSTRUMENTS } from "@/types";
 
 export default function SignupPage() {
   const [detectedTz, setDetectedTz] = useState("UTC");
   const [selectedRole, setSelectedRole] = useState<"STUDENT" | "TEACHER">("STUDENT");
+
+  // Teacher credentials state
+  const [selectedInstruments, setSelectedInstruments] = useState<string[]>(["Piano"]);
+  const [instrumentFilter, setInstrumentFilter] = useState("");
+  const [experience, setExperience] = useState<number | string>(5);
+
+  const handleToggleInstrument = (inst: string) => {
+    setSelectedInstruments((prev) =>
+      prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]
+    );
+  };
+
+  const handleRemoveInstrument = (inst: string) => {
+    setSelectedInstruments((prev) => prev.filter((i) => i !== inst));
+  };
+
+  const handleAddCustomInstrument = () => {
+    const trimmed = instrumentFilter.trim();
+    if (trimmed && !selectedInstruments.includes(trimmed)) {
+      setSelectedInstruments((prev) => [...prev, trimmed]);
+      setInstrumentFilter("");
+    }
+  };
+
+  const filteredInstruments = INSTRUMENTS.filter((inst) =>
+    inst.toLowerCase().includes(instrumentFilter.toLowerCase().trim())
+  );
 
   // Phone OTP verification state
   const [phone, setPhone] = useState("");
@@ -134,18 +169,31 @@ export default function SignupPage() {
 
           <SplitHeading
             as="h2"
-            firstClause="Check Your"
-            accentClause="Inbox"
+            firstClause={selectedRole === "TEACHER" ? "Application" : "Check Your"}
+            accentClause={selectedRole === "TEACHER" ? "Submitted" : "Inbox"}
             align="center"
             size="md"
           />
 
           <p className="text-sm text-body leading-relaxed">
-            Your mobile number has been verified! We also sent an email verification link to{" "}
-            <span className="font-bold text-heading">
-              {state.data?.email}
-            </span>
-            . Please verify your email to activate full lesson booking and profile publishing.
+            {selectedRole === "TEACHER" ? (
+              <>
+                Your mobile phone has been verified! A verification link was also sent to{" "}
+                <span className="font-bold text-heading">
+                  {state.data?.email}
+                </span>
+                . Your faculty application is now awaiting administrative review by the Academic Board.
+                You can sign in now to set up your pedagogical bio, instrument disciplines, and weekly schedule while awaiting approval.
+              </>
+            ) : (
+              <>
+                Your mobile number has been verified! We also sent an email verification link to{" "}
+                <span className="font-bold text-heading">
+                  {state.data?.email}
+                </span>
+                . Please verify your email to activate full lesson booking and trial scheduling.
+              </>
+            )}
           </p>
 
           {/* Development mode preview link */}
@@ -179,7 +227,7 @@ export default function SignupPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-gradient-to-b from-bg via-bg-alt/25 to-bg px-4 pt-16 sm:pt-20 pb-16">
-      <div className="relative w-full max-w-lg space-y-7 overflow-hidden rounded-3xl border border-surface-muted/80 bg-white p-7 sm:p-10 shadow-xl shadow-primary/5 backdrop-blur-sm">
+      <div className={`relative w-full ${selectedRole === "TEACHER" ? "max-w-xl" : "max-w-lg"} transition-all duration-200 space-y-7 overflow-hidden rounded-3xl border border-surface-muted/80 bg-white p-6 sm:p-10 shadow-xl shadow-primary/5 backdrop-blur-sm`}>
         {/* Decorative Top Accent Bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
 
@@ -202,13 +250,15 @@ export default function SignupPage() {
           </div>
           <SplitHeading
             as="h1"
-            firstClause="Create Your"
-            accentClause="Account"
+            firstClause={selectedRole === "TEACHER" ? "Join As" : "Create Your"}
+            accentClause={selectedRole === "TEACHER" ? "Faculty Guru" : "Account"}
             align="center"
             size="md"
           />
           <p className="text-xs sm:text-sm text-body">
-            Join Gandharva School of Music for personalized 1:1 learning
+            {selectedRole === "TEACHER"
+              ? "Apply to teach music and mentor global students 1:1 on Gandharva"
+              : "Join Gandharva School of Music for personalized 1:1 learning"}
           </p>
         </div>
 
@@ -267,7 +317,246 @@ export default function SignupPage() {
               </button>
             </div>
             <input type="hidden" name="role" value={selectedRole} />
+
+            {selectedRole === "TEACHER" && (
+              <div className="mt-3 rounded-xl border border-amber-300/80 bg-amber-50/70 p-3 text-xs text-amber-900 flex items-start gap-2.5 animate-in fade-in duration-150">
+                <span className="text-base leading-none">📋</span>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-[11px] text-amber-950 uppercase tracking-wider">
+                    Academic Accreditation Review Required
+                  </p>
+                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                    Faculty accounts require verification and approval by our Academic Board before profiles are published and lesson bookings begin. You will be able to refine your pedagogical bio and schedule immediately after signup.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* ─── TEACHER CREDENTIALS & TEACHING PROFILE ─────────────────────── */}
+          {selectedRole === "TEACHER" && (
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary-subtle/40 via-white to-bg-alt/20 p-4 sm:p-5 space-y-4 shadow-xs animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-border-subtle/70 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Award className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-heading">
+                      Faculty Credentials & Disciplines
+                    </h3>
+                    <p className="text-[11px] text-body">
+                      Disciplines taught and years of teaching experience
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-accent-subtle text-accent-dark border border-accent/30">
+                  Required
+                </span>
+              </div>
+
+              {/* 1. Instruments Selection */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-heading flex items-center gap-1.5">
+                    <Music className="w-3.5 h-3.5 text-cta" />
+                    <span>Disciplines & Instruments Taught</span>
+                  </label>
+                  <span className="text-[11px] font-semibold text-body-muted">
+                    {selectedInstruments.length} selected
+                  </span>
+                </div>
+
+                {/* Selected Instruments Active Badges */}
+                {selectedInstruments.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-white border border-border-subtle shadow-xs">
+                    {selectedInstruments.map((inst) => (
+                      <span
+                        key={inst}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white shadow-xs"
+                      >
+                        <span>{inst}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveInstrument(inst)}
+                          aria-label={`Remove ${inst}`}
+                          className="hover:bg-primary-hover rounded p-0.5 transition-colors cursor-pointer"
+                        >
+                          <X className="w-3 h-3 text-white/80 hover:text-white" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    Please select at least one instrument from below or add a custom one.
+                  </p>
+                )}
+
+                {/* Instrument Search & Custom Add */}
+                <div className="space-y-2">
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      value={instrumentFilter}
+                      onChange={(e) => setInstrumentFilter(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddCustomInstrument();
+                        }
+                      }}
+                      placeholder="Search or add discipline (e.g. Piano, Hindustani Vocals...)"
+                      className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3 py-2 text-xs text-heading placeholder-body/50 shadow-xs focus:border-cta focus:outline-none focus:ring-3 focus:ring-cta/15"
+                    />
+                    {instrumentFilter.trim() &&
+                      !INSTRUMENTS.some(
+                        (i) => i.toLowerCase() === instrumentFilter.trim().toLowerCase()
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={handleAddCustomInstrument}
+                          className="btn-tactile absolute right-1.5 top-1.5 bottom-1.5 px-2.5 rounded-lg bg-cta text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer hover:bg-cta-hover"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add</span>
+                        </button>
+                      )}
+                  </div>
+
+                  {/* Quick select pills from standard catalogue */}
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 rounded-xl bg-bg-alt/25 border border-border-subtle/80">
+                    {filteredInstruments.map((inst) => {
+                      const isSelected = selectedInstruments.includes(inst);
+                      return (
+                        <button
+                          key={inst}
+                          type="button"
+                          onClick={() => handleToggleInstrument(inst)}
+                          className={`btn-tactile inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-primary text-white font-bold shadow-xs"
+                              : "bg-white border border-border-subtle text-body hover:text-heading hover:border-cta/50 hover:bg-white"
+                          }`}
+                        >
+                          {isSelected ? (
+                            <Check className="w-3 h-3 text-white" />
+                          ) : (
+                            <Plus className="w-3 h-3 text-body-muted" />
+                          )}
+                          <span>{inst}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {state?.fieldErrors?.instruments && (
+                  <p className="text-xs font-medium text-error flex items-center gap-1">
+                    <span>•</span>
+                    {state.fieldErrors.instruments[0]}
+                  </p>
+                )}
+                <input
+                  type="hidden"
+                  name="instruments"
+                  value={JSON.stringify(selectedInstruments)}
+                />
+              </div>
+
+              {/* 2. Teaching Experience */}
+              <div className="space-y-2.5 pt-3 border-t border-border-subtle/60">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="experience"
+                    className="block text-xs font-bold uppercase tracking-wider text-heading flex items-center gap-1.5"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-primary" />
+                    <span>Teaching Experience</span>
+                  </label>
+                  <span className="text-[11px] text-body-muted font-medium">
+                    Total years teaching
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Stepper with unit */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center rounded-xl border border-border-default/90 bg-white shadow-xs overflow-hidden focus-within:border-cta focus-within:ring-2 focus-within:ring-cta/25 transition-all">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExperience((prev) => Math.max(0, (Number(prev) || 0) - 1))
+                        }
+                        className="btn-tactile flex h-10 w-10 items-center justify-center bg-neutral-50/80 text-heading hover:bg-primary-subtle hover:text-primary transition-colors cursor-pointer border-r border-border-subtle text-base font-bold select-none"
+                        aria-label="Decrease experience by 1 year"
+                      >
+                        −
+                      </button>
+                      <input
+                        id="experience"
+                        name="experience"
+                        type="number"
+                        min="0"
+                        max="70"
+                        required
+                        value={experience}
+                        onChange={(e) =>
+                          setExperience(
+                            e.target.value === ""
+                              ? ""
+                              : Math.max(0, parseInt(e.target.value) || 0)
+                          )
+                        }
+                        placeholder="5"
+                        className="w-16 bg-white py-2 text-center text-sm font-bold font-mono text-heading focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setExperience((prev) => (Number(prev) || 0) + 1)}
+                        className="btn-tactile flex h-10 w-10 items-center justify-center bg-neutral-50/80 text-heading hover:bg-primary-subtle hover:text-primary transition-colors cursor-pointer border-l border-border-subtle text-base font-bold select-none"
+                        aria-label="Increase experience by 1 year"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-xs font-semibold text-body shrink-0">
+                      {Number(experience) === 1 ? "year" : "years"}
+                    </span>
+                  </div>
+
+                  {/* Quick preset selection pills */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[1, 3, 5, 8, 10, 15].map((yr) => (
+                      <button
+                        key={yr}
+                        type="button"
+                        onClick={() => setExperience(yr)}
+                        className={`btn-tactile px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          Number(experience) === yr
+                            ? "bg-primary text-white shadow-xs ring-2 ring-primary/25"
+                            : "bg-white border border-border-subtle text-body hover:border-primary/50 hover:text-heading hover:bg-bg-alt/20"
+                        }`}
+                      >
+                        {yr} {yr === 1 ? "yr" : "yrs"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {state?.fieldErrors?.experience && (
+                  <p className="text-xs font-medium text-error flex items-center gap-1">
+                    <span>•</span>
+                    {state.fieldErrors.experience[0]}
+                  </p>
+                )}
+
+                <p className="text-[11px] text-body-muted pt-1">
+                  * Hourly rates and weekly lesson slots can be configured in your teacher studio once registered.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ─── MANDATORY PHONE OTP VERIFICATION CARD ─────────────────────── */}
           <div className="rounded-2xl border border-primary/20 bg-primary-subtle/30 p-4 space-y-3.5">
@@ -542,11 +831,20 @@ export default function SignupPage() {
                 </>
               ) : isPhoneVerified || otpCode.trim().length === 6 ? (
                 <>
-                  <span>Create Account</span>
+                  <span>
+                    {selectedRole === "TEACHER"
+                      ? "Submit Faculty Application"
+                      : "Create Account"}
+                  </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               ) : (
-                <span>Verify Phone OTP to Create Account</span>
+                <span>
+                  Verify Phone OTP to{" "}
+                  {selectedRole === "TEACHER"
+                    ? "Submit Application"
+                    : "Create Account"}
+                </span>
               )}
             </button>
 

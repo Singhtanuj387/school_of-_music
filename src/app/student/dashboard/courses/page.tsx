@@ -4,7 +4,6 @@ import { Role, EnrollmentStatus } from "@prisma/client";
 import { CourseCard } from "@/components/dashboard/CourseCard";
 import { TrialStatusStrip } from "@/components/dashboard/TrialStatusStrip";
 import { SplitHeading } from "@/components/ui/SplitHeading";
-import { CurrencySelector } from "@/components/currency/CurrencySelector";
 
 export const metadata = {
   title: "Course Catalog | Student Portal | Gandharva School of Music",
@@ -84,13 +83,8 @@ export default async function StudentCoursesPage({
           </p>
         </div>
 
-        {/* Filter Tabs & Currency Switcher */}
+        {/* Filter Tabs */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-body-muted">
-            <span className="font-medium">Currency:</span>
-            <CurrencySelector variant="compact" />
-          </div>
-
           <div className="flex flex-wrap gap-1.5 p-1 bg-white border border-surface-muted/80 rounded-xl shadow-xs">
             <a
               href="/student/dashboard/courses"

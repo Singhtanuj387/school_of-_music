@@ -5,7 +5,7 @@ import { MessagingContainer } from "@/components/messaging/MessagingContainer";
 
 export const metadata = {
   title: "Messages | Student Dashboard",
-  description: "Securely message your teachers. Receive assignments and resources.",
+  description: "Securely message your teachers. Discuss lessons and musical progress.",
 };
 
 export default async function StudentMessagesPage() {
@@ -23,7 +23,7 @@ export default async function StudentMessagesPage() {
           Messages
         </h1>
         <p className="text-xs text-body-muted mt-1">
-          Securely communicate with your teachers. Receive assignments and resources.
+          Securely communicate with your teachers. Discuss lessons and musical progress.
         </p>
       </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Role } from "@prisma/client";
+import { Role, TeacherApprovalStatus } from "@prisma/client";
 import { updateUserAdminAction } from "@/actions/admin";
 import {
   Users,
@@ -23,6 +23,7 @@ import {
   ExternalLink,
   Copy,
   Check,
+  Clock,
 } from "lucide-react";
 
 export interface AdminUserData {
@@ -45,6 +46,9 @@ export interface AdminUserData {
     isPublished: boolean;
     upiId?: string | null;
     paymentQrCodeUrl?: string | null;
+    approvalStatus: TeacherApprovalStatus;
+    approvedAt?: string | null;
+    rejectionReason?: string | null;
   } | null;
 }
 
@@ -65,6 +69,10 @@ export function AdminUsersManager({
   const [editPassword, setEditPassword] = useState("");
   const [editTrialCount, setEditTrialCount] = useState<number>(2);
   const [editPayoutRupees, setEditPayoutRupees] = useState<number>(800);
+  const [editApprovalStatus, setEditApprovalStatus] = useState<TeacherApprovalStatus>(
+    TeacherApprovalStatus.PENDING,
+  );
+  const [editRejectionReason, setEditRejectionReason] = useState("");
 
   const [isPending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -82,6 +90,10 @@ export function AdminUsersManager({
         ? u.teacherProfile.payoutPerSession / 100
         : 800,
     );
+    setEditApprovalStatus(
+      u.teacherProfile?.approvalStatus || TeacherApprovalStatus.PENDING,
+    );
+    setEditRejectionReason(u.teacherProfile?.rejectionReason || "");
     setActionError(null);
     setActionSuccess(false);
   };
@@ -104,6 +116,12 @@ export function AdminUsersManager({
         trialCount: editRole === Role.STUDENT ? editTrialCount : undefined,
         payoutPerSession:
           editRole === Role.TEACHER ? editPayoutRupees * 100 : undefined,
+        teacherApprovalStatus:
+          editRole === Role.TEACHER ? editApprovalStatus : undefined,
+        rejectionReason:
+          editRole === Role.TEACHER && editApprovalStatus === TeacherApprovalStatus.REJECTED
+            ? editRejectionReason
+            : undefined,
       });
 
       if (!res.success) {
@@ -136,9 +154,21 @@ export function AdminUsersManager({
                     ? {
                         payoutPerSession: editPayoutRupees * 100,
                         instruments: u.teacherProfile?.instruments || [],
-                        isPublished: u.teacherProfile?.isPublished || false,
+                        isPublished:
+                          editApprovalStatus === TeacherApprovalStatus.APPROVED
+                            ? (u.teacherProfile?.isPublished || false)
+                            : false,
                         upiId: u.teacherProfile?.upiId || null,
                         paymentQrCodeUrl: u.teacherProfile?.paymentQrCodeUrl || null,
+                        approvalStatus: editApprovalStatus,
+                        approvedAt:
+                          editApprovalStatus === TeacherApprovalStatus.APPROVED
+                            ? new Date().toISOString()
+                            : null,
+                        rejectionReason:
+                          editApprovalStatus === TeacherApprovalStatus.REJECTED
+                            ? editRejectionReason
+                            : null,
                       }
                     : u.teacherProfile,
               };
@@ -322,15 +352,35 @@ export function AdminUsersManager({
                         (<span className="font-numeric">{u.trialStatus?.lessonsUsed ?? 0}</span> used)
                       </span>
                     ) : u.role === Role.TEACHER ? (
-                      <span className="text-[11px]">
-                        Session Payout:{" "}
-                        <strong className="text-emerald-700 font-bold font-numeric">
-                          ₹
-                          {(
-                            (u.teacherProfile?.payoutPerSession ?? 80000) / 100
-                          ).toFixed(0)}
-                        </strong>
-                      </span>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          {u.teacherProfile?.approvalStatus === "APPROVED" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>Approved</span>
+                            </span>
+                          ) : u.teacherProfile?.approvalStatus === "REJECTED" ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300">
+                              <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
+                              <span>Rejected</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
+                              <Clock className="w-2.5 h-2.5 text-amber-600 animate-pulse" />
+                              <span>Pending Review</span>
+                            </span>
+                          )}
+                          <span className="text-[10px] text-body-muted">
+                            {u.teacherProfile?.isPublished ? "• Live" : "• Draft"}
+                          </span>
+                        </div>
+                        <span className="text-[11px] block">
+                          Payout:{" "}
+                          <strong className="text-emerald-700 font-bold font-numeric">
+                            ₹{(((u.teacherProfile?.payoutPerSession ?? 80000) / 100)).toFixed(0)}
+                          </strong>
+                        </span>
+                      </div>
                     ) : (
                       <span className="text-[11px] text-body/60">Full System Access</span>
                     )}
@@ -477,6 +527,82 @@ export function AdminUsersManager({
               {/* Teacher Payout per Session & Coordinates */}
               {editRole === Role.TEACHER && (
                 <div className="space-y-3">
+                  {/* Teacher Approval Status & Accreditation */}
+                  <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/90 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-heading flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Faculty Accreditation Status</span>
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                          editApprovalStatus === "APPROVED"
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : editApprovalStatus === "REJECTED"
+                              ? "bg-rose-100 text-rose-800 border-rose-300"
+                              : "bg-amber-100 text-amber-800 border-amber-300"
+                        }`}
+                      >
+                        {editApprovalStatus}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditApprovalStatus(TeacherApprovalStatus.APPROVED)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 border active:scale-[0.98] ${
+                          editApprovalStatus === TeacherApprovalStatus.APPROVED
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-white text-body border-border-default hover:border-emerald-400"
+                        }`}
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>Approved</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditApprovalStatus(TeacherApprovalStatus.PENDING)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 border active:scale-[0.98] ${
+                          editApprovalStatus === TeacherApprovalStatus.PENDING
+                            ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                            : "bg-white text-body border-border-default hover:border-amber-400"
+                        }`}
+                      >
+                        <Clock className="w-3 h-3" />
+                        <span>Pending</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditApprovalStatus(TeacherApprovalStatus.REJECTED)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 border active:scale-[0.98] ${
+                          editApprovalStatus === TeacherApprovalStatus.REJECTED
+                            ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                            : "bg-white text-body border-border-default hover:border-rose-400"
+                        }`}
+                      >
+                        <X className="w-3 h-3" />
+                        <span>Rejected</span>
+                      </button>
+                    </div>
+
+                    {editApprovalStatus === TeacherApprovalStatus.REJECTED && (
+                      <div className="space-y-1 pt-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-rose-800">
+                          Rejection Reason / Guidance for Instructor
+                        </label>
+                        <input
+                          type="text"
+                          value={editRejectionReason}
+                          onChange={(e) => setEditRejectionReason(e.target.value)}
+                          placeholder="e.g. Please update your instruments or bio with classical certification"
+                          className="w-full rounded-lg bg-white border border-rose-300 p-2 text-xs text-heading shadow-xs focus:border-rose-500 focus:outline-hidden"
+                        />
+                      </div>
+                    )}
+                  </div>
                   <div className="p-3.5 rounded-xl bg-bg-alt/30 border border-border-default/60 space-y-1.5">
                     <label className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5">
                       <Coins className="w-3.5 h-3.5" />

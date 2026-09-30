@@ -5,7 +5,7 @@ import { MessagingContainer } from "@/components/messaging/MessagingContainer";
 
 export const metadata = {
   title: "Messages | Faculty Studio",
-  description: "Securely message your students. Share resources and assignments.",
+  description: "Securely message your students. Discuss lessons and student progress.",
 };
 
 export default async function TeacherMessagesPage() {
@@ -23,7 +23,7 @@ export default async function TeacherMessagesPage() {
           Messages
         </h1>
         <p className="text-xs text-body-muted mt-1">
-          Securely communicate with your students. Share resources and assignments.
+          Securely communicate with your students. Discuss lessons and student progress.
         </p>
       </div>
 

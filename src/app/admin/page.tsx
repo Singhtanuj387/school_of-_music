@@ -23,6 +23,7 @@ import {
   CreditCard,
   Sparkles,
   SlidersHorizontal,
+  UserCheck,
 } from "lucide-react";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 
@@ -48,6 +49,7 @@ export default async function AdminOverviewPage() {
     pendingTickets,
     pendingTrials,
     pendingCourseEnrollmentsCount,
+    pendingTeacherApprovals,
     recentEnrollments,
     recentPayments,
     recentLessons,
@@ -85,6 +87,9 @@ export default async function AdminOverviewPage() {
           { lessons: { none: { status: LessonStatus.SCHEDULED } } },
         ],
       },
+    }),
+    db.teacherProfile.count({
+      where: { approvalStatus: "PENDING" },
     }),
     db.enrollment.findMany({
       take: 6,
@@ -144,6 +149,18 @@ export default async function AdminOverviewPage() {
 
         <div className="flex items-center gap-2">
           <Link
+            href="/admin/teachers"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-border-default text-xs font-semibold text-body hover:text-heading transition-all shadow-xs active:scale-[0.98]"
+          >
+            <UserCheck className="w-3.5 h-3.5 text-primary" />
+            <span>Faculty Approvals</span>
+            {pendingTeacherApprovals > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                {pendingTeacherApprovals}
+              </span>
+            )}
+          </Link>
+          <Link
             href="/admin/settings"
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-border-default text-xs font-semibold text-body hover:text-heading transition-all shadow-xs active:scale-[0.98]"
           >
@@ -152,6 +169,36 @@ export default async function AdminOverviewPage() {
           </Link>
         </div>
       </div>
+
+      {/* Pending Faculty Approvals Alert Banner */}
+      {pendingTeacherApprovals > 0 && (
+        <div className="relative overflow-hidden rounded-2xl border border-amber-300 bg-amber-50/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white shadow-xs">
+              <UserCheck className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider">
+                  Approval Required
+                </span>
+                <p className="text-sm font-bold text-amber-950 font-numeric">
+                  {pendingTeacherApprovals} Faculty {pendingTeacherApprovals === 1 ? "Registration Awaiting" : "Registrations Awaiting"} Administrative Review
+                </p>
+              </div>
+              <p className="text-xs text-amber-900/80 mt-0.5">
+                New instructor accounts have been created. Review teaching credentials, bio, instrument proficiencies, and approve faculty profiles.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/admin/teachers"
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-all shadow-xs shrink-0 active:scale-[0.98]"
+          >
+            <span>Review & Approve Faculty &rarr;</span>
+          </Link>
+        </div>
+      )}
 
       {/* Pending 1:1 Course Enrollments Alert Banner */}
       {pendingCourseEnrollmentsCount > 0 && (

@@ -103,7 +103,7 @@ export async function bookLessonCore(
       },
     });
 
-    if (!teacherProfile || !teacherProfile.isPublished) {
+    if (!teacherProfile || !teacherProfile.isPublished || teacherProfile.approvalStatus !== "APPROVED") {
       return {
         success: false,
         error: "This teacher's profile is currently unavailable for booking.",

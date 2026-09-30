@@ -99,6 +99,12 @@ enum TeacherPayoutStatus {
   PAID
 }
 
+enum TeacherApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ─── Auth.js required models ─────────────────────────────────────────────────
 // Extended with our domain fields on User
 
@@ -140,6 +146,9 @@ model User {
   conversationsAsTeacher Conversation[]   @relation("ConversationTeacher")
   conversationsAsStudent Conversation[]   @relation("ConversationStudent")
   sentMessages           DirectMessage[]  @relation("MessageSender")
+  notifications          Notification[]
+  resourcesUploaded      Resource[]       @relation("TeacherResources")
+  resourcesReceived      ResourceShare[]  @relation("StudentReceivedResources")
 }
 
 model Account {
@@ -244,9 +253,14 @@ model TeacherProfile {
   paymentQrCodeUrl   String?  @db.Text // Uploaded payment QR code image path/URL
   currency           String   @default("INR")
   languages          String[] @db.Text
-  isPublished        Boolean  @default(false)
-  createdAt          DateTime @default(now()) @db.Timestamptz()
-  updatedAt          DateTime @updatedAt @db.Timestamptz()
+  isPublished        Boolean               @default(false)
+  approvalStatus     TeacherApprovalStatus @default(PENDING)
+  approvedAt         DateTime?             @db.Timestamptz()
+  rejectedAt         DateTime?             @db.Timestamptz()
+  rejectionReason    String?               @db.Text
+  adminNotes         String?               @db.Text
+  createdAt          DateTime              @default(now()) @db.Timestamptz()
+  updatedAt          DateTime              @updatedAt @db.Timestamptz()
 
   user                   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   availabilityRules      AvailabilityRule[]
@@ -254,6 +268,7 @@ model TeacherProfile {
   lessonsAsTeacher       Lesson[]
 
   @@index([isPublished])
+  @@index([approvalStatus])
 }
 
 /// Weekly recurring availability pattern.
@@ -374,9 +389,10 @@ model Course {
   createdAt       DateTime    @default(now()) @db.Timestamptz()
   updatedAt       DateTime    @updatedAt @db.Timestamptz()
 
-  teachers    CourseTeacher[]
-  lessons     CourseLesson[]
-  enrollments Enrollment[]
+  teachers       CourseTeacher[]
+  lessons        CourseLesson[]
+  enrollments    Enrollment[]
+  resourceShares ResourceShare[]
 
   @@index([isPublished])
   @@index([discipline])
@@ -609,4 +625,93 @@ model DirectMessage {
   @@index([conversationId, createdAt])
   @@index([senderId])
   @@index([isRead])
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+enum NotificationType {
+  NEW_TEACHER_SIGNUP
+  NEW_STUDENT_SIGNUP
+  TEACHER_APPROVED
+  TEACHER_REJECTED
+  NEW_LESSON_BOOKED
+  LESSON_CANCELLED
+  LESSON_REMINDER
+  NEW_ENROLLMENT
+  NEW_TRIAL_REQUEST
+  TRIAL_ALLOTTED
+  NEW_MESSAGE
+  NEW_RESOURCE_SHARED
+  PAYOUT_COMPLETED
+  SYSTEM
+}
+
+/// In-app notification for any user (student, teacher, admin).
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  link      String?          // optional deep-link path, e.g. "/admin/teachers"
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now()) @db.Timestamptz()
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+// ─── Learning Resources ─────────────────────────────────────────────────────
+
+enum ResourceCategory {
+  SHEET_MUSIC
+  AUDIO_LESSON
+  LESSON_NOTES
+  EXERCISE
+  ASSIGNMENT
+  REFERENCE
+  OTHER
+}
+
+/// Educational learning resource uploaded by a teacher to Google Drive.
+model Resource {
+  id            String           @id @default(cuid())
+  teacherId     String
+  teacher       User             @relation("TeacherResources", fields: [teacherId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?          @db.Text
+  category      ResourceCategory @default(SHEET_MUSIC)
+  fileName      String
+  fileUrl       String           // Google Drive public view URL
+  fileId        String?          // Google Drive file ID
+  fileSizeBytes Int              @default(0)
+  mimeType      String?
+  createdAt     DateTime         @default(now()) @db.Timestamptz()
+  updatedAt     DateTime         @updatedAt @db.Timestamptz()
+
+  shares        ResourceShare[]
+
+  @@index([teacherId, createdAt])
+  @@index([category])
+}
+
+/// A resource sent by a teacher to a course-allotted student.
+model ResourceShare {
+  id          String    @id @default(cuid())
+  resourceId  String
+  resource    Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     User      @relation("StudentReceivedResources", fields: [studentId], references: [id], onDelete: Cascade)
+  courseId    String?
+  course      Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  teacherNote String?   @db.Text // maestro's practice advice or assignment instructions
+  sharedAt    DateTime  @default(now()) @db.Timestamptz()
+  isViewed    Boolean   @default(false)
+  viewedAt    DateTime? @db.Timestamptz()
+
+  @@unique([resourceId, studentId])
+  @@index([studentId, sharedAt])
+  @@index([resourceId])
+  @@index([courseId])
 }

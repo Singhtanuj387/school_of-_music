@@ -143,7 +143,7 @@ export function MessagingContainer({
             <p className="text-sm text-body-muted text-center max-w-[320px] leading-relaxed mb-6">
               Connect with your{" "}
               {callerRole === "TEACHER" ? "students" : "teachers"} securely.
-              Share resources, assignments, and discuss your music journey.
+              Discuss lessons, practice techniques, and your music journey.
             </p>
 
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-success-muted border border-success/20">

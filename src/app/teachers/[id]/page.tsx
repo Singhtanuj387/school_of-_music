@@ -60,8 +60,9 @@ export default async function TeacherDetailPage({
   });
 
   const isOwner = currentUser?.id === teacher?.user.id;
+  const isApproved = teacher?.approvalStatus === "APPROVED";
 
-  if (!teacher || (!teacher.isPublished && !isOwner)) {
+  if (!teacher || ((!teacher.isPublished || !isApproved) && !isOwner)) {
     notFound();
   }
 
@@ -122,8 +123,26 @@ export default async function TeacherDetailPage({
           <span className="text-heading font-semibold">{teacherName}</span>
         </div>
 
+        {/* Unapproved / Pending Owner Preview Banner */}
+        {!isApproved && isOwner && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-amber-900">
+            <div className="flex items-center gap-2.5 text-sm">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-600 animate-pulse shrink-0"></span>
+              <span>
+                <strong>Accreditation Pending:</strong> Your faculty profile is awaiting administrative review. Students cannot discover or book lessons with you until your application is approved by the academic board.
+              </span>
+            </div>
+            <Link
+              href="/teacher/dashboard"
+              className="inline-flex items-center px-4 py-2 rounded-xl bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 transition-colors whitespace-nowrap self-start sm:self-auto btn-tactile"
+            >
+              Go to Studio →
+            </Link>
+          </div>
+        )}
+
         {/* Unpublished Owner Preview Banner */}
-        {!teacher.isPublished && isOwner && (
+        {isApproved && !teacher.isPublished && isOwner && (
           <div className="rounded-2xl border border-accent/40 bg-accent-subtle p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-accent-dark">
             <div className="flex items-center gap-2.5 text-sm">
               <span className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse shrink-0"></span>

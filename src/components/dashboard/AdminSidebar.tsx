@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Sparkles,
   GraduationCap,
+  UserCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -30,6 +31,11 @@ const navItems: NavItem[] = [
     href: "/admin",
     icon: LayoutDashboard,
     exact: true,
+  },
+  {
+    name: "Faculty Approvals",
+    href: "/admin/teachers",
+    icon: UserCheck,
   },
   {
     name: "User Management",

@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { LandingHeader } from "@/components/home/LandingHeader";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export type NavbarUser = {
   id?: string;
@@ -60,6 +61,9 @@ export function NavbarWrapper({
 
           {user ? (
             <div className="flex items-center gap-1.5 sm:gap-3">
+              {/* Notification Bell in top right corner */}
+              <NotificationBell userRole={user.role} />
+
               <Link
                 href={
                   user.role === "ADMIN"

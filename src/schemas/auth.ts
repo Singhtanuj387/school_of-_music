@@ -57,6 +57,56 @@ export const SignupSchema = z.object({
     .trim()
     .min(1, "Timezone is required")
     .default("UTC"),
+  instruments: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .nullable(),
+  experience: z.coerce.number().optional().nullable(),
+}).superRefine((data, ctx) => {
+  if (data.role === "TEACHER") {
+    let parsedInstruments: string[] = [];
+    if (typeof data.instruments === "string") {
+      try {
+        const parsed = JSON.parse(data.instruments);
+        if (Array.isArray(parsed)) {
+          parsedInstruments = parsed.map(String).map((s) => s.trim()).filter(Boolean);
+        } else if (data.instruments.trim()) {
+          parsedInstruments = data.instruments.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      } catch {
+        parsedInstruments = data.instruments.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    } else if (Array.isArray(data.instruments)) {
+      parsedInstruments = data.instruments.map(String).map((s) => s.trim()).filter(Boolean);
+    }
+
+    if (parsedInstruments.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select at least one instrument or musical discipline.",
+        path: ["instruments"],
+      });
+    }
+
+    if (
+      data.experience === undefined ||
+      data.experience === null ||
+      isNaN(data.experience) ||
+      data.experience < 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please enter your years of teaching experience (0 or more).",
+        path: ["experience"],
+      });
+    } else if (data.experience > 70) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Teaching experience cannot exceed 70 years.",
+        path: ["experience"],
+      });
+    }
+  }
 });
 
 export type SignupInput = z.infer<typeof SignupSchema>;

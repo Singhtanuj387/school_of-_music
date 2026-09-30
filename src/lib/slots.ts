@@ -70,7 +70,7 @@ export async function generateAvailableSlots(
     },
   });
 
-  if (!teacher || !teacher.isPublished) {
+  if (!teacher || !teacher.isPublished || teacher.approvalStatus !== "APPROVED") {
     return null;
   }
 

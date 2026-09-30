@@ -99,3 +99,15 @@ export const POPULAR_TIMEZONES: TimezoneOption[] = [
   { value: "UTC", label: "Universal Coordinated Time (UTC)", group: "Global" },
 ];
 
+/**
+ * Deterministically format a date to "MMM d, yyyy" using UTC to prevent SSR/hydration mismatch.
+ */
+export function formatDeterministicDate(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return "";
+  const d = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return "";
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
+
+

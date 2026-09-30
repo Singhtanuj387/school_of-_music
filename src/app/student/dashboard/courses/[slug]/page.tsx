@@ -20,7 +20,6 @@ import { RazorpayCheckoutButton } from "@/components/payment/RazorpayCheckoutBut
 import { SplitHeading } from "@/components/ui/SplitHeading";
 import { formatInViewerTimezone, getTimezoneAbbr } from "@/lib/timezone";
 import { PriceDisplay } from "@/components/currency/PriceDisplay";
-import { CurrencySelector } from "@/components/currency/CurrencySelector";
 
 export default async function StudentCourseDetailPage({
   params,
@@ -305,13 +304,9 @@ export default async function StudentCourseDetailPage({
                 <span className="font-semibold text-heading">Included</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center pt-3 gap-2">
-                <div className="space-y-0.5">
+                <div>
                   <div className="text-sm font-bold text-heading">
                     Total Tuition Fee (All Inclusive)
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-body-muted">
-                    <span>Currency:</span>
-                    <CurrencySelector variant="compact" />
                   </div>
                 </div>
                 <div className="sm:text-right">

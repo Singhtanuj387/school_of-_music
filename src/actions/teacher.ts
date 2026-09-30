@@ -412,6 +412,21 @@ export async function togglePublishTeacherProfileAction(): Promise<
 
     // If currently unpublished, perform validation guards before publishing
     if (!profile.isPublished) {
+      // 0. Admin approval check
+      if (profile.approvalStatus === "REJECTED") {
+        return {
+          success: false,
+          error: `Your faculty profile was not approved by administration${profile.rejectionReason ? `: "${profile.rejectionReason}"` : ""}. Please update your qualifications or contact administrative support.`,
+        };
+      }
+      if (profile.approvalStatus === "PENDING") {
+        return {
+          success: false,
+          error:
+            "Your faculty profile is currently pending administrative review. You will be able to publish once school administration approves your faculty profile.",
+        };
+      }
+
       // 1. Email verification check
       if (!dbUser.emailVerified) {
         return {

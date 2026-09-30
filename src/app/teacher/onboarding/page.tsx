@@ -45,6 +45,8 @@ export default async function TeacherOnboardingPage() {
           hourlyRate: (profile?.hourlyRate || 5000) / 100, // minor units to dollars
           languages: profile?.languages || ["English"],
           isPublished: profile?.isPublished || false,
+          approvalStatus: profile?.approvalStatus || "PENDING",
+          rejectionReason: profile?.rejectionReason || null,
         }}
         availabilityRules={
           profile?.availabilityRules.map((r) => ({

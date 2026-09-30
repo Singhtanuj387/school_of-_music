@@ -12,6 +12,7 @@ import {
   HelpCircle,
   UserCheck,
   MessageSquare,
+  FolderArchive,
 } from "lucide-react";
 
 interface NavItem {
@@ -37,6 +38,11 @@ const navItems: NavItem[] = [
     name: "My Students",
     href: "/teacher/dashboard/students",
     icon: Users,
+  },
+  {
+    name: "Learning Resources",
+    href: "/teacher/dashboard/resources",
+    icon: FolderArchive,
   },
   {
     name: "Messages",

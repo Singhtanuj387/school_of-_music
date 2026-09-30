@@ -49,10 +49,16 @@ export default async function TeacherDashboardAvailabilityPage() {
   const hasInstruments = (profile?.instruments?.length ?? 0) > 0;
   const hasRate = (profile?.hourlyRate ?? 0) > 0;
   const hasAvailability = rules.length > 0;
-  const canPublish = hasBio && hasInstruments && hasRate && hasAvailability;
+  const isApproved = profile?.approvalStatus === "APPROVED";
+  const canPublish = hasBio && hasInstruments && hasRate && hasAvailability && isApproved;
 
   let blockReason: string | undefined;
-  if (!hasBio) blockReason = "Add a bio (at least 20 chars)";
+  if (!isApproved) {
+    blockReason =
+      profile?.approvalStatus === "REJECTED"
+        ? `Application rejected: "${profile.rejectionReason || "Contact administration"}"`
+        : "Profile pending administrative review";
+  } else if (!hasBio) blockReason = "Add a bio (at least 20 chars)";
   else if (!hasInstruments) blockReason = "Select at least 1 instrument";
   else if (!hasRate) blockReason = "Set an hourly rate in your profile";
   else if (!hasAvailability) blockReason = "Add at least one available time window";

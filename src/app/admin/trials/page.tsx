@@ -17,13 +17,25 @@ export default async function AdminTrialsPage() {
     db.trialRequest.findMany({
       include: {
         student: { select: { name: true, email: true, timezone: true } },
-        allottedTeacher: { select: { name: true, email: true } },
+        allottedTeacher: { select: { name: true, email: true, timezone: true } },
+        allottedLesson: {
+          select: {
+            id: true,
+            startsAt: true,
+            durationMinutes: true,
+            trackingCode: true,
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
     db.user.findMany({
       where: { role: Role.TEACHER },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        timezone: true,
         teacherProfile: {
           select: {
             instruments: true,
@@ -34,34 +46,45 @@ export default async function AdminTrialsPage() {
     }),
   ]);
 
-  const formattedRequests: AdminTrialRequestItem[] = dbRequests.map((r) => ({
-    id: r.id,
-    studentId: r.studentId,
-    studentName: r.studentName || r.student?.name || "Student",
-    studentEmail: r.studentEmail || r.student?.email || "",
-    studentPhone: r.studentPhone,
-    category: r.category,
-    instrument: r.instrument,
-    requestedStartsAt: r.requestedStartsAt.toISOString(),
-    timezone: r.timezone || "UTC",
-    formattedTime: formatInViewerTimezone(
-      r.requestedStartsAt,
-      r.timezone || "UTC",
-      "EEE, MMM d, yyyy 'at' h:mm a (zzz)"
-    ),
-    preferredTimeSlot: r.preferredTimeSlot,
-    ageGroup: r.ageGroup,
-    studentNotes: r.studentNotes,
-    status: r.status,
-    allottedTeacherId: r.allottedTeacherId,
-    allottedTeacherName: r.allottedTeacher?.name || null,
-    createdAt: r.createdAt.toISOString(),
-  }));
+  const formattedRequests: AdminTrialRequestItem[] = dbRequests.map((r) => {
+    const activeStartsAt = r.allottedLesson?.startsAt || r.requestedStartsAt;
+    const duration = r.allottedLesson?.durationMinutes || 60;
+    const studentTz = r.timezone || r.student?.timezone || "UTC";
+
+    return {
+      id: r.id,
+      studentId: r.studentId,
+      studentName: r.studentName || r.student?.name || "Student",
+      studentEmail: r.studentEmail || r.student?.email || "",
+      studentPhone: r.studentPhone,
+      category: r.category,
+      instrument: r.instrument,
+      requestedStartsAt: activeStartsAt.toISOString(),
+      originalRequestedStartsAt: r.requestedStartsAt.toISOString(),
+      timezone: studentTz,
+      formattedTime: formatInViewerTimezone(
+        activeStartsAt,
+        studentTz,
+        "EEE, MMM d, yyyy 'at' h:mm a (zzz)"
+      ),
+      preferredTimeSlot: r.preferredTimeSlot,
+      ageGroup: r.ageGroup,
+      studentNotes: r.studentNotes,
+      status: r.status,
+      allottedTeacherId: r.allottedTeacherId,
+      allottedTeacherName: r.allottedTeacher?.name || null,
+      allottedTeacherTimezone: r.allottedTeacher?.timezone || null,
+      createdAt: r.createdAt.toISOString(),
+      durationMinutes: duration,
+      trackingCode: r.allottedLesson?.trackingCode || null,
+    };
+  });
 
   const teachers: TeacherOption[] = dbTeachers.map((t) => ({
     id: t.id,
     name: t.name || "Faculty Instructor",
     email: t.email,
+    timezone: t.timezone || "UTC",
     instruments: t.teacherProfile?.instruments || [],
   }));
 

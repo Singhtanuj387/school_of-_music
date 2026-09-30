@@ -3,7 +3,7 @@
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { hashPassword } from "@/lib/password";
 import { db } from "@/lib/db";
-import { TrialRequestStatus, Role, TrialStatus } from "@prisma/client";
+import { TrialRequestStatus, Role, TrialStatus, NotificationType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
@@ -12,6 +12,7 @@ import {
   isValidPhoneNumber,
   validateAndConsumePhoneOtp,
 } from "@/lib/phone";
+import { createNotification, notifyAdmins } from "@/actions/notifications";
 
 const CreateTrialRequestSchema = z.object({
   category: z.string().min(1, "Category is required"),
@@ -266,6 +267,25 @@ export async function createTrialRequestAction(input: CreateTrialRequestInput) {
         status: TrialRequestStatus.PENDING,
       },
     });
+
+    // Fast-info notifications for admin and student
+    try {
+      await notifyAdmins({
+        type: NotificationType.NEW_TRIAL_REQUEST,
+        title: "New Trial Request",
+        body: `${validated.studentName} requested a 1:1 trial session for ${validated.instrument} (${validated.timeSlot}).`,
+        link: "/admin/trials",
+      });
+      await createNotification({
+        userId: studentUserId,
+        type: NotificationType.NEW_TRIAL_REQUEST,
+        title: "Trial Request Received",
+        body: `Your trial request for ${validated.instrument} has been received. Our team is assigning a maestro.`,
+        link: "/student/dashboard",
+      });
+    } catch {
+      // Non-blocking notification emission
+    }
 
     try {
       revalidatePath("/student/dashboard");

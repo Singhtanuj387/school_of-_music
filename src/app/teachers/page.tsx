@@ -63,6 +63,7 @@ export default async function TeachersPage({
   const teachers = await db.teacherProfile.findMany({
     where: {
       isPublished: true,
+      approvalStatus: "APPROVED",
       ...(process.env.NODE_ENV === "production"
         ? { user: { emailVerified: { not: null } } }
         : {}),

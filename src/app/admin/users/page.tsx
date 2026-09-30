@@ -22,6 +22,9 @@ export default async function AdminUsersPage() {
           isPublished: true,
           upiId: true,
           paymentQrCodeUrl: true,
+          approvalStatus: true,
+          approvedAt: true,
+          rejectionReason: true,
         },
       },
     },
@@ -51,6 +54,9 @@ export default async function AdminUsersPage() {
           isPublished: u.teacherProfile.isPublished,
           upiId: u.teacherProfile.upiId,
           paymentQrCodeUrl: u.teacherProfile.paymentQrCodeUrl,
+          approvalStatus: u.teacherProfile.approvalStatus,
+          approvedAt: u.teacherProfile.approvedAt ? u.teacherProfile.approvedAt.toISOString() : null,
+          rejectionReason: u.teacherProfile.rejectionReason,
         }
       : null,
   }));

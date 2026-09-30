@@ -33,6 +33,8 @@ import {
 
 import { isAppError } from "@/lib/errors";
 import { AuthError } from "next-auth";
+import { createNotification, notifyAdmins } from "@/actions/notifications";
+import { NotificationType } from "@prisma/client";
 
 export type ActionResponse<T = unknown> = {
   success: boolean;
@@ -59,6 +61,8 @@ export async function signupAction(
       password: formData.get("password"),
       role: formData.get("role"),
       timezone: formData.get("timezone"),
+      instruments: formData.get("instruments"),
+      experience: formData.get("experience"),
     };
 
     const parsed = SignupSchema.safeParse(rawData);
@@ -69,7 +73,17 @@ export async function signupAction(
       };
     }
 
-    const { name, email, phone: rawPhone, otpCode, password, role, timezone } = parsed.data;
+    const {
+      name,
+      email,
+      phone: rawPhone,
+      otpCode,
+      password,
+      role,
+      timezone,
+      instruments,
+      experience,
+    } = parsed.data;
     const normalizedPhone = normalizePhoneNumber(rawPhone);
 
     if (!isValidPhoneNumber(normalizedPhone)) {
@@ -141,17 +155,38 @@ export async function signupAction(
       });
 
       if (role === "TEACHER") {
+        let parsedInstruments: string[] = [];
+        if (typeof instruments === "string") {
+          try {
+            const parsed = JSON.parse(instruments);
+            if (Array.isArray(parsed)) {
+              parsedInstruments = parsed.map(String).map((s) => s.trim()).filter(Boolean);
+            } else if (instruments.trim()) {
+              parsedInstruments = instruments.split(",").map((s) => s.trim()).filter(Boolean);
+            }
+          } catch {
+            parsedInstruments = instruments.split(",").map((s) => s.trim()).filter(Boolean);
+          }
+        } else if (Array.isArray(instruments)) {
+          parsedInstruments = instruments.map(String).map((s) => s.trim()).filter(Boolean);
+        }
+
+        const yearsTeaching = Math.max(0, Math.floor(experience ?? 0));
+
         await tx.teacherProfile.create({
           data: {
             userId: user.id,
             bio: "",
-            instruments: [],
-            yearsTeaching: 0,
-            hourlyRate: 150000, // ₹1,500.00 default rate
-            payoutPerSession: 80000, // ₹800.00 default session payout
+            instruments: parsedInstruments,
+            expertInstruments: parsedInstruments,
+            moderateInstruments: [],
+            yearsTeaching,
+            hourlyRate: 150000, // ₹1,500 default rate (configured in teacher profile / admin)
+            payoutPerSession: 80000, // ₹800 default session payout
             currency: "INR",
             languages: ["English"],
             isPublished: false,
+            approvalStatus: "PENDING",
           },
         });
       }
@@ -168,9 +203,49 @@ export async function signupAction(
       "User successfully created with verified phone number",
     );
 
+    // Fast-info notifications for admins and user
+    try {
+      if (newUser.role === "TEACHER") {
+        await notifyAdmins({
+          type: NotificationType.NEW_TEACHER_SIGNUP,
+          title: "New Teacher Registration",
+          body: `${newUser.name || "A new faculty member"} registered for teaching. Profile pending review.`,
+          link: "/admin/teachers",
+        });
+        await createNotification({
+          userId: newUser.id,
+          type: NotificationType.SYSTEM,
+          title: "Faculty Application Received",
+          body: "Your profile is under review by our academic board. You will receive an instant notification once approved.",
+          link: "/teacher/dashboard",
+        });
+      } else {
+        await notifyAdmins({
+          type: NotificationType.NEW_STUDENT_SIGNUP,
+          title: "New Student Joined",
+          body: `${newUser.name || "A new student"} (${newUser.email}) enrolled on Gandharva.`,
+          link: "/admin/users",
+        });
+        await createNotification({
+          userId: newUser.id,
+          type: NotificationType.SYSTEM,
+          title: "Welcome to Gandharva School of Music!",
+          body: "Explore our accredited masterclasses and book your free 1:1 live trial session today.",
+          link: "/book-trial",
+        });
+      }
+    } catch {
+      // Non-blocking notification emission
+    }
+
+    const message =
+      newUser.role === "TEACHER"
+        ? "Faculty account registered! Your profile is pending administrative review. Please verify your email; our academic board will review and activate your teaching privileges."
+        : "Your account has been created! Please verify your email to unlock all features.";
+
     return {
       success: true,
-      message: "Your account has been created! Please verify your email to unlock all features.",
+      message,
       previewUrl: emailRes.previewUrl,
       data: {
         email: newUser.email,

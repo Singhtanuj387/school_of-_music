@@ -14,6 +14,7 @@ import {
   User as UserIcon,
   Music2,
   MessageSquare,
+  FolderArchive,
 } from "lucide-react";
 
 export type SidebarUserInfo = {
@@ -28,6 +29,11 @@ const STUDENT_NAV_ITEMS = [
     href: "/student/dashboard",
     icon: Clock,
     exact: true,
+  },
+  {
+    label: "Learning Materials",
+    href: "/student/dashboard/resources",
+    icon: FolderArchive,
   },
   {
     label: "Solo Music Studio",

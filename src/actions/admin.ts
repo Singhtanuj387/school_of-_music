@@ -14,12 +14,15 @@ import {
   TrialRequestStatus,
   TrialStatus,
   TeacherPayoutStatus,
+  TeacherApprovalStatus,
+  NotificationType,
 } from "@prisma/client";
 import { hashPassword } from "@/lib/password";
 import { normalizePhoneNumber, isValidPhoneNumber } from "@/lib/phone";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
 import { generateUniqueLessonTrackingCode, getLessonTrackingId } from "@/lib/lesson-tracking";
+import { createNotification } from "@/actions/notifications";
 
 export type AdminActionResponse<T = unknown> = {
   success: boolean;
@@ -84,6 +87,8 @@ export async function updatePlatformSettingsAction(input: {
     );
     revalidatePath("/admin/settings");
     revalidatePath("/admin");
+    revalidatePath("/teacher/dashboard/resources");
+    revalidatePath("/student/dashboard/resources");
 
     return { success: true };
   } catch (error) {
@@ -665,6 +670,8 @@ export async function updateUserAdminAction(input: {
   newPassword?: string;
   trialCount?: number;
   payoutPerSession?: number;
+  teacherApprovalStatus?: TeacherApprovalStatus;
+  rejectionReason?: string;
 }): Promise<AdminActionResponse> {
   try {
     await requireRole(Role.ADMIN);
@@ -732,24 +739,52 @@ export async function updateUserAdminAction(input: {
         });
       }
 
-      // If adjusting payoutPerSession for a teacher (paise)
-      if (input.payoutPerSession !== undefined) {
+      // If adjusting payoutPerSession or approvalStatus for a teacher
+      if (input.payoutPerSession !== undefined || input.teacherApprovalStatus !== undefined) {
+        const teacherProfileData: Record<string, unknown> = {};
+        if (input.payoutPerSession !== undefined) {
+          teacherProfileData.payoutPerSession = input.payoutPerSession;
+        }
+        if (input.teacherApprovalStatus !== undefined) {
+          teacherProfileData.approvalStatus = input.teacherApprovalStatus;
+          if (input.teacherApprovalStatus === TeacherApprovalStatus.APPROVED) {
+            teacherProfileData.approvedAt = new Date();
+            teacherProfileData.rejectedAt = null;
+            teacherProfileData.rejectionReason = null;
+          } else if (input.teacherApprovalStatus === TeacherApprovalStatus.REJECTED) {
+            teacherProfileData.rejectedAt = new Date();
+            teacherProfileData.approvedAt = null;
+            teacherProfileData.rejectionReason = input.rejectionReason?.trim() || "Administrative review: requirements not met.";
+            teacherProfileData.isPublished = false;
+          } else if (input.teacherApprovalStatus === TeacherApprovalStatus.PENDING) {
+            teacherProfileData.approvedAt = null;
+            teacherProfileData.rejectedAt = null;
+            teacherProfileData.rejectionReason = null;
+            teacherProfileData.isPublished = false;
+          }
+        }
+
         await tx.teacherProfile.upsert({
           where: { userId: input.userId },
           create: {
             userId: input.userId,
-            payoutPerSession: input.payoutPerSession,
+            payoutPerSession: input.payoutPerSession ?? 80000,
             instruments: ["Piano"],
+            approvalStatus: input.teacherApprovalStatus ?? TeacherApprovalStatus.PENDING,
+            approvedAt: input.teacherApprovalStatus === TeacherApprovalStatus.APPROVED ? new Date() : null,
+            rejectedAt: input.teacherApprovalStatus === TeacherApprovalStatus.REJECTED ? new Date() : null,
+            rejectionReason: input.teacherApprovalStatus === TeacherApprovalStatus.REJECTED ? input.rejectionReason?.trim() || null : null,
           },
-          update: {
-            payoutPerSession: input.payoutPerSession,
-          },
+          update: teacherProfileData,
         });
       }
     });
 
     logger.info({ userId: input.userId }, "User updated by admin");
     revalidatePath("/admin/users");
+    revalidatePath("/admin/teachers");
+    revalidatePath("/teachers");
+    revalidatePath("/teacher/dashboard");
 
     return { success: true };
   } catch (error) {
@@ -1228,20 +1263,20 @@ export async function updateTicketStatusAdminAction(input: {
 export async function allotTrialTeacherAction(input: {
   trialRequestId: string;
   teacherId: string;
-}): Promise<AdminActionResponse<{ lessonId: string }>> {
+  scheduledStartsAt?: string;
+  durationMinutes?: number;
+  adminNotes?: string;
+}): Promise<AdminActionResponse<{ lessonId: string; trackingCode?: string | null; startsAt: string }>> {
   try {
     await requireRole(Role.ADMIN);
 
     const trialRequest = await db.trialRequest.findUnique({
       where: { id: input.trialRequestId },
+      include: { allottedLesson: true },
     });
 
     if (!trialRequest) {
       return { success: false, error: "Trial request not found." };
-    }
-
-    if (trialRequest.status === TrialRequestStatus.ALLOTTED) {
-      return { success: false, error: "This trial request has already been allotted." };
     }
 
     const teacher = await db.user.findUnique({
@@ -1253,50 +1288,111 @@ export async function allotTrialTeacherAction(input: {
       return { success: false, error: "Selected teacher does not have an active teacher profile." };
     }
 
-    const lesson = await db.$transaction(async (tx) => {
-      // 1. Create scheduled Lesson
-      const newLesson = await tx.lesson.create({
-        data: {
-          teacherProfileId: teacher.teacherProfile!.id,
-          teacherId: teacher.id,
-          studentId: trialRequest.studentId,
-          instrument: trialRequest.instrument,
-          startsAt: trialRequest.requestedStartsAt,
-          durationMinutes: 60,
-          status: LessonStatus.SCHEDULED,
-          lessonSource: LessonSource.TRIAL,
-        },
-      });
+    // Determine final scheduled start time:
+    let finalStartsAt: Date = trialRequest.requestedStartsAt;
+    if (input.scheduledStartsAt) {
+      const parsedDate = new Date(input.scheduledStartsAt);
+      if (isNaN(parsedDate.getTime())) {
+        return { success: false, error: "Invalid scheduled date and time format." };
+      }
+      finalStartsAt = parsedDate;
+    }
 
-      // 2. Update TrialRequest
+    const duration = input.durationMinutes && input.durationMinutes > 0 ? input.durationMinutes : 60;
+
+    const lesson = await db.$transaction(async (tx) => {
+      let activeLesson;
+
+      // If reassigning or updating an already allotted trial that has a linked lesson:
+      if (trialRequest.allottedLessonId) {
+        activeLesson = await tx.lesson.update({
+          where: { id: trialRequest.allottedLessonId },
+          data: {
+            teacherProfileId: teacher.teacherProfile!.id,
+            teacherId: teacher.id,
+            instrument: trialRequest.instrument,
+            startsAt: finalStartsAt,
+            durationMinutes: duration,
+            status: LessonStatus.SCHEDULED,
+          },
+        });
+      } else {
+        // Create scheduled Lesson with unique trackingCode
+        const trackingCode = await generateUniqueLessonTrackingCode();
+        activeLesson = await tx.lesson.create({
+          data: {
+            teacherProfileId: teacher.teacherProfile!.id,
+            teacherId: teacher.id,
+            studentId: trialRequest.studentId,
+            instrument: trialRequest.instrument,
+            startsAt: finalStartsAt,
+            durationMinutes: duration,
+            status: LessonStatus.SCHEDULED,
+            lessonSource: LessonSource.TRIAL,
+            trackingCode,
+          },
+        });
+      }
+
+      // Update TrialRequest with allotment details, final startsAt, and optional admin notes
       await tx.trialRequest.update({
         where: { id: trialRequest.id },
         data: {
           status: TrialRequestStatus.ALLOTTED,
           allottedTeacherId: teacher.id,
-          allottedLessonId: newLesson.id,
+          allottedLessonId: activeLesson.id,
           allottedAt: new Date(),
+          requestedStartsAt: finalStartsAt,
+          ...(input.adminNotes
+            ? {
+                studentNotes: trialRequest.studentNotes
+                  ? `${trialRequest.studentNotes} | Admin Note: ${input.adminNotes}`
+                  : `Admin Note: ${input.adminNotes}`,
+              }
+            : {}),
         },
       });
 
-      // 3. Increment trial status
-      const trialStatus = await tx.studentTrialStatus.findUnique({
-        where: { studentId: trialRequest.studentId },
-      });
-
-      if (trialStatus) {
-        const nextUsed = trialStatus.lessonsUsed + 1;
-        await tx.studentTrialStatus.update({
+      // Increment trial status for student if not previously allotted
+      if (trialRequest.status !== TrialRequestStatus.ALLOTTED) {
+        const trialStatus = await tx.studentTrialStatus.findUnique({
           where: { studentId: trialRequest.studentId },
-          data: {
-            lessonsUsed: nextUsed,
-            status: nextUsed >= trialStatus.lessonsGranted ? TrialStatus.EXHAUSTED : TrialStatus.ACTIVE,
-          },
         });
+
+        if (trialStatus) {
+          const nextUsed = trialStatus.lessonsUsed + 1;
+          await tx.studentTrialStatus.update({
+            where: { studentId: trialRequest.studentId },
+            data: {
+              lessonsUsed: nextUsed,
+              status: nextUsed >= trialStatus.lessonsGranted ? TrialStatus.EXHAUSTED : TrialStatus.ACTIVE,
+            },
+          });
+        }
       }
 
-      return newLesson;
+      return activeLesson;
     });
+
+    // Fast-info notifications for student and teacher
+    try {
+      await createNotification({
+        userId: trialRequest.studentId,
+        type: NotificationType.TRIAL_ALLOTTED,
+        title: "1:1 Trial Lesson Confirmed!",
+        body: `Your trial session for ${trialRequest.instrument} is confirmed with Maestro ${teacher.name || "Faculty"}.`,
+        link: `/lesson/${lesson.id}`,
+      });
+      await createNotification({
+        userId: teacher.id,
+        type: NotificationType.TRIAL_ALLOTTED,
+        title: "New 1:1 Trial Allotted",
+        body: `A new trial student (${trialRequest.studentName}) has been allotted to you for ${trialRequest.instrument}.`,
+        link: "/teacher/dashboard",
+      });
+    } catch {
+      // Non-blocking notification emission
+    }
 
     revalidatePath("/admin/trials");
     revalidatePath("/admin/lessons");
@@ -1304,7 +1400,14 @@ export async function allotTrialTeacherAction(input: {
     revalidatePath("/student/dashboard");
     revalidatePath("/teacher/dashboard");
 
-    return { success: true, data: { lessonId: lesson.id } };
+    return {
+      success: true,
+      data: {
+        lessonId: lesson.id,
+        trackingCode: lesson.trackingCode,
+        startsAt: lesson.startsAt.toISOString(),
+      },
+    };
   } catch (error) {
     logger.error({ error }, "Error allotting teacher to trial request");
     return { success: false, error: "Failed to allot teacher." };
@@ -1410,4 +1513,129 @@ export async function markLessonPayoutAction(input: {
     return { success: false, error: errMsg };
   }
 }
+
+// ─── 9. Teacher Approvals Management ───────────────────────────────────────────
+
+export async function updateTeacherApprovalAction(input: {
+  teacherProfileId: string;
+  status: TeacherApprovalStatus;
+  rejectionReason?: string | null;
+  adminNotes?: string | null;
+  payoutPerSession?: number | null;
+}): Promise<AdminActionResponse> {
+  try {
+    const admin = await requireRole(Role.ADMIN);
+
+    const profile = await db.teacherProfile.findUnique({
+      where: { id: input.teacherProfileId },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    if (!profile) {
+      return { success: false, error: "Teacher profile not found." };
+    }
+
+    const now = new Date();
+    const updateData: {
+      approvalStatus: TeacherApprovalStatus;
+      approvedAt?: Date | null;
+      rejectedAt?: Date | null;
+      rejectionReason?: string | null;
+      adminNotes?: string | null;
+      payoutPerSession?: number;
+      isPublished?: boolean;
+    } = {
+      approvalStatus: input.status,
+    };
+
+    if (input.status === TeacherApprovalStatus.APPROVED) {
+      updateData.approvedAt = now;
+      updateData.rejectedAt = null;
+      updateData.rejectionReason = null;
+    } else if (input.status === TeacherApprovalStatus.REJECTED) {
+      updateData.rejectedAt = now;
+      updateData.approvedAt = null;
+      updateData.rejectionReason = input.rejectionReason?.trim() || "Administrative review: requirements not met.";
+      updateData.isPublished = false;
+    } else if (input.status === TeacherApprovalStatus.PENDING) {
+      updateData.approvedAt = null;
+      updateData.rejectedAt = null;
+      updateData.rejectionReason = null;
+      updateData.isPublished = false;
+    }
+
+    if (input.adminNotes !== undefined) {
+      updateData.adminNotes = input.adminNotes ? input.adminNotes.trim() : null;
+    }
+
+    if (input.payoutPerSession !== undefined && input.payoutPerSession !== null) {
+      updateData.payoutPerSession = Math.max(0, Math.floor(input.payoutPerSession));
+    }
+
+    await db.teacherProfile.update({
+      where: { id: input.teacherProfileId },
+      data: updateData,
+    });
+
+    logger.info(
+      {
+        adminId: admin.id,
+        teacherProfileId: input.teacherProfileId,
+        teacherUserId: profile.userId,
+        status: input.status,
+      },
+      "Teacher approval status updated by admin",
+    );
+
+    // Fast-info notification for teacher
+    try {
+      if (input.status === TeacherApprovalStatus.APPROVED) {
+        await createNotification({
+          userId: profile.userId,
+          type: NotificationType.TEACHER_APPROVED,
+          title: "Application Approved!",
+          body: "Your faculty profile has been approved. You can now set your teaching availability and receive student bookings.",
+          link: "/teacher/dashboard/availability",
+        });
+      } else if (input.status === TeacherApprovalStatus.REJECTED) {
+        await createNotification({
+          userId: profile.userId,
+          type: NotificationType.TEACHER_REJECTED,
+          title: "Application Status Update",
+          body: `Your teaching profile review was not approved: "${input.rejectionReason?.trim() || "Requirements not met"}". Contact administration for more info.`,
+          link: "/teacher/dashboard",
+        });
+      }
+    } catch {
+      // Non-blocking notification emission
+    }
+
+    revalidatePath("/admin/teachers");
+    revalidatePath("/admin/users");
+    revalidatePath("/admin");
+    revalidatePath("/teachers");
+    revalidatePath(`/teachers/${profile.id}`);
+    revalidatePath("/teacher/dashboard");
+    revalidatePath("/teacher/dashboard/profile");
+
+    const statusLabel =
+      input.status === TeacherApprovalStatus.APPROVED
+        ? "approved and granted teaching privileges"
+        : input.status === TeacherApprovalStatus.REJECTED
+          ? "rejected"
+          : "reset to pending review";
+
+    return {
+      success: true,
+      message: `Teacher ${profile.user.name || profile.user.email} successfully ${statusLabel}.`,
+    };
+  } catch (error) {
+    logger.error({ error, input }, "Error updating teacher approval");
+    const errMsg = error instanceof Error ? error.message : "Failed to update teacher approval.";
+    return { success: false, error: errMsg };
+  }
+}
+
 

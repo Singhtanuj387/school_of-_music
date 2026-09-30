@@ -9,7 +9,7 @@ import {
   removeTeacherPaymentQrAction,
 } from "@/actions/teacher";
 import { updateProfileAction, changePasswordAction } from "@/actions/profile";
-import { POPULAR_TIMEZONES } from "@/lib/timezone";
+import { POPULAR_TIMEZONES, formatDeterministicDate } from "@/lib/timezone";
 import { INSTRUMENTS, LANGUAGES } from "@/types";
 import {
   User,
@@ -31,6 +31,8 @@ import {
   Upload,
   Trash2,
   ExternalLink,
+  Clock,
+  CheckCircle2,
 } from "lucide-react";
 import { AvatarUpload } from "@/components/profile/AvatarUpload";
 
@@ -54,6 +56,9 @@ interface TeacherProfileEditorProps {
     upiId?: string;
     paymentQrCodeUrl?: string | null;
     isPublished: boolean;
+    approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+    approvedAt?: string | null;
+    rejectionReason?: string | null;
   } | null;
 }
 
@@ -376,6 +381,62 @@ export function TeacherProfileEditor({
             Update your teaching bio, instrument specialties, languages, and time preferences.
           </p>
         </div>
+
+        {/* Accreditation Status Banner */}
+        {profile?.approvalStatus === "APPROVED" ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <p className="font-bold text-emerald-950">
+                  Accredited & Verified Faculty Member
+                </p>
+                <p className="text-emerald-800 text-[11px]">
+                  Your credentials have been approved by the Gandharva Academic Board.
+                  {profile.approvedAt ? ` Approved on ${formatDeterministicDate(profile.approvedAt)}.` : ""}
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider shrink-0">
+              Active Faculty
+            </span>
+          </div>
+        ) : profile?.approvalStatus === "REJECTED" ? (
+          <div className="rounded-2xl border border-rose-300 bg-rose-50/90 p-4 space-y-1.5 text-xs text-rose-900">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="font-bold text-rose-950">Application Status: Revision Required</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-rose-700 text-white text-[10px] font-bold uppercase tracking-wider">
+                Action Required
+              </span>
+            </div>
+            <p className="text-[11px] leading-relaxed">
+              {profile.rejectionReason
+                ? `Note from Academic Board: "${profile.rejectionReason}"`
+                : "Your faculty application requires additional information or updated instruments before accreditation can be completed."}
+            </p>
+            <p className="text-[10px] text-rose-800/80">
+              Please update your details below and click Save. Our academic team will automatically review your revised credentials.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-1.5 text-xs text-amber-900">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-600 animate-pulse shrink-0" />
+                <span className="font-bold text-amber-950">Application Status: Pending Academic Board Review</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider">
+                Under Review
+              </span>
+            </div>
+            <p className="text-[11px] leading-relaxed">
+              Your instructor registration has been submitted and is in the review queue. You can refine your bio, instruments, hourly rates, and schedule below. Profile publishing will unlock once approved.
+            </p>
+          </div>
+        )}
 
         {/* Profile Avatar Upload Section */}
         <div className="pb-2 border-b border-border-default/60">

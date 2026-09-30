@@ -3,15 +3,11 @@
 import { useState, useRef, useEffect, useTransition, useCallback } from "react";
 import {
   Send,
-  Paperclip,
-  ClipboardList,
   AlertTriangle,
   ArrowLeft,
   ChevronDown,
   Music2,
   Shield,
-  Loader2,
-  X,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { sendMessage, getMessages, markMessagesAsRead } from "@/actions/messaging";
@@ -43,12 +39,9 @@ export function ChatWindow({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [showScrollDown, setShowScrollDown] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Scroll to bottom on initial load and new messages
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -150,114 +143,7 @@ export function ChatWindow({
     });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    // Reset file input
-    if (fileInputRef.current) fileInputRef.current.value = "";
-
-    // Validate file type client-side
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-    if (!allowedTypes.includes(file.type)) {
-      setError("Only PDF and DOC/DOCX files are allowed.");
-      return;
-    }
-
-    // Validate size (10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setError("File size cannot exceed 10MB.");
-      return;
-    }
-
-    setError(null);
-    setIsUploading(true);
-    setUploadProgress(`Uploading ${file.name}…`);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Upload failed.");
-      }
-
-      setUploadProgress("Sending file message…");
-
-      // Send as a FILE message
-      const input: SendMessageInput = {
-        conversationId,
-        body: `Shared file: ${data.fileName}`,
-        messageType: "FILE" as MessageType,
-        fileName: data.fileName,
-        fileUrl: data.fileUrl,
-        fileSizeBytes: data.fileSizeBytes,
-      };
-
-      const result = await sendMessage(input);
-
-      if (result.success) {
-        const refreshed = await getMessages(conversationId);
-        setMessages(refreshed.messages);
-        scrollToBottom();
-      } else {
-        setError(result.error);
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to upload file.",
-      );
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(null);
-    }
-  };
-
-  const handleSendAssignment = async () => {
-    if (callerRole !== "TEACHER") return;
-
-    const desc = inputText.trim();
-    if (!desc) {
-      setError("Please type an assignment description before sending.");
-      return;
-    }
-
-    setError(null);
-    setPiiWarning(null);
-    setInputText("");
-
-    startTransition(async () => {
-      const input: SendMessageInput = {
-        conversationId,
-        body: desc,
-        messageType: "ASSIGNMENT" as MessageType,
-        fileName: "Assignment",
-        fileUrl: "#",
-      };
-
-      const result = await sendMessage(input);
-
-      if (result.success) {
-        const refreshed = await getMessages(conversationId);
-        setMessages(refreshed.messages);
-        scrollToBottom();
-      } else {
-        setError(result.error);
-        setInputText(desc);
-      }
-    });
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -377,25 +263,6 @@ export function ChatWindow({
         )}
       </div>
 
-      {/* Upload Progress */}
-      {uploadProgress && (
-        <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/15 flex items-center gap-2 animate-fade-in-up">
-          <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
-          <p className="text-[11px] text-primary font-medium flex-1">
-            {uploadProgress}
-          </p>
-          <button
-            onClick={() => {
-              setIsUploading(false);
-              setUploadProgress(null);
-            }}
-            className="p-0.5 rounded hover:bg-primary/10 text-primary/60 hover:text-primary transition-colors"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      )}
-
       {/* PII Warning */}
       {piiWarning && (
         <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-warning-muted border border-warning/20 flex items-start gap-2 animate-fade-in-up">
@@ -414,49 +281,9 @@ export function ChatWindow({
         </div>
       )}
 
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        className="hidden"
-        onChange={handleFileUpload}
-      />
-
       {/* Input Area */}
       <div className="px-4 py-3 bg-white border-t border-border-subtle">
         <div className="flex items-end gap-2">
-          {/* Attachment button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading || isPending}
-            className={`btn-tactile p-2 rounded-xl transition-colors shrink-0 ${
-              isUploading
-                ? "text-primary animate-pulse"
-                : "hover:bg-bg-alt/50 text-body-muted hover:text-primary"
-            }`}
-            title="Attach file (PDF, DOC)"
-          >
-            {isUploading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Paperclip className="w-4 h-4" />
-            )}
-          </button>
-
-          {/* Assignment button (teachers only) */}
-          {callerRole === "TEACHER" && (
-            <button
-              onClick={handleSendAssignment}
-              disabled={isPending}
-              className="btn-tactile p-2 rounded-xl hover:bg-accent-subtle text-body-muted hover:text-accent-dark transition-colors shrink-0"
-              title="Send assignment"
-            >
-              <ClipboardList className="w-4 h-4" />
-            </button>
-          )}
-
           {/* Text input */}
           <div className="flex-1 relative">
             <textarea
@@ -488,8 +315,7 @@ export function ChatWindow({
 
         {/* Character hint */}
         <p className="text-[9px] text-body-muted mt-1.5 px-1">
-          Press Enter to send · Shift+Enter for new line · 📎 PDF/DOC up to
-          10MB · Personal info is auto-filtered
+          Press Enter to send · Shift+Enter for new line · Personal info is auto-filtered
         </p>
       </div>
     </div>
