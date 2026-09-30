@@ -1,0 +1,1413 @@
+"use server";
+
+import { db } from "@/lib/db";
+import { requireRole } from "@/lib/auth-helpers";
+import {
+  Role,
+  LessonStatus,
+  LessonSource,
+  Discipline,
+  CourseLevel,
+  EventType,
+  TicketStatus,
+  EnrollmentStatus,
+  TrialRequestStatus,
+  TrialStatus,
+  TeacherPayoutStatus,
+} from "@prisma/client";
+import { hashPassword } from "@/lib/password";
+import { normalizePhoneNumber, isValidPhoneNumber } from "@/lib/phone";
+import { revalidatePath } from "next/cache";
+import { logger } from "@/lib/logger";
+import { generateUniqueLessonTrackingCode, getLessonTrackingId } from "@/lib/lesson-tracking";
+
+export type AdminActionResponse<T = unknown> = {
+  success: boolean;
+  error?: string;
+  message?: string;
+  data?: T;
+};
+
+// ─── 1. Settings ─────────────────────────────────────────────────────────────
+
+export async function updatePlatformSettingsAction(input: {
+  freeTrialLessonCount: number;
+  googleDriveFolderLink?: string | null;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const count = Math.max(0, Math.min(10, Math.floor(input.freeTrialLessonCount)));
+
+    // Process Google Drive folder link
+    let googleDriveFolderId: string | null = undefined as unknown as string | null;
+    if (input.googleDriveFolderLink !== undefined) {
+      if (input.googleDriveFolderLink === null || input.googleDriveFolderLink === "") {
+        googleDriveFolderId = null;
+      } else {
+        const { extractFolderId } = await import("@/lib/google-drive");
+        const extracted = extractFolderId(input.googleDriveFolderLink);
+        if (!extracted) {
+          return {
+            success: false,
+            error: "Invalid Google Drive folder link. Please provide a valid Drive folder URL or ID.",
+          };
+        }
+        googleDriveFolderId = extracted;
+      }
+    }
+
+    const updateData: Record<string, unknown> = {
+      freeTrialLessonCount: count,
+    };
+
+    // Only include googleDriveFolderId if it was provided
+    if (input.googleDriveFolderLink !== undefined) {
+      updateData.googleDriveFolderId = googleDriveFolderId;
+    }
+
+    await db.platformSettings.upsert({
+      where: { id: 1 },
+      create: {
+        id: 1,
+        freeTrialLessonCount: count,
+        ...(input.googleDriveFolderLink !== undefined
+          ? { googleDriveFolderId }
+          : {}),
+      },
+      update: updateData,
+    });
+
+    logger.info(
+      { freeTrialLessonCount: count, googleDriveFolderId },
+      "Platform settings updated",
+    );
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error updating platform settings");
+    return { success: false, error: "Failed to update platform settings." };
+  }
+}
+
+/**
+ * Test whether a Google Drive folder link is accessible by the service account.
+ */
+export async function testDriveFolderAction(
+  folderLink: string,
+): Promise<AdminActionResponse<{ folderName: string; isSharedDrive?: boolean; warning?: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const { extractFolderId, testDriveFolderAccess, isDriveConfigured } =
+      await import("@/lib/google-drive");
+
+    if (!isDriveConfigured()) {
+      return {
+        success: false,
+        error:
+          "Google Drive service account credentials are not set in environment variables. Add GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY to .env.local.",
+      };
+    }
+
+    const folderId = extractFolderId(folderLink);
+    if (!folderId) {
+      return {
+        success: false,
+        error: "Could not extract a valid folder ID from the provided link.",
+      };
+    }
+
+    const result = await testDriveFolderAccess(folderId);
+
+    if (!result.accessible) {
+      return {
+        success: false,
+        error: result.error || "Could not access the folder.",
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        folderName: result.folderName!,
+        isSharedDrive: result.isSharedDrive,
+        warning: result.warning,
+      },
+    };
+  } catch (error) {
+    logger.error({ error }, "Error testing Drive folder access");
+    return {
+      success: false,
+      error: "Failed to test Drive folder access.",
+    };
+  }
+}
+
+// ─── 2. Enrollments: Teacher Allotment & Student-Wise Lesson Scheduling ───────
+
+export interface ScheduledEnrollmentLessonItem {
+  id: string;
+  trackingCode: string;
+  startsAt: string;
+  durationMinutes: number;
+  status: LessonStatus;
+  teacherId: string;
+  teacherName: string;
+  payoutRupees: number;
+}
+
+export interface EnrollmentScheduleDetails {
+  enrollment: {
+    id: string;
+    studentId: string;
+    courseId: string;
+    teacherId: string | null;
+    status: EnrollmentStatus;
+    sessionsRemaining: number;
+    startedAt: string;
+  };
+  student: {
+    id: string;
+    name: string;
+    email: string;
+    timezone: string;
+  };
+  course: {
+    id: string;
+    title: string;
+    instrument: string;
+    sessionCount: number;
+    durationWeeks: number;
+    priceMinorUnits: number;
+    currency: string;
+  };
+  teacher: {
+    id: string;
+    name: string;
+    email: string;
+    instruments: string[];
+    payoutRupees: number;
+  } | null;
+  lessons: ScheduledEnrollmentLessonItem[];
+  payment: {
+    id: string;
+    gatewayOrderId: string;
+    gatewayPaymentId: string | null;
+    amountMinorUnits: number;
+    currency: string;
+    status: string;
+  } | null;
+}
+
+export async function getEnrollmentScheduleAction(
+  enrollmentId: string,
+): Promise<AdminActionResponse<EnrollmentScheduleDetails>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const enrollment = await db.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: {
+        student: { select: { id: true, name: true, email: true, timezone: true } },
+        course: {
+          select: {
+            id: true,
+            title: true,
+            instrument: true,
+            sessionCount: true,
+            durationWeeks: true,
+            priceMinorUnits: true,
+            currency: true,
+          },
+        },
+        payment: {
+          select: {
+            id: true,
+            gatewayOrderId: true,
+            gatewayPaymentId: true,
+            amountMinorUnits: true,
+            currency: true,
+            status: true,
+          },
+        },
+        lessons: {
+          include: {
+            teacher: {
+              select: {
+                id: true,
+                name: true,
+                teacherProfile: { select: { payoutPerSession: true } },
+              },
+            },
+          },
+          orderBy: { startsAt: "asc" },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      return { success: false, error: "Enrollment not found." };
+    }
+
+    let allottedTeacher = null;
+    if (enrollment.teacherId) {
+      const t = await db.user.findUnique({
+        where: { id: enrollment.teacherId },
+        include: { teacherProfile: true },
+      });
+      if (t) {
+        allottedTeacher = {
+          id: t.id,
+          name: t.name || "Teacher",
+          email: t.email,
+          instruments: t.teacherProfile?.instruments || [],
+          payoutRupees: (t.teacherProfile?.payoutPerSession || 80000) / 100,
+        };
+      }
+    }
+
+    const lessonsData: ScheduledEnrollmentLessonItem[] = enrollment.lessons.map((l) => ({
+      id: l.id,
+      trackingCode: getLessonTrackingId(l),
+      startsAt: l.startsAt.toISOString(),
+      durationMinutes: l.durationMinutes,
+      status: l.status,
+      teacherId: l.teacherId,
+      teacherName: l.teacher?.name || "Assigned Teacher",
+      payoutRupees: (l.teacher?.teacherProfile?.payoutPerSession || 80000) / 100,
+    }));
+
+    return {
+      success: true,
+      data: {
+        enrollment: {
+          id: enrollment.id,
+          studentId: enrollment.studentId,
+          courseId: enrollment.courseId,
+          teacherId: enrollment.teacherId,
+          status: enrollment.status,
+          sessionsRemaining: enrollment.sessionsRemaining,
+          startedAt: enrollment.startedAt.toISOString(),
+        },
+        student: {
+          id: enrollment.student.id,
+          name: enrollment.student.name || "Student",
+          email: enrollment.student.email,
+          timezone: enrollment.student.timezone || "UTC",
+        },
+        course: {
+          id: enrollment.course.id,
+          title: enrollment.course.title,
+          instrument: enrollment.course.instrument,
+          sessionCount: enrollment.course.sessionCount,
+          durationWeeks: enrollment.course.durationWeeks,
+          priceMinorUnits: enrollment.course.priceMinorUnits,
+          currency: enrollment.course.currency,
+        },
+        teacher: allottedTeacher,
+        lessons: lessonsData,
+        payment: enrollment.payment
+          ? {
+              id: enrollment.payment.id,
+              gatewayOrderId: enrollment.payment.gatewayOrderId,
+              gatewayPaymentId: enrollment.payment.gatewayPaymentId,
+              amountMinorUnits: enrollment.payment.amountMinorUnits,
+              currency: enrollment.payment.currency,
+              status: enrollment.payment.status,
+            }
+          : null,
+      },
+    };
+  } catch (error) {
+    logger.error({ error, enrollmentId }, "Error fetching enrollment schedule");
+    return { success: false, error: "Failed to fetch enrollment schedule." };
+  }
+}
+
+export async function reassignEnrollmentTeacherAction(input: {
+  enrollmentId: string;
+  teacherId: string;
+  updateUpcomingLessons?: boolean;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const teacher = await db.user.findUnique({
+      where: { id: input.teacherId },
+      include: { teacherProfile: true },
+    });
+
+    if (!teacher || teacher.role !== Role.TEACHER || !teacher.teacherProfile) {
+      return { success: false, error: "Selected user is not a registered teacher." };
+    }
+
+    const enrollment = await db.enrollment.findUnique({
+      where: { id: input.enrollmentId },
+    });
+
+    if (!enrollment) {
+      return { success: false, error: "Enrollment not found." };
+    }
+
+    await db.enrollment.update({
+      where: { id: input.enrollmentId },
+      data: { teacherId: input.teacherId },
+    });
+
+    if (input.updateUpcomingLessons) {
+      await db.lesson.updateMany({
+        where: {
+          enrollmentId: input.enrollmentId,
+          status: LessonStatus.SCHEDULED,
+          startsAt: { gt: new Date() },
+        },
+        data: {
+          teacherId: input.teacherId,
+          teacherProfileId: teacher.teacherProfile.id,
+        },
+      });
+    }
+
+    logger.info(
+      { enrollmentId: input.enrollmentId, teacherId: input.teacherId },
+      "Enrollment teacher assigned/reassigned by admin",
+    );
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error reassigning enrollment teacher");
+    return { success: false, error: "Failed to assign teacher." };
+  }
+}
+
+export async function scheduleEnrollmentLessonAction(input: {
+  enrollmentId: string;
+  teacherId?: string;
+  startsAt: string;
+  durationMinutes?: number;
+}): Promise<AdminActionResponse<{ lessonId: string; trackingCode: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const enrollment = await db.enrollment.findUnique({
+      where: { id: input.enrollmentId },
+      include: {
+        course: true,
+        student: true,
+      },
+    });
+
+    if (!enrollment) {
+      return { success: false, error: "Enrollment record not found." };
+    }
+
+    const teacherToUse = input.teacherId || enrollment.teacherId;
+    if (!teacherToUse) {
+      return {
+        success: false,
+        error: "Please allot a faculty teacher to this student before scheduling sessions.",
+      };
+    }
+
+    const teacher = await db.user.findUnique({
+      where: { id: teacherToUse },
+      include: { teacherProfile: true },
+    });
+
+    if (!teacher || teacher.role !== Role.TEACHER || !teacher.teacherProfile) {
+      return { success: false, error: "Selected teacher profile is not active." };
+    }
+
+    if (enrollment.teacherId !== teacherToUse) {
+      await db.enrollment.update({
+        where: { id: enrollment.id },
+        data: { teacherId: teacherToUse },
+      });
+    }
+
+    const startsAtDate = new Date(input.startsAt);
+    if (isNaN(startsAtDate.getTime())) {
+      return { success: false, error: "Invalid date and time selected." };
+    }
+
+    const trackingCode = await generateUniqueLessonTrackingCode();
+
+    const lesson = await db.lesson.create({
+      data: {
+        teacherId: teacher.id,
+        teacherProfileId: teacher.teacherProfile.id,
+        studentId: enrollment.studentId,
+        instrument: enrollment.course.instrument,
+        startsAt: startsAtDate,
+        durationMinutes: input.durationMinutes || 60,
+        status: LessonStatus.SCHEDULED,
+        lessonSource: LessonSource.ENROLLMENT,
+        enrollmentId: enrollment.id,
+        groupRoomId: null, // Strictly 1-to-1 private lesson!
+        trackingCode,
+      },
+    });
+
+    logger.info(
+      {
+        lessonId: lesson.id,
+        trackingCode,
+        enrollmentId: enrollment.id,
+        studentId: enrollment.studentId,
+        teacherId: teacher.id,
+      },
+      "1-on-1 enrollment lesson created with unique tracking ID by admin",
+    );
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+    revalidatePath("/teacher/dashboard/earnings");
+
+    return {
+      success: true,
+      data: { lessonId: lesson.id, trackingCode },
+    };
+  } catch (error) {
+    logger.error({ error, input }, "Error scheduling enrollment lesson");
+    return { success: false, error: "Failed to schedule lesson." };
+  }
+}
+
+export async function bulkScheduleEnrollmentLessonsAction(input: {
+  enrollmentId: string;
+  teacherId?: string;
+  slots: Array<{ startsAt: string; durationMinutes?: number }>;
+}): Promise<AdminActionResponse<{ createdCount: number }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const enrollment = await db.enrollment.findUnique({
+      where: { id: input.enrollmentId },
+      include: {
+        course: true,
+        student: true,
+      },
+    });
+
+    if (!enrollment) {
+      return { success: false, error: "Enrollment record not found." };
+    }
+
+    const teacherToUse = input.teacherId || enrollment.teacherId;
+    if (!teacherToUse) {
+      return {
+        success: false,
+        error: "Please allot a faculty teacher to this student before scheduling sessions.",
+      };
+    }
+
+    const teacher = await db.user.findUnique({
+      where: { id: teacherToUse },
+      include: { teacherProfile: true },
+    });
+
+    if (!teacher || teacher.role !== Role.TEACHER || !teacher.teacherProfile) {
+      return { success: false, error: "Selected teacher profile is not active." };
+    }
+
+    if (enrollment.teacherId !== teacherToUse) {
+      await db.enrollment.update({
+        where: { id: enrollment.id },
+        data: { teacherId: teacherToUse },
+      });
+    }
+
+    let createdCount = 0;
+    for (const slot of input.slots) {
+      const startsAtDate = new Date(slot.startsAt);
+      if (isNaN(startsAtDate.getTime())) continue;
+
+      const trackingCode = await generateUniqueLessonTrackingCode();
+
+      await db.lesson.create({
+        data: {
+          teacherId: teacher.id,
+          teacherProfileId: teacher.teacherProfile.id,
+          studentId: enrollment.studentId,
+          instrument: enrollment.course.instrument,
+          startsAt: startsAtDate,
+          durationMinutes: slot.durationMinutes || 60,
+          status: LessonStatus.SCHEDULED,
+          lessonSource: LessonSource.ENROLLMENT,
+          enrollmentId: enrollment.id,
+          groupRoomId: null, // Strictly 1-to-1 private lesson!
+          trackingCode,
+        },
+      });
+      createdCount++;
+    }
+
+    logger.info(
+      {
+        enrollmentId: enrollment.id,
+        createdCount,
+        studentId: enrollment.studentId,
+        teacherId: teacher.id,
+      },
+      "Bulk 1-on-1 lessons scheduled for enrollment by admin",
+    );
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+    revalidatePath("/teacher/dashboard/earnings");
+
+    return { success: true, data: { createdCount } };
+  } catch (error) {
+    logger.error({ error, input }, "Error bulk scheduling enrollment lessons");
+    return { success: false, error: "Failed to bulk schedule lessons." };
+  }
+}
+
+export async function rescheduleEnrollmentLessonAction(input: {
+  lessonId: string;
+  startsAt: string;
+  durationMinutes?: number;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const lesson = await db.lesson.findUnique({
+      where: { id: input.lessonId },
+    });
+
+    if (!lesson) {
+      return { success: false, error: "Lesson not found." };
+    }
+
+    const startsAtDate = new Date(input.startsAt);
+    if (isNaN(startsAtDate.getTime())) {
+      return { success: false, error: "Invalid date and time." };
+    }
+
+    await db.lesson.update({
+      where: { id: input.lessonId },
+      data: {
+        startsAt: startsAtDate,
+        durationMinutes: input.durationMinutes || lesson.durationMinutes,
+        status: LessonStatus.SCHEDULED,
+      },
+    });
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error, input }, "Error rescheduling enrollment lesson");
+    return { success: false, error: "Failed to reschedule lesson." };
+  }
+}
+
+export async function deleteOrCancelEnrollmentLessonAction(
+  lessonId: string,
+): Promise<AdminActionResponse> {
+  try {
+    const admin = await requireRole(Role.ADMIN);
+
+    const lesson = await db.lesson.findUnique({
+      where: { id: lessonId },
+    });
+
+    if (!lesson) {
+      return { success: false, error: "Lesson not found." };
+    }
+
+    await db.lesson.update({
+      where: { id: lessonId },
+      data: {
+        status: LessonStatus.CANCELLED,
+        cancelledBy: admin.id,
+        cancelledAt: new Date(),
+      },
+    });
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error, lessonId }, "Error cancelling enrollment lesson");
+    return { success: false, error: "Failed to cancel lesson." };
+  }
+}
+
+// ─── 3. Users Management ─────────────────────────────────────────────────────
+
+export async function updateUserAdminAction(input: {
+  userId: string;
+  name?: string;
+  phone?: string | null;
+  role?: Role;
+  isActive?: boolean;
+  newPassword?: string;
+  trialCount?: number;
+  payoutPerSession?: number;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const updateData: Record<string, unknown> = {};
+    if (input.name !== undefined) updateData.name = input.name.trim();
+    if (input.role !== undefined) updateData.role = input.role;
+    if (input.isActive !== undefined) updateData.isActive = input.isActive;
+    if (input.newPassword) {
+      updateData.passwordHash = await hashPassword(input.newPassword);
+    }
+
+    if (input.phone !== undefined) {
+      if (input.phone && input.phone.trim()) {
+        const normalized = normalizePhoneNumber(input.phone);
+        if (!isValidPhoneNumber(normalized)) {
+          return {
+            success: false,
+            error: "Invalid phone number format. Please include country code (e.g. +91 98765 43210).",
+          };
+        }
+
+        const existing = await db.user.findFirst({
+          where: {
+            phone: normalized,
+            NOT: { id: input.userId },
+          },
+        });
+
+        if (existing) {
+          return {
+            success: false,
+            error: "This phone number is already registered to another user.",
+          };
+        }
+
+        updateData.phone = normalized;
+        updateData.phoneVerified = new Date();
+      } else {
+        updateData.phone = null;
+        updateData.phoneVerified = null;
+      }
+    }
+
+    await db.$transaction(async (tx) => {
+      if (Object.keys(updateData).length > 0) {
+        await tx.user.update({
+          where: { id: input.userId },
+          data: updateData,
+        });
+      }
+
+      // If adjusting trial count for a student
+      if (input.trialCount !== undefined) {
+        await tx.studentTrialStatus.upsert({
+          where: { studentId: input.userId },
+          create: {
+            studentId: input.userId,
+            lessonsGranted: input.trialCount,
+            lessonsUsed: 0,
+          },
+          update: {
+            lessonsGranted: input.trialCount,
+          },
+        });
+      }
+
+      // If adjusting payoutPerSession for a teacher (paise)
+      if (input.payoutPerSession !== undefined) {
+        await tx.teacherProfile.upsert({
+          where: { userId: input.userId },
+          create: {
+            userId: input.userId,
+            payoutPerSession: input.payoutPerSession,
+            instruments: ["Piano"],
+          },
+          update: {
+            payoutPerSession: input.payoutPerSession,
+          },
+        });
+      }
+    });
+
+    logger.info({ userId: input.userId }, "User updated by admin");
+    revalidatePath("/admin/users");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error updating user via admin");
+    return { success: false, error: "Failed to update user." };
+  }
+}
+
+// ─── 4. Courses Management ───────────────────────────────────────────────────
+
+export async function getFacultyTeachersAction(): Promise<
+  AdminActionResponse<
+    Array<{
+      id: string;
+      name: string | null;
+      email: string;
+      instruments: string[];
+      profileId: string | null;
+    }>
+  >
+> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const teachers = await db.user.findMany({
+      where: { role: Role.TEACHER, isActive: true },
+      include: {
+        teacherProfile: {
+          select: { id: true, instruments: true },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    return {
+      success: true,
+      data: teachers.map((t) => ({
+        id: t.id,
+        name: t.name,
+        email: t.email,
+        instruments: t.teacherProfile?.instruments || [],
+        profileId: t.teacherProfile?.id || null,
+      })),
+    };
+  } catch (error) {
+    logger.error({ error }, "Error fetching faculty teachers");
+    return { success: false, error: "Failed to fetch faculty teachers." };
+  }
+}
+
+export async function saveCourseAdminAction(input: {
+  id?: string;
+  title: string;
+  slug: string;
+  discipline: Discipline;
+  instrument: string;
+  level: CourseLevel;
+  accreditation?: string | null;
+  description: string;
+  syllabusSummary: string;
+  priceMinorUnits: number; // paise
+  sessionCount: number;
+  durationWeeks: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  teacherIds?: string[];
+  isPublished: boolean;
+}): Promise<AdminActionResponse<{ id: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const payload = {
+      title: input.title.trim(),
+      slug: input.slug.trim().toLowerCase(),
+      discipline: input.discipline,
+      instrument: input.instrument.trim(),
+      level: input.level,
+      accreditation: input.accreditation?.trim() || null,
+      description: input.description.trim(),
+      syllabusSummary: input.syllabusSummary.trim(),
+      priceMinorUnits: Math.max(0, input.priceMinorUnits),
+      sessionCount: Math.max(1, input.sessionCount),
+      durationWeeks: Math.max(1, input.durationWeeks),
+      startDate: input.startDate ? new Date(input.startDate) : null,
+      endDate: input.endDate ? new Date(input.endDate) : null,
+      isPublished: input.isPublished,
+    };
+
+    let courseId = input.id;
+
+    if (courseId) {
+      await db.course.update({
+        where: { id: courseId },
+        data: payload,
+      });
+    } else {
+      const created = await db.course.create({
+        data: payload,
+      });
+      courseId = created.id;
+    }
+
+    // Sync CourseTeacher allotments
+    if (input.teacherIds !== undefined && courseId) {
+      await db.courseTeacher.deleteMany({
+        where: {
+          courseId,
+          teacherId: { notIn: input.teacherIds },
+        },
+      });
+
+      for (const teacherId of input.teacherIds) {
+        await db.courseTeacher.upsert({
+          where: { courseId_teacherId: { courseId, teacherId } },
+          create: { courseId, teacherId },
+          update: {},
+        });
+      }
+    }
+
+    revalidatePath("/admin/courses");
+    revalidatePath("/courses");
+    revalidatePath("/student/dashboard/courses");
+
+    return { success: true, data: { id: courseId! } };
+  } catch (error) {
+    logger.error({ error }, "Error saving course");
+    return { success: false, error: "Failed to save course. Check slug uniqueness." };
+  }
+}
+
+export async function saveCourseLessonAdminAction(input: {
+  id?: string;
+  courseId: string;
+  lessonNumber: number;
+  title: string;
+  description?: string | null;
+  durationMinutes?: number;
+  scheduledStartsAt?: string | null;
+  teacherId?: string | null;
+}): Promise<AdminActionResponse<{ id: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const payload = {
+      courseId: input.courseId,
+      lessonNumber: Math.max(1, input.lessonNumber),
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      durationMinutes: input.durationMinutes ? Math.max(15, input.durationMinutes) : 60,
+      scheduledStartsAt: input.scheduledStartsAt ? new Date(input.scheduledStartsAt) : null,
+      teacherId: input.teacherId || null,
+    };
+
+    let lessonId: string;
+    if (input.id) {
+      const updated = await db.courseLesson.update({
+        where: { id: input.id },
+        data: payload,
+      });
+      lessonId = updated.id;
+    } else {
+      const created = await db.courseLesson.create({
+        data: payload,
+      });
+      lessonId = created.id;
+    }
+
+    revalidatePath("/admin/courses");
+    revalidatePath("/courses");
+    revalidatePath("/student/dashboard/courses");
+    return { success: true, data: { id: lessonId } };
+  } catch (error) {
+    logger.error({ error }, "Error saving course lesson");
+    return { success: false, error: "Failed to save course lesson." };
+  }
+}
+
+export async function deleteCourseLessonAdminAction(input: {
+  lessonId: string;
+  courseId: string;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    await db.courseLesson.delete({
+      where: { id: input.lessonId },
+    });
+
+    revalidatePath("/admin/courses");
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error deleting course lesson");
+    return { success: false, error: "Failed to delete course lesson." };
+  }
+}
+
+export async function bulkGenerateCourseLessonsAdminAction(input: {
+  courseId: string;
+  defaultTeacherId?: string | null;
+  startDate?: string | null;
+  sessionCount?: number;
+  dayInterval?: number;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const course = await db.course.findUnique({
+      where: { id: input.courseId },
+      include: { lessons: true, teachers: true },
+    });
+
+    if (!course) {
+      return { success: false, error: "Course not found." };
+    }
+
+    const totalSessions = input.sessionCount || course.sessionCount;
+    const intervalDays = input.dayInterval || 7;
+    const baseDate = input.startDate
+      ? new Date(input.startDate)
+      : course.startDate
+      ? new Date(course.startDate)
+      : new Date(Date.now() + 86400000 * 2);
+    baseDate.setHours(10, 0, 0, 0);
+
+    const assignedTeacher =
+      input.defaultTeacherId || course.teachers[0]?.teacherId || null;
+
+    const existingNumbers = new Set(course.lessons.map((l) => l.lessonNumber));
+
+    const lessonsToCreate = [];
+    for (let i = 1; i <= totalSessions; i++) {
+      if (!existingNumbers.has(i)) {
+        const lessonDate = new Date(baseDate.getTime() + (i - 1) * intervalDays * 86400000);
+        lessonsToCreate.push({
+          courseId: course.id,
+          lessonNumber: i,
+          title: `Lesson ${i}: Masterclass & Technical Mastery`,
+          description: `Comprehensive interactive 1-on-1 session covering fundamentals, technical repertoire, and personalized musical guidance.`,
+          durationMinutes: 60,
+          scheduledStartsAt: lessonDate,
+          teacherId: assignedTeacher,
+        });
+      }
+    }
+
+    if (lessonsToCreate.length > 0) {
+      await db.courseLesson.createMany({
+        data: lessonsToCreate,
+      });
+    }
+
+    revalidatePath("/admin/courses");
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error generating course lessons");
+    return { success: false, error: "Failed to generate course lessons." };
+  }
+}
+
+export async function deleteCourseAdminAction(courseId: string): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const enrollmentsCount = await db.enrollment.count({
+      where: { courseId },
+    });
+
+    if (enrollmentsCount > 0) {
+      return {
+        success: false,
+        error: `Cannot delete course: ${enrollmentsCount} active student enrollment(s) exist. Unpublish the course instead.`,
+      };
+    }
+
+    await db.course.delete({ where: { id: courseId } });
+
+    revalidatePath("/admin/courses");
+    revalidatePath("/courses");
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error deleting course");
+    return { success: false, error: "Failed to delete course." };
+  }
+}
+
+// ─── 5. Lessons Management ───────────────────────────────────────────────────
+
+export async function cancelLessonAdminAction(lessonId: string): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const lesson = await db.lesson.findUnique({
+      where: { id: lessonId },
+    });
+
+    if (!lesson || lesson.status === LessonStatus.CANCELLED) {
+      return { success: false, error: "Lesson not found or already cancelled." };
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.lesson.update({
+        where: { id: lessonId },
+        data: {
+          status: LessonStatus.CANCELLED,
+          cancelledBy: "ADMIN",
+          cancelledAt: new Date(),
+        },
+      });
+
+      // Restore allocation
+      if (lesson.lessonSource === LessonSource.ENROLLMENT && lesson.enrollmentId) {
+        await tx.enrollment.update({
+          where: { id: lesson.enrollmentId },
+          data: { sessionsRemaining: { increment: 1 } },
+        });
+      } else if (lesson.lessonSource === LessonSource.TRIAL) {
+        await tx.studentTrialStatus.updateMany({
+          where: { studentId: lesson.studentId, lessonsUsed: { gt: 0 } },
+          data: { lessonsUsed: { decrement: 1 } },
+        });
+      }
+    });
+
+    revalidatePath("/admin/lessons");
+    revalidatePath("/teacher/dashboard");
+    revalidatePath("/student/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error cancelling lesson via admin");
+    return { success: false, error: "Failed to cancel lesson." };
+  }
+}
+
+// ─── 6. Events Management ────────────────────────────────────────────────────
+
+export async function saveEventAdminAction(input: {
+  id?: string;
+  title: string;
+  description: string;
+  type: EventType;
+  startsAt: string; // ISO
+  durationMinutes: number;
+  capacity?: number | null;
+  teacherId?: string | null;
+  isPublished: boolean;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const payload = {
+      title: input.title.trim(),
+      description: input.description.trim(),
+      type: input.type,
+      startsAt: new Date(input.startsAt),
+      durationMinutes: Math.max(15, input.durationMinutes),
+      capacity: input.capacity && input.capacity > 0 ? input.capacity : null,
+      teacherId: input.teacherId && input.teacherId.trim() ? input.teacherId.trim() : null,
+      isPublished: input.isPublished,
+    };
+
+    if (input.id) {
+      await db.event.update({
+        where: { id: input.id },
+        data: payload,
+      });
+    } else {
+      await db.event.create({
+        data: payload,
+      });
+    }
+
+    revalidatePath("/admin/events");
+    revalidatePath("/student/dashboard/events");
+    revalidatePath("/student/dashboard/calendar");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard/calendar");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error saving event");
+    return { success: false, error: "Failed to save event." };
+  }
+}
+
+export async function assignTeacherToEventAdminAction(input: {
+  eventId: string;
+  teacherId: string | null;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    if (!input.eventId) {
+      return { success: false, error: "Event ID is required." };
+    }
+
+    if (input.teacherId) {
+      const teacher = await db.user.findFirst({
+        where: { id: input.teacherId, role: Role.TEACHER, isActive: true },
+      });
+      if (!teacher) {
+        return { success: false, error: "Selected teacher is not found or inactive." };
+      }
+    }
+
+    await db.event.update({
+      where: { id: input.eventId },
+      data: {
+        teacherId: input.teacherId || null,
+      },
+    });
+
+    revalidatePath("/admin/events");
+    revalidatePath("/student/dashboard/events");
+    revalidatePath("/student/dashboard/calendar");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard/calendar");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error assigning teacher to event");
+    return { success: false, error: "Failed to assign teacher to event." };
+  }
+}
+
+export async function deleteEventAdminAction(eventId: string): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    await db.event.delete({ where: { id: eventId } });
+
+    revalidatePath("/admin/events");
+    revalidatePath("/student/dashboard/events");
+    revalidatePath("/student/dashboard/calendar");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard/calendar");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error deleting event");
+    return { success: false, error: "Failed to delete event." };
+  }
+}
+
+// ─── 7. Support Ticket Status ────────────────────────────────────────────────
+
+export async function updateTicketStatusAdminAction(input: {
+  ticketId: string;
+  status: TicketStatus;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    await db.supportTicket.update({
+      where: { id: input.ticketId },
+      data: { status: input.status },
+    });
+
+    revalidatePath(`/admin/support/${input.ticketId}`);
+    revalidatePath("/admin/support");
+    revalidatePath("/admin");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error updating ticket status");
+    return { success: false, error: "Failed to update ticket status." };
+  }
+}
+
+// ─── 8. Trial Requests Allotment ─────────────────────────────────────────────
+
+export async function allotTrialTeacherAction(input: {
+  trialRequestId: string;
+  teacherId: string;
+}): Promise<AdminActionResponse<{ lessonId: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const trialRequest = await db.trialRequest.findUnique({
+      where: { id: input.trialRequestId },
+    });
+
+    if (!trialRequest) {
+      return { success: false, error: "Trial request not found." };
+    }
+
+    if (trialRequest.status === TrialRequestStatus.ALLOTTED) {
+      return { success: false, error: "This trial request has already been allotted." };
+    }
+
+    const teacher = await db.user.findUnique({
+      where: { id: input.teacherId, role: Role.TEACHER },
+      include: { teacherProfile: true },
+    });
+
+    if (!teacher || !teacher.teacherProfile) {
+      return { success: false, error: "Selected teacher does not have an active teacher profile." };
+    }
+
+    const lesson = await db.$transaction(async (tx) => {
+      // 1. Create scheduled Lesson
+      const newLesson = await tx.lesson.create({
+        data: {
+          teacherProfileId: teacher.teacherProfile!.id,
+          teacherId: teacher.id,
+          studentId: trialRequest.studentId,
+          instrument: trialRequest.instrument,
+          startsAt: trialRequest.requestedStartsAt,
+          durationMinutes: 60,
+          status: LessonStatus.SCHEDULED,
+          lessonSource: LessonSource.TRIAL,
+        },
+      });
+
+      // 2. Update TrialRequest
+      await tx.trialRequest.update({
+        where: { id: trialRequest.id },
+        data: {
+          status: TrialRequestStatus.ALLOTTED,
+          allottedTeacherId: teacher.id,
+          allottedLessonId: newLesson.id,
+          allottedAt: new Date(),
+        },
+      });
+
+      // 3. Increment trial status
+      const trialStatus = await tx.studentTrialStatus.findUnique({
+        where: { studentId: trialRequest.studentId },
+      });
+
+      if (trialStatus) {
+        const nextUsed = trialStatus.lessonsUsed + 1;
+        await tx.studentTrialStatus.update({
+          where: { studentId: trialRequest.studentId },
+          data: {
+            lessonsUsed: nextUsed,
+            status: nextUsed >= trialStatus.lessonsGranted ? TrialStatus.EXHAUSTED : TrialStatus.ACTIVE,
+          },
+        });
+      }
+
+      return newLesson;
+    });
+
+    revalidatePath("/admin/trials");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+
+    return { success: true, data: { lessonId: lesson.id } };
+  } catch (error) {
+    logger.error({ error }, "Error allotting teacher to trial request");
+    return { success: false, error: "Failed to allot teacher." };
+  }
+}
+
+export async function cancelTrialRequestAction(trialRequestId: string): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    await db.trialRequest.update({
+      where: { id: trialRequestId },
+      data: { status: TrialRequestStatus.CANCELLED },
+    });
+
+    revalidatePath("/admin/trials");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error cancelling trial request");
+    return { success: false, error: "Failed to cancel trial request." };
+  }
+}
+
+/**
+ * Admin action to mark a teacher session as PAID or UNPAID with payout transaction details.
+ */
+export async function markLessonPayoutAction(input: {
+  lessonId: string;
+  status: "PAID" | "UNPAID";
+  transactionId?: string;
+  notes?: string;
+  amountMinor?: number;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const lesson = await db.lesson.findUnique({
+      where: { id: input.lessonId },
+      include: {
+        teacherProfile: {
+          select: { payoutPerSession: true },
+        },
+      },
+    });
+
+    if (!lesson) {
+      return { success: false, error: "Session lesson not found." };
+    }
+
+    if (input.status === "PAID") {
+      const payoutAmount =
+        input.amountMinor ??
+        lesson.payoutAmountMinor ??
+        lesson.teacherProfile?.payoutPerSession ??
+        80000;
+
+      await db.lesson.update({
+        where: { id: input.lessonId },
+        data: {
+          payoutStatus: TeacherPayoutStatus.PAID,
+          payoutPaidAt: new Date(),
+          payoutTransactionId: input.transactionId?.trim() || null,
+          payoutNotes: input.notes?.trim() || null,
+          payoutAmountMinor: payoutAmount,
+        },
+      });
+
+      logger.info(
+        { lessonId: input.lessonId, amountMinor: payoutAmount, transactionId: input.transactionId },
+        "Lesson payout marked as PAID by admin",
+      );
+    } else {
+      await db.lesson.update({
+        where: { id: input.lessonId },
+        data: {
+          payoutStatus: TeacherPayoutStatus.UNPAID,
+          payoutPaidAt: null,
+          payoutTransactionId: null,
+          payoutNotes: null,
+        },
+      });
+
+      logger.info({ lessonId: input.lessonId }, "Lesson payout reverted to UNPAID by admin");
+    }
+
+    revalidatePath("/admin/payments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/teacher/dashboard/earnings");
+
+    return {
+      success: true,
+      message:
+        input.status === "PAID"
+          ? "Session remuneration marked as PAID successfully."
+          : "Session remuneration reverted to UNPAID.",
+    };
+  } catch (error) {
+    logger.error({ error, input }, "Error updating lesson payout status");
+    const errMsg = error instanceof Error ? error.message : "Failed to update payout status.";
+    return { success: false, error: errMsg };
+  }
+}
+

@@ -1,0 +1,35 @@
+# docker-compose.yml — local development Postgres for ToneRoom
+# Start with: docker compose up -d
+# Stop with: docker compose down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: toneroom-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: toneroom
+    ports:
+      - "5432:5432"
+    volumes:
+      - toneroom-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: toneroom-livekit
+    command: ["--dev", "--keys", "devkey: toneroom_dev_secret_key_minimum_32_characters_long_01"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    restart: unless-stopped
+
+volumes:
+  toneroom-pgdata:
+

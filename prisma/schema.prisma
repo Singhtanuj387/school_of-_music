@@ -1,0 +1,612 @@
+// Prisma schema for Gandharva School of Music — live 1:1 learning platform
+// All times stored as UTC timestamptz. User timezones stored as IANA strings.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum MessageType {
+  TEXT
+  FILE
+  ASSIGNMENT
+  SYSTEM
+}
+
+enum LessonStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum LessonSource {
+  TRIAL
+  ENROLLMENT
+}
+
+enum TrialStatus {
+  ACTIVE
+  EXHAUSTED
+}
+
+enum Discipline {
+  INSTRUMENT
+  VOCALS
+  DANCE
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  CREATED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum EventType {
+  WORKSHOP
+  RECITAL
+  MASTERCLASS
+  EXAM_PREP
+}
+
+enum TicketCategory {
+  BILLING
+  TECHNICAL
+  LESSON
+  COURSE
+  OTHER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TrialRequestStatus {
+  PENDING
+  ALLOTTED
+  CANCELLED
+}
+
+enum TeacherPayoutStatus {
+  UNPAID
+  PAID
+}
+
+// ─── Auth.js required models ─────────────────────────────────────────────────
+// Extended with our domain fields on User
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?   // Auth.js convention for avatar
+  passwordHash  String?   // null when using OAuth only
+  timezone      String    @default("UTC") // IANA timezone string
+  phone         String?   @unique
+  phoneVerified DateTime?
+  role          Role      @default(STUDENT)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt @db.Timestamptz()
+
+  // Auth.js relations
+  accounts Account[]
+  sessions Session[]
+
+  // Domain relations
+  teacherProfile    TeacherProfile?
+  lessonsAsTeacher  Lesson[]             @relation("TeacherLessons")
+  lessonsAsStudent  Lesson[]             @relation("StudentLessons")
+  trialStatus       StudentTrialStatus?
+  enrollments       Enrollment[]
+  payments          Payment[]
+  supportTickets    SupportTicket[]
+  eventRegistrations EventRegistration[]
+  trialRequestsAsStudent  TrialRequest[]       @relation("StudentTrialRequests")
+  allottedTrialsAsTeacher TrialRequest[]       @relation("TeacherAllottedTrials")
+  courseTeachers          CourseTeacher[]
+  allottedCourseLessons   CourseLesson[]       @relation("CourseLessonTeacher")
+  eventsAsTeacher         Event[]              @relation("TeacherEvents")
+
+  // Messaging relations
+  conversationsAsTeacher Conversation[]   @relation("ConversationTeacher")
+  conversationsAsStudent Conversation[]   @relation("ConversationStudent")
+  sentMessages           DirectMessage[]  @relation("MessageSender")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Password reset tokens ──────────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expires   DateTime @db.Timestamptz()
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@index([email])
+}
+
+// ─── Phone verification OTP tokens ──────────────────────────────────────────
+
+model PhoneVerificationToken {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String   // 6-digit OTP code
+  expires   DateTime @db.Timestamptz()
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@index([phone])
+}
+
+// ─── Platform configuration ──────────────────────────────────────────────────
+
+/// Singleton settings row (id = 1 always). Application-level guard enforces single row.
+model PlatformSettings {
+  id                    Int     @id @default(1)
+  freeTrialLessonCount  Int     @default(2)
+  googleDriveFolderId   String? // Google Drive folder ID for messaging file uploads
+}
+
+// ─── Trial tracking ─────────────────────────────────────────────────────────
+
+/// Tracks how many free trial lessons a student has been granted and used.
+/// lessonsGranted is a snapshot of PlatformSettings.freeTrialLessonCount at the
+/// time the student's first booking attempt — changing the global default later
+/// does NOT retroactively change existing students.
+model StudentTrialStatus {
+  id             Int         @id @default(autoincrement())
+  studentId      String      @unique
+  student        User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonsGranted Int
+  lessonsUsed    Int         @default(0)
+  status         TrialStatus @default(ACTIVE)
+}
+
+// ─── Domain models ───────────────────────────────────────────────────────────
+
+model TeacherProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  bio                String?  @db.Text
+  instruments        String[] @db.Text
+  expertInstruments  String[] @default([]) @db.Text
+  moderateInstruments String[] @default([]) @db.Text
+  yearsTeaching      Int      @default(0)
+  hourlyRate         Int      @default(0) // minor units (e.g. paise/cents) — display rate on profile
+  payoutPerSession   Int      @default(0) // admin-set fixed payout per session in minor units
+  upiId              String?  // UPI ID for direct payout transfers (e.g. name@okhdfcbank)
+  paymentQrCodeUrl   String?  @db.Text // Uploaded payment QR code image path/URL
+  currency           String   @default("INR")
+  languages          String[] @db.Text
+  isPublished        Boolean  @default(false)
+  createdAt          DateTime @default(now()) @db.Timestamptz()
+  updatedAt          DateTime @updatedAt @db.Timestamptz()
+
+  user                   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  lessonsAsTeacher       Lesson[]
+
+  @@index([isPublished])
+}
+
+/// Weekly recurring availability pattern.
+/// startMinute/endMinute are minutes from midnight in the teacher's timezone.
+/// e.g. 9:00 AM = 540, 5:00 PM = 1020
+model AvailabilityRule {
+  id          String @id @default(cuid())
+  teacherId   String
+  dayOfWeek   Int // 0 = Sunday, 6 = Saturday
+  startMinute Int // minutes from midnight
+  endMinute   Int // minutes from midnight
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, dayOfWeek, startMinute])
+  @@index([teacherId])
+}
+
+/// One-off exceptions: holidays (blocked) or extra availability.
+model AvailabilityException {
+  id          String   @id @default(cuid())
+  teacherId   String
+  date        DateTime @db.Date // the specific date
+  isBlocked   Boolean  @default(true) // true = unavailable, false = extra availability
+  startMinute Int? // optional: specific time range override
+  endMinute   Int? // optional: specific time range override
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, date, startMinute])
+  @@index([teacherId, date])
+}
+
+model Lesson {
+  id               String        @id @default(cuid())
+  teacherProfileId String
+  teacherId        String // userId of the teacher
+  studentId        String // userId of the student
+  instrument       String
+  startsAt         DateTime      @db.Timestamptz()
+  durationMinutes  Int           @default(60)
+  status           LessonStatus  @default(SCHEDULED)
+  trackingCode     String?       // Unique lesson identifier for accounting, faculty payouts, and payment tracking (e.g. GS-LSN-XXXX)
+  lessonSource     LessonSource? // TRIAL or ENROLLMENT — null for legacy lessons
+  enrollmentId     String?       // non-null when lessonSource = ENROLLMENT
+  groupRoomId      String?       // shared room ID for group course lessons — all students in the same course lesson share this
+  cancelledBy      String? // userId of who cancelled
+  cancelledAt      DateTime?     @db.Timestamptz()
+  teacherJoinedAt  DateTime?     @db.Timestamptz()
+  studentJoinedAt  DateTime?     @db.Timestamptz()
+  recordingUrl     String?       // Google Drive view link or local URL
+  recordingFileId  String?       // Google Drive file ID
+  recordingDurationSeconds Int?  // Duration in seconds
+  payoutStatus     TeacherPayoutStatus @default(UNPAID)
+  payoutPaidAt     DateTime?           @db.Timestamptz()
+  payoutTransactionId String?          // Bank UTR or UPI transaction ref ID
+  payoutNotes      String?             // Admin payout notes or remark
+  payoutAmountMinor Int?               // Amount paid out in minor units (paise)
+  createdAt        DateTime      @default(now()) @db.Timestamptz()
+
+  teacherProfile TeacherProfile    @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  teacher        User              @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
+  student        User              @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
+  enrollment     Enrollment?       @relation(fields: [enrollmentId], references: [id])
+  trialRequest   TrialRequest?
+  recordings     LessonRecording[]
+
+  // Note: Partial unique index (WHERE status = 'SCHEDULED') added via raw SQL migration.
+  // Prevents same student being double-booked with same teacher at the same time.
+  // Allows multiple students at the same slot (group lessons).
+  @@index([teacherProfileId, startsAt])
+  @@index([teacherId, startsAt])
+  @@index([studentId, startsAt])
+  @@index([status])
+  @@index([enrollmentId])
+  @@index([groupRoomId])
+  @@index([trackingCode])
+  @@index([payoutStatus])
+}
+
+// ─── Lesson recordings ──────────────────────────────────────────────────────
+
+model LessonRecording {
+  id              String   @id @default(cuid())
+  lessonId        String
+  lesson          Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  fileUrl         String   // Google Drive URL or local URL
+  fileId          String?  // Google Drive file ID if uploaded to drive
+  fileName        String
+  fileSizeBytes   Int
+  durationSeconds Int?
+  storageBackend  String   @default("GOOGLE_DRIVE") // GOOGLE_DRIVE or LOCAL
+  createdAt       DateTime @default(now()) @db.Timestamptz()
+
+  @@index([lessonId])
+}
+
+// ─── Course catalog ──────────────────────────────────────────────────────────
+
+model Course {
+  id              String      @id @default(cuid())
+  title           String
+  slug            String      @unique
+  discipline      Discipline  // INSTRUMENT | VOCALS | DANCE
+  instrument      String      // "Piano", "Tabla", etc — matches teacher instrument tags
+  level           CourseLevel // BEGINNER | INTERMEDIATE | ADVANCED
+  accreditation   String?     // "Trinity Grade 3", "ABRSM Grade 2", null if none
+  description     String      @db.Text
+  syllabusSummary String      @db.Text
+  priceMinorUnits Int         // store money as integer paise/cents, never float
+  currency        String      @default("INR")
+  sessionCount    Int         // total lessons included in the course
+  durationWeeks   Int         // recommended course duration
+  thumbnailUrl    String?
+  startDate       DateTime?   @db.Timestamptz()
+  endDate         DateTime?   @db.Timestamptz()
+  isPublished     Boolean     @default(false)
+  createdAt       DateTime    @default(now()) @db.Timestamptz()
+  updatedAt       DateTime    @updatedAt @db.Timestamptz()
+
+  teachers    CourseTeacher[]
+  lessons     CourseLesson[]
+  enrollments Enrollment[]
+
+  @@index([isPublished])
+  @@index([discipline])
+  @@index([instrument])
+  @@index([startDate])
+}
+
+model CourseTeacher {
+  id        String   @id @default(cuid())
+  courseId  String
+  teacherId String   // userId of teacher
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teacher   User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@unique([courseId, teacherId])
+  @@index([courseId])
+  @@index([teacherId])
+}
+
+model CourseLesson {
+  id                String    @id @default(cuid())
+  courseId          String
+  course            Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonNumber      Int       // 1, 2, 3...
+  title             String    // e.g. "Lesson 1: Introduction to Posture"
+  description       String?   @db.Text
+  durationMinutes   Int       @default(60)
+  scheduledStartsAt DateTime? @db.Timestamptz()
+  teacherId         String?   // which teacher is allotted to take this specific lesson
+  teacher           User?     @relation("CourseLessonTeacher", fields: [teacherId], references: [id])
+  createdAt         DateTime  @default(now()) @db.Timestamptz()
+  updatedAt         DateTime  @updatedAt @db.Timestamptz()
+
+  @@index([courseId])
+  @@index([teacherId])
+  @@index([scheduledStartsAt])
+}
+
+// ─── Enrollment & payments ───────────────────────────────────────────────────
+
+model Enrollment {
+  id                String           @id @default(cuid())
+  studentId         String
+  student           User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId           String
+  course             Course           @relation(fields: [courseId], references: [id])
+  teacherId         String?          // admin-assigned teacher (userId), can be reassigned
+  paymentId         String           @unique
+  payment           Payment          @relation(fields: [paymentId], references: [id])
+  sessionsRemaining Int
+  status            EnrollmentStatus @default(ACTIVE)
+  startedAt         DateTime         @default(now()) @db.Timestamptz()
+  completedAt       DateTime?        @db.Timestamptz()
+
+  lessons     Lesson[]
+  certificate Certificate?
+
+  @@index([studentId])
+  @@index([courseId])
+  @@index([status])
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  studentId        String
+  student          User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  amountMinorUnits Int
+  currency         String
+  gateway          String        // "razorpay"
+  gatewayOrderId   String        @unique
+  gatewayPaymentId String?       @unique // unique ensures idempotent webhook processing
+  status           PaymentStatus @default(CREATED)
+  createdAt        DateTime      @default(now()) @db.Timestamptz()
+
+  enrollment Enrollment?
+
+  @@index([studentId])
+  @@index([status])
+}
+
+// ─── Certificates ────────────────────────────────────────────────────────────
+
+model Certificate {
+  id                String     @id @default(cuid())
+  studentId         String
+  enrollmentId      String     @unique
+  enrollment        Enrollment @relation(fields: [enrollmentId], references: [id])
+  certificateNumber String     @unique // human-readable, e.g. GSM-2026-000482
+  issuedAt          DateTime   @default(now()) @db.Timestamptz()
+  pdfUrl            String
+
+  @@index([studentId])
+}
+
+// ─── Events ──────────────────────────────────────────────────────────────────
+
+model Event {
+  id              String    @id @default(cuid())
+  title           String
+  description     String    @db.Text
+  type            EventType // WORKSHOP | RECITAL | MASTERCLASS | EXAM_PREP
+  startsAt        DateTime  @db.Timestamptz()
+  durationMinutes Int
+  capacity        Int?      // null = unlimited
+  isPublished     Boolean   @default(false)
+  teacherId       String?   // allotted faculty mentor / instructor
+  teacher         User?     @relation("TeacherEvents", fields: [teacherId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now()) @db.Timestamptz()
+
+  registrations EventRegistration[]
+
+  @@index([isPublished, startsAt])
+  @@index([teacherId])
+}
+
+model EventRegistration {
+  id           String   @id @default(cuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  registeredAt DateTime @default(now()) @db.Timestamptz()
+
+  @@unique([eventId, studentId])
+  @@index([studentId])
+}
+
+// ─── Support tickets ─────────────────────────────────────────────────────────
+
+model SupportTicket {
+  id        String         @id @default(cuid())
+  userId    String         // can be student or teacher
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   String
+  category  TicketCategory
+  status    TicketStatus   @default(OPEN)
+  createdAt DateTime       @default(now()) @db.Timestamptz()
+  updatedAt DateTime       @updatedAt @db.Timestamptz()
+
+  messages TicketMessage[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model TicketMessage {
+  id         String        @id @default(cuid())
+  ticketId   String
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderId   String
+  senderRole Role
+  body       String        @db.Text
+  createdAt  DateTime      @default(now()) @db.Timestamptz()
+
+  @@index([ticketId, createdAt])
+}
+
+// ─── Trial Lesson Requests (Assisted Allotment) ─────────────────────────────
+
+model TrialRequest {
+  id                 String             @id @default(cuid())
+  studentId          String
+  student            User               @relation("StudentTrialRequests", fields: [studentId], references: [id], onDelete: Cascade)
+  category           String             // "Instruments" | "Singing"
+  instrument         String             // "Piano", "Bollywood & Light Vocals (North India)", etc.
+  requestedStartsAt  DateTime           @db.Timestamptz()
+  preferredTimeSlot  String             // "9:30 AM"
+  timezone           String             @default("UTC")
+  ageGroup           String             // "Kids (4 - 7 yrs)", "Children (8 - 12 yrs)", "Teens (13 - 17 yrs)", "Adults (18+ yrs)"
+  studentName        String
+  studentEmail       String
+  studentPhone       String?
+  studentNotes       String?            @db.Text
+  status             TrialRequestStatus @default(PENDING)
+  allottedTeacherId  String?
+  allottedTeacher    User?              @relation("TeacherAllottedTrials", fields: [allottedTeacherId], references: [id])
+  allottedLessonId   String?            @unique
+  allottedLesson     Lesson?            @relation(fields: [allottedLessonId], references: [id])
+  allottedAt         DateTime?          @db.Timestamptz()
+  createdAt          DateTime           @default(now()) @db.Timestamptz()
+  updatedAt          DateTime           @updatedAt @db.Timestamptz()
+
+  @@index([studentId])
+  @@index([status])
+  @@index([allottedTeacherId])
+}
+
+// ─── Direct Messaging (Secure 1:1 Teacher ↔ Student) ────────────────────────
+
+/// A conversation between exactly one teacher and one student.
+/// Scoped to their lesson/enrollment relationship.
+model Conversation {
+  id         String   @id @default(cuid())
+  teacherId  String   // userId of the teacher
+  studentId  String   // userId of the student
+  instrument String?  // the instrument/subject context
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now()) @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @db.Timestamptz()
+
+  teacher  User            @relation("ConversationTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  student  User            @relation("ConversationStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  messages DirectMessage[]
+
+  @@unique([teacherId, studentId])
+  @@index([teacherId])
+  @@index([studentId])
+  @@index([updatedAt])
+}
+
+/// A single message within a conversation.
+/// Supports text, file attachments (PDF/DOC only), and assignments.
+/// PII filtering is enforced at the application layer before persistence.
+model DirectMessage {
+  id             String      @id @default(cuid())
+  conversationId String
+  senderId       String      // userId of the sender
+  messageType    MessageType @default(TEXT)
+  body           String?     @db.Text // text content (sanitized, PII-stripped)
+  fileName       String?     // original filename for FILE/ASSIGNMENT types
+  fileUrl        String?     // storage URL for uploaded file
+  fileSizeBytes  Int?        // file size for display
+  isRead         Boolean     @default(false)
+  createdAt      DateTime    @default(now()) @db.Timestamptz()
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@index([isRead])
+}

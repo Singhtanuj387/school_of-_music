@@ -1,0 +1,37 @@
+import { requireRole } from "@/lib/auth-helpers";
+import { Role } from "@prisma/client";
+import { getConversations, getMessageableUsers } from "@/actions/messaging";
+import { MessagingContainer } from "@/components/messaging/MessagingContainer";
+
+export const metadata = {
+  title: "Messages | Faculty Studio",
+  description: "Securely message your students. Share resources and assignments.",
+};
+
+export default async function TeacherMessagesPage() {
+  await requireRole(Role.TEACHER);
+
+  const [conversations, messageableUsers] = await Promise.all([
+    getConversations(),
+    getMessageableUsers(),
+  ]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-bold text-heading tracking-tight">
+          Messages
+        </h1>
+        <p className="text-xs text-body-muted mt-1">
+          Securely communicate with your students. Share resources and assignments.
+        </p>
+      </div>
+
+      <MessagingContainer
+        conversations={conversations}
+        messageableUsers={messageableUsers}
+        callerRole="TEACHER"
+      />
+    </div>
+  );
+}

@@ -1,0 +1,168 @@
+import { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { uploadToDrive, isDriveConfigured } from "@/lib/google-drive";
+import { logger } from "@/lib/logger";
+import fs from "fs";
+import path from "path";
+
+/**
+ * POST /api/lessons/[id]/recording
+ *
+ * Automatically called when a lesson ends or client leaves.
+ * Receives the recorded lesson video/audio (WebM/MP4).
+ *
+ * 1. Authenticates session (Teacher, Student, or Admin).
+ * 2. Uploads to configured Google Drive folder if available.
+ * 3. Gracefully falls back to local server storage if Google Drive is not configured or hits personal quota.
+ * 4. Persists the recording metadata to Lesson and LessonRecording models.
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id: lessonId } = await params;
+
+    // 1. Auth check
+    const session = await auth();
+    if (!session?.user?.id) {
+      return Response.json(
+        { error: "Unauthorized. Must be signed in to upload recordings." },
+        { status: 401 },
+      );
+    }
+
+    // 2. Fetch lesson to verify participation & metadata
+    const lesson = await db.lesson.findUnique({
+      where: { id: lessonId },
+      include: {
+        teacher: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true } },
+      },
+    });
+
+    if (!lesson) {
+      return Response.json({ error: "Lesson not found." }, { status: 404 });
+    }
+
+    const userId = session.user.id;
+    const isParticipant =
+      lesson.teacherId === userId ||
+      lesson.studentId === userId ||
+      session.user.role === "ADMIN";
+
+    if (!isParticipant) {
+      return Response.json(
+        { error: "Forbidden. Only participants or admins can save recordings." },
+        { status: 403 },
+      );
+    }
+
+    // 3. Parse uploaded file from formData
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+    const durationSecondsRaw = formData.get("durationSeconds") as string | null;
+    const durationSeconds = durationSecondsRaw
+      ? parseInt(durationSecondsRaw, 10)
+      : null;
+
+    if (!file) {
+      return Response.json(
+        { error: "No recording file provided in request." },
+        { status: 400 },
+      );
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const safeInstrument = (lesson.instrument || "Lesson")
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .trim();
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const fileName = `Gandharva_${safeInstrument}_${dateStamp}_${lessonId.slice(-6)}.webm`;
+    const mimeType = file.type || "video/webm";
+
+    let fileUrl = "";
+    let fileId: string | null = null;
+    let storageBackend: "GOOGLE_DRIVE" | "LOCAL" = "LOCAL";
+
+    // 4. Try Google Drive upload first
+    let driveError: string | null = null;
+    if (isDriveConfigured()) {
+      try {
+        const driveResult = await uploadToDrive(buffer, fileName, mimeType);
+        fileUrl = driveResult.fileUrl;
+        fileId = driveResult.fileId;
+        storageBackend = "GOOGLE_DRIVE";
+        logger.info(
+          { lessonId, fileId, fileName },
+          "Lesson recording successfully uploaded to Google Drive",
+        );
+      } catch (err: unknown) {
+        driveError = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          { error: driveError, lessonId },
+          "Google Drive upload encountered an error. Falling back to local storage...",
+        );
+      }
+    } else {
+      driveError = "Google Drive credentials not configured in environment.";
+    }
+
+    // 5. Fallback to local disk storage if Google Drive failed or not configured
+    if (storageBackend !== "GOOGLE_DRIVE") {
+      const recordingsDir = path.join(process.cwd(), "public", "recordings");
+      if (!fs.existsSync(recordingsDir)) {
+        fs.mkdirSync(recordingsDir, { recursive: true });
+      }
+
+      const localFilePath = path.join(recordingsDir, fileName);
+      fs.writeFileSync(localFilePath, buffer);
+      fileUrl = `/recordings/${fileName}`;
+      storageBackend = "LOCAL";
+
+      logger.info(
+        { lessonId, localFilePath, fileName },
+        "Lesson recording safely saved to local disk storage",
+      );
+    }
+
+    // 6. Persist to database
+    const recordingRecord = await db.lessonRecording.create({
+      data: {
+        lessonId,
+        fileUrl,
+        fileId,
+        fileName,
+        fileSizeBytes: buffer.length,
+        durationSeconds,
+        storageBackend,
+      },
+    });
+
+    await db.lesson.update({
+      where: { id: lessonId },
+      data: {
+        recordingUrl: fileUrl,
+        recordingFileId: fileId,
+        recordingDurationSeconds: durationSeconds,
+      },
+    });
+
+    return Response.json({
+      success: true,
+      recordingId: recordingRecord.id,
+      fileUrl,
+      fileId,
+      storageBackend,
+      driveError: driveError ? driveError : undefined,
+    });
+  } catch (error) {
+    logger.error({ error }, "Failed to process lesson recording upload");
+    const message =
+      error instanceof Error ? error.message : "Recording upload failed.";
+    return Response.json({ error: message }, { status: 500 });
+  }
+}

@@ -1,0 +1,180 @@
+import {
+  AudioPresets,
+  createLocalAudioTrack,
+  LocalAudioTrack,
+  Room,
+  TrackPublishOptions,
+} from "livekit-client";
+import { logger } from "@/lib/logger";
+
+export type AudioMode = "TALKING" | "PLAYING";
+
+/**
+ * WebRTC constraints for conversational speech.
+ * Default browser processors enabled for echo cancellation and ambient noise suppression.
+ */
+export const TALKING_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+};
+
+/**
+ * WebRTC constraints for uncompressed musical instrument performance.
+ * All dynamic compression, speech gates, and echo suppression are disabled
+ * to preserve harmonic overtone series, note sustain/decay, and natural dynamics.
+ */
+export const PLAYING_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+  channelCount: 2, // Stereo
+  sampleRate: 48000, // 48 kHz studio sample rate
+};
+
+/**
+ * LiveKit audio encoding presets corresponding to each audio mode.
+ */
+export function getAudioPublishOptions(mode: AudioMode): TrackPublishOptions {
+  if (mode === "TALKING") {
+    return {
+      audioPreset: AudioPresets.speech,
+      dtx: true, // Discontinuous Transmission saves bandwidth during pauses
+    };
+  }
+
+  return {
+    audioPreset: AudioPresets.musicHighQualityStereo,
+    forceStereo: true,
+    dtx: false, // Do NOT gate decaying notes or reverb tails
+    red: true, // Redundant Audio Data for packet loss recovery
+  };
+}
+
+/**
+ * Runtime audio mode switcher.
+ *
+ * Constraints are baked into MediaStreamTrack at creation. To switch mode:
+ * 1. Find and unpublish the existing mic track.
+ * 2. Stop the old media track.
+ * 3. Create a fresh LocalAudioTrack with the target constraint profile.
+ * 4. Publish the new track with specialized encoding options.
+ */
+export async function switchLocalAudioMode(
+  room: Room,
+  targetMode: AudioMode,
+  deviceId?: string,
+): Promise<LocalAudioTrack> {
+  const localParticipant = room.localParticipant;
+  const constraints =
+    targetMode === "PLAYING"
+      ? PLAYING_AUDIO_CONSTRAINTS
+      : TALKING_AUDIO_CONSTRAINTS;
+
+  logger.info({ targetMode, deviceId }, "Switching local audio track mode");
+
+  // 1. Unpublish and stop existing audio publication
+  for (const pub of localParticipant.audioTrackPublications.values()) {
+    if (pub.track) {
+      pub.track.stop();
+      if (pub.track.mediaStreamTrack) {
+        pub.track.mediaStreamTrack.stop();
+      }
+      await localParticipant.unpublishTrack(pub.track, true);
+    }
+  }
+
+  // 2. Create new local audio track with target constraint profile
+  let newTrack: LocalAudioTrack;
+  try {
+    newTrack = await createLocalAudioTrack({
+      ...constraints,
+      deviceId: deviceId ? { ideal: deviceId } : undefined,
+    });
+  } catch (err) {
+    logger.warn({ err, deviceId }, "Failed to create audio track with ideal deviceId, falling back to default mic");
+    newTrack = await createLocalAudioTrack(constraints);
+  }
+
+  // 3. Publish with high-fidelity or speech preset
+  const publishOptions = getAudioPublishOptions(targetMode);
+  await localParticipant.publishTrack(newTrack, publishOptions);
+
+  logger.info(
+    {
+      targetMode,
+      settings: newTrack.mediaStreamTrack.getSettings(),
+    },
+    "Successfully published new audio track",
+  );
+
+  return newTrack;
+}
+
+/**
+ * Web Audio API real-time RMS and Peak Level Analyser for VU Metering.
+ *
+ * Allows musician to see their instrument's raw input levels, check for dead mics,
+ * and ensure instrument attacks do not digitally clip.
+ */
+export function createAudioLevelMeter(
+  stream: MediaStream,
+  onLevelChange: (rms: number, peak: number) => void,
+): () => void {
+  let isRunning = true;
+  let animId: number | null = null;
+  let audioContext: AudioContext | null = null;
+
+  try {
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
+    audioContext = new AudioContextClass();
+
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.4;
+    source.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const tick = () => {
+      if (!isRunning) return;
+
+      analyser.getByteTimeDomainData(dataArray);
+
+      let sumSquares = 0;
+      let peak = 0;
+
+      for (let i = 0; i < dataArray.length; i++) {
+        // Center around 0 (-1.0 to 1.0)
+        const normalized = (dataArray[i] - 128) / 128;
+        const absVal = Math.abs(normalized);
+        if (absVal > peak) peak = absVal;
+        sumSquares += normalized * normalized;
+      }
+
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+
+      // Pass normalized values (0.0 to 1.0)
+      onLevelChange(Math.min(1, rms * 2.5), Math.min(1, peak));
+
+      animId = requestAnimationFrame(tick);
+    };
+
+    tick();
+  } catch (err) {
+    logger.warn({ err }, "Could not initialize Web Audio Analyser");
+  }
+
+  return () => {
+    isRunning = false;
+    if (animId !== null) cancelAnimationFrame(animId);
+    if (audioContext && audioContext.state !== "closed") {
+      audioContext.close().catch(() => {});
+    }
+  };
+}

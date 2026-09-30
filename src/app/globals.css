@@ -1,0 +1,273 @@
+@import "tailwindcss";
+
+/* ─── Gandharva School of Music: Phase 3 Classical & Modern Luxury Palette ───── */
+
+:root {
+  /* Core Palette Tokens */
+  --color-primary: #3C096C;
+  --color-primary-hover: #2D0752;
+  --color-primary-active: #240542;
+  --color-primary-subtle: #F5EEFC;
+
+  --color-accent: #FF7803;
+  --color-accent-hover: #E66C02;
+  --color-accent-active: #CC5F02;
+  --color-accent-dark: #C44E00; /* WCAG AA 4.73:1 on #FFFFFF */
+  --color-accent-subtle: #FFF4EB;
+
+  --color-cta: #9810FA;
+  --color-cta-hover: #8200DA;
+  --color-cta-active: #7000BC;
+  --color-cta-subtle: #FAF0FF;
+
+  --color-heading: #1E1A4D;
+  --color-body: #54595F;
+  --color-body-muted: #7A7F85;
+
+  --color-bg: #FFFFFF;
+  --color-bg-alt: #FDE6F3;
+  --color-surface-muted: #FCCEE8;
+  --color-surface-card: #FFFFFF;
+
+  /* Borders & Dividers */
+  --color-border-subtle: #F3D9E9;
+  --color-border-default: #E6BED8;
+  --color-border-strong: #D49EC1;
+
+  /* Semantic Derived States */
+  --color-success: #059669;
+  --color-success-muted: #ECFDF5;
+  --color-warning: #D97706;
+  --color-warning-muted: #FFFBEB;
+  --color-error: #DC2626;
+  --color-error-muted: #FEF2F2;
+  --color-info: #2563EB;
+  --color-info-muted: #EFF6FF;
+
+  /* Connection Quality Indicator */
+  --quality-excellent: #059669;
+  --quality-good: #65A30D;
+  --quality-poor: #D97706;
+  --quality-lost: #DC2626;
+
+  /* Shadows (Blush & Violet Ambient Hue) */
+  --shadow-sm: 0 1px 2px rgba(30, 26, 77, 0.05);
+  --shadow-md: 0 4px 12px rgba(30, 26, 77, 0.08);
+  --shadow-lg: 0 10px 28px rgba(30, 26, 77, 0.12);
+  --shadow-glow-cta: 0 0 24px rgba(152, 16, 250, 0.28);
+  --shadow-glow-accent: 0 0 24px rgba(255, 120, 3, 0.22);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Spacing Scale */
+  --space-page-x: clamp(1rem, 4vw, 3rem);
+  --space-page-y: clamp(1.5rem, 5vh, 4rem);
+
+  /* Motion & Easing: Emil Kowalski's Design Engineering Standards */
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-modal: 240ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ─── Tailwind v4 theme extension ──────────────────────────────────────────── */
+
+@theme inline {
+  /* Fonts: Vidaloka for artistic headings, DM Sans for body & UI */
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-vidaloka);
+  --font-serif: var(--font-vidaloka);
+  --font-mono: var(--font-geist-mono);
+
+  /* Core Palette Tokens */
+  --color-primary: #3C096C;
+  --color-primary-hover: #2D0752;
+  --color-primary-active: #240542;
+  --color-primary-subtle: #F5EEFC;
+
+  --color-accent: #FF7803;
+  --color-accent-hover: #E66C02;
+  --color-accent-active: #CC5F02;
+  --color-accent-dark: #C44E00;
+  --color-accent-subtle: #FFF4EB;
+
+  --color-cta: #9810FA;
+  --color-cta-hover: #8200DA;
+  --color-cta-active: #7000BC;
+  --color-cta-subtle: #FAF0FF;
+
+  --color-heading: #1E1A4D;
+  --color-body: #54595F;
+  --color-body-muted: #7A7F85;
+
+  --color-bg: #FFFFFF;
+  --color-bg-alt: #FDE6F3;
+  --color-surface-muted: #FCCEE8;
+  --color-surface-card: #FFFFFF;
+
+  /* Borders & Dividers */
+  --color-border-subtle: #F3D9E9;
+  --color-border-default: #E6BED8;
+  --color-border-strong: #D49EC1;
+
+  /* Semantic Derived States */
+  --color-success: #059669;
+  --color-success-muted: #ECFDF5;
+  --color-warning: #D97706;
+  --color-warning-muted: #FFFBEB;
+  --color-error: #DC2626;
+  --color-error-muted: #FEF2F2;
+  --color-info: #2563EB;
+  --color-info-muted: #EFF6FF;
+}
+
+/* ─── Base styles ──────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  border-color: var(--color-border-subtle);
+}
+
+/* ─── Dark Mode & Studio Classroom Border Elimination ──────────────────────── */
+[class*="bg-[#0E0C18]"] *,
+[class*="bg-[#0D0517]"] *,
+[class*="bg-[#140A26]"] *,
+[class*="bg-[#161226]"] *,
+[class*="bg-[#1A0B2E]"] *,
+[class*="bg-[#160A29]"] *,
+[class*="bg-[#10061E]"] *,
+[class*="bg-[#1B0D33]"] *,
+[class*="bg-[#1B0C33]"] * {
+  border-color: transparent !important;
+}
+
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-body);
+  font-family: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+}
+
+/* ─── Focus styles ─────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--color-cta);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ─── Selection ────────────────────────────────────────────────────────────── */
+
+::selection {
+  background: var(--color-surface-muted);
+  color: var(--color-heading);
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-alt);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* ─── Reduced motion ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Utility classes & Emil Kowalski Motion ───────────────────────────────── */
+
+/* Tactile button press feedback */
+.btn-tactile {
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.btn-tactile:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Glassmorphism surface with blush tint */
+.glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--color-border-subtle);
+}
+
+/* Sub-300ms fast fade in up */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up var(--duration-normal) var(--ease-out) both;
+}
+
+/* Pulse ring for live status badges */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 120, 3, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(255, 120, 3, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 120, 3, 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+/* Authentic Vidaloka font class from live gandharvaschoolofmusic.com */
+.custom-font-2 {
+  font-family: var(--font-vidaloka), serif;
+}
