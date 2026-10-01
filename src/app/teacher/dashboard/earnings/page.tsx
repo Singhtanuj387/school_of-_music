@@ -81,7 +81,6 @@ export default async function TeacherEarningsPage() {
       initialItems={initialItems}
       payoutPerSessionRupees={payoutPerSessionRupees}
       teacherUpiId={profile?.upiId}
-      teacherQrUrl={profile?.paymentQrCodeUrl}
     />
   );
 }

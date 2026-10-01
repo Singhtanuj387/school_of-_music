@@ -14,6 +14,8 @@ import {
   GraduationCap,
   ArrowRight,
 } from "lucide-react";
+import { CourseEnrollmentRequestModal } from "@/components/courses/CourseEnrollmentRequestModal";
+import { CourseEmiBreakdown } from "@/components/courses/CourseEmiBreakdown";
 
 export default async function PublicCourseDetailPage({
   params,
@@ -34,9 +36,33 @@ export default async function PublicCourseDetailPage({
   const priceFormatted = `₹${(course.priceMinorUnits / 100).toLocaleString("en-IN")}`;
   const syllabusItems = course.syllabusSummary.split("•").map((s) => s.trim()).filter(Boolean);
 
-  const enrollUrl = user
-    ? `/student/dashboard/courses/${course.slug}`
-    : `/login?callbackUrl=/student/dashboard/courses/${course.slug}`;
+  let isAlreadyEnrolled = false;
+  let pendingRequest: {
+    id: string;
+    status: string;
+    paymentPlan: any;
+    createdAt: string;
+  } | null = null;
+
+  if (user) {
+    const [enrollment, req] = await Promise.all([
+      db.enrollment.findFirst({
+        where: { studentId: user.id, courseId: course.id, status: "ACTIVE" },
+      }),
+      db.courseEnrollmentRequest.findFirst({
+        where: { studentId: user.id, courseId: course.id, status: "PENDING" },
+      }),
+    ]);
+    isAlreadyEnrolled = !!enrollment;
+    if (req) {
+      pendingRequest = {
+        id: req.id,
+        status: req.status,
+        paymentPlan: req.paymentPlan,
+        createdAt: req.createdAt.toISOString(),
+      };
+    }
+  }
 
   return (
     <div className="min-h-screen bg-bg text-body py-12 px-4 sm:px-6 lg:px-8">
@@ -129,26 +155,44 @@ export default async function PublicCourseDetailPage({
             </div>
           </div>
 
-          <div className="pt-6 border-t border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-body-muted">Course Tuition:</span>
-                <CurrencySelector variant="compact" />
+          {/* Tuition Fee, EMI Breakdown & Admission Request */}
+          <div className="pt-6 border-t border-border-subtle space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-body-muted">Course Tuition:</span>
+                  <CurrencySelector variant="compact" />
+                </div>
+                <PriceDisplay
+                  priceMinorUnits={course.priceMinorUnits}
+                  size="3xl"
+                  showOriginalINR
+                />
               </div>
-              <PriceDisplay
-                priceMinorUnits={course.priceMinorUnits}
-                size="3xl"
-                showOriginalINR
-              />
+
+              <div className="text-xs text-body-muted sm:text-right">
+                <span className="font-semibold text-accent-dark">
+                  EMI Available from ₹{Math.round(course.priceMinorUnits / 6 / 100).toLocaleString("en-IN")}/mo
+                </span>
+                <p className="text-[11px] text-body-muted">
+                  3 and 6 month zero-interest plans
+                </p>
+              </div>
             </div>
 
-            <Link
-              href={enrollUrl}
-              className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-cta hover:bg-cta-hover active:bg-cta-active text-white font-bold text-sm transition-all shadow-md shadow-cta/25 btn-tactile"
-            >
-              <span>{user ? "Proceed to Enroll" : "Sign In to Enroll"}</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+            <CourseEmiBreakdown priceMinorUnits={course.priceMinorUnits} />
+
+            <CourseEnrollmentRequestModal
+              courseId={course.id}
+              courseTitle={course.title}
+              courseSlug={course.slug}
+              sessionCount={course.sessionCount}
+              durationWeeks={course.durationWeeks}
+              priceMinorUnits={course.priceMinorUnits}
+              isAlreadyEnrolled={isAlreadyEnrolled}
+              pendingRequest={pendingRequest}
+              isAuthenticated={!!user}
+            />
           </div>
         </div>
       </div>

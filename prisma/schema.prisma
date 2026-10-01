@@ -59,6 +59,27 @@ enum EnrollmentStatus {
   REFUNDED
 }
 
+enum CoursePaymentPlan {
+  FULL_PAYMENT
+  EMI_3_MONTHS
+  EMI_6_MONTHS
+}
+
+enum CourseEmiStatus {
+  NOT_APPLICABLE
+  PENDING_PAYMENT
+  FIRST_INSTALLMENT_PAID
+  PARTIALLY_PAID
+  FULLY_PAID
+}
+
+enum CourseRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum PaymentStatus {
   CREATED
   PAID
@@ -138,6 +159,7 @@ model User {
   eventRegistrations EventRegistration[]
   trialRequestsAsStudent  TrialRequest[]       @relation("StudentTrialRequests")
   allottedTrialsAsTeacher TrialRequest[]       @relation("TeacherAllottedTrials")
+  courseRequestsAsStudent CourseEnrollmentRequest[] @relation("StudentCourseRequests")
   courseTeachers          CourseTeacher[]
   allottedCourseLessons   CourseLesson[]       @relation("CourseLessonTeacher")
   eventsAsTeacher         Event[]              @relation("TeacherEvents")
@@ -392,6 +414,7 @@ model Course {
   teachers       CourseTeacher[]
   lessons        CourseLesson[]
   enrollments    Enrollment[]
+  enrollmentRequests CourseEnrollmentRequest[]
   resourceShares ResourceShare[]
 
   @@index([isPublished])
@@ -441,8 +464,11 @@ model Enrollment {
   courseId           String
   course             Course           @relation(fields: [courseId], references: [id])
   teacherId         String?          // admin-assigned teacher (userId), can be reassigned
-  paymentId         String           @unique
-  payment           Payment          @relation(fields: [paymentId], references: [id])
+  paymentId         String?          @unique
+  payment           Payment?         @relation(fields: [paymentId], references: [id])
+  paymentPlan       CoursePaymentPlan @default(FULL_PAYMENT)
+  emiStatus         CourseEmiStatus   @default(NOT_APPLICABLE)
+  adminNotes        String?          @db.Text
   sessionsRemaining Int
   status            EnrollmentStatus @default(ACTIVE)
   startedAt         DateTime         @default(now()) @db.Timestamptz()
@@ -638,6 +664,9 @@ enum NotificationType {
   LESSON_CANCELLED
   LESSON_REMINDER
   NEW_ENROLLMENT
+  NEW_COURSE_REQUEST
+  COURSE_REQUEST_APPROVED
+  COURSE_REQUEST_REJECTED
   NEW_TRIAL_REQUEST
   TRIAL_ALLOTTED
   NEW_MESSAGE
@@ -715,3 +744,27 @@ model ResourceShare {
   @@index([resourceId])
   @@index([courseId])
 }
+
+/// Course enrollment request submitted by a student to be approved and allotted by academy admin.
+model CourseEnrollmentRequest {
+  id                String              @id @default(cuid())
+  studentId         String
+  student           User                @relation("StudentCourseRequests", fields: [studentId], references: [id], onDelete: Cascade)
+  courseId          String
+  course            Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  paymentPlan       CoursePaymentPlan   @default(FULL_PAYMENT)
+  status            CourseRequestStatus @default(PENDING)
+  studentNotes      String?             @db.Text
+  adminNotes        String?             @db.Text
+  preferredSchedule String?
+  allottedTeacherId String?             // if approved, teacher assigned
+  enrollmentId      String?             // created enrollment id upon approval
+  createdAt         DateTime            @default(now()) @db.Timestamptz()
+  updatedAt         DateTime            @updatedAt @db.Timestamptz()
+
+  @@index([studentId])
+  @@index([courseId])
+  @@index([status])
+  @@index([createdAt])
+}
+

@@ -17,6 +17,9 @@ export {
   TicketCategory,
   TicketStatus,
   MessageType,
+  CoursePaymentPlan,
+  CourseEmiStatus,
+  CourseRequestStatus,
 } from "@prisma/client";
 
 

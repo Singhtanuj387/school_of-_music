@@ -40,12 +40,10 @@ export function TeacherPaymentManager({
   initialItems,
   payoutPerSessionRupees,
   teacherUpiId,
-  teacherQrUrl,
 }: {
   initialItems: TeacherPayoutItem[];
   payoutPerSessionRupees: number;
   teacherUpiId?: string | null;
-  teacherQrUrl?: string | null;
 }) {
   const [items] = useState<TeacherPayoutItem[]>(initialItems);
   const [searchQuery, setSearchQuery] = useState("");
@@ -200,10 +198,9 @@ export function TeacherPaymentManager({
               {teacherUpiId ? (
                 <>
                   UPI ID: <span className="font-mono font-bold text-heading">{teacherUpiId}</span>
-                  {teacherQrUrl && " • Payout QR Code Attached"}
                 </>
               ) : (
-                "Please configure your UPI ID and payment QR code in Faculty Profile to receive automated session disbursements."
+                "Please configure your UPI ID in Faculty Profile to receive automated session disbursements."
               )}
             </p>
           </div>

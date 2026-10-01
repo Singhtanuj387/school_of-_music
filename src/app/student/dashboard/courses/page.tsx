@@ -4,6 +4,11 @@ import { Role, EnrollmentStatus } from "@prisma/client";
 import { CourseCard } from "@/components/dashboard/CourseCard";
 import { TrialStatusStrip } from "@/components/dashboard/TrialStatusStrip";
 import { SplitHeading } from "@/components/ui/SplitHeading";
+import {
+  StudentEnrolledCoursesSection,
+  type EnrolledCourseItem,
+  type CourseRequestItem,
+} from "@/components/courses/StudentEnrolledCoursesSection";
 
 export const metadata = {
   title: "Course Catalog | Student Portal | Gandharva School of Music",
@@ -19,7 +24,7 @@ export default async function StudentCoursesPage({
   const user = await requireRole(Role.STUDENT);
   const { discipline } = await searchParams;
 
-  const [trialStatus, activeEnrollment, courses] = await Promise.all([
+  const [trialStatus, activeEnrollment, courses, allMyEnrollments, myRequests] = await Promise.all([
     db.studentTrialStatus.findUnique({
       where: { studentId: user.id },
     }),
@@ -40,10 +45,71 @@ export default async function StudentCoursesPage({
       },
       orderBy: { priceMinorUnits: "asc" },
     }),
+    db.enrollment.findMany({
+      where: { studentId: user.id },
+      include: { course: true },
+      orderBy: { startedAt: "desc" },
+    }),
+    db.courseEnrollmentRequest.findMany({
+      where: { studentId: user.id },
+      include: { course: true },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
+
+  const teacherIds = allMyEnrollments
+    .map((e) => e.teacherId)
+    .filter(Boolean) as string[];
+
+  const dbTeachers =
+    teacherIds.length > 0
+      ? await db.user.findMany({
+          where: { id: { in: teacherIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+  const teacherMap = new Map<string, string>();
+  for (const t of dbTeachers) {
+    teacherMap.set(t.id, t.name || "Assigned Teacher");
+  }
+
+  const formattedEnrollments: EnrolledCourseItem[] = allMyEnrollments.map((e) => ({
+    id: e.id,
+    courseTitle: e.course.title,
+    courseSlug: e.course.slug,
+    discipline: e.course.discipline,
+    instrument: e.course.instrument,
+    sessionsTotal: e.course.sessionCount,
+    sessionsRemaining: e.sessionsRemaining,
+    status: e.status,
+    paymentPlan: e.paymentPlan,
+    emiStatus: e.emiStatus,
+    teacherName: e.teacherId ? teacherMap.get(e.teacherId) || null : null,
+    startedAt: e.startedAt.toISOString(),
+  }));
+
+  const formattedRequests: CourseRequestItem[] = myRequests.map((r) => ({
+    id: r.id,
+    courseTitle: r.course.title,
+    courseSlug: r.course.slug,
+    discipline: r.course.discipline,
+    instrument: r.course.instrument,
+    paymentPlan: r.paymentPlan,
+    status: r.status,
+    studentNotes: r.studentNotes,
+    adminNotes: r.adminNotes,
+    createdAt: r.createdAt.toISOString(),
+  }));
 
   return (
     <div className="space-y-8">
+      {/* Active Enrolled Courses & Course Requests Status */}
+      <StudentEnrolledCoursesSection
+        enrollments={formattedEnrollments}
+        requests={formattedRequests}
+      />
+
       {/* Trial / Session status indicator at top (high commercial conversion priority) */}
       <TrialStatusStrip
         data={{

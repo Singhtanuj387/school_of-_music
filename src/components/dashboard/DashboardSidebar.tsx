@@ -52,7 +52,7 @@ const STUDENT_NAV_ITEMS = [
     icon: MessageSquare,
   },
   {
-    label: "Course Catalog",
+    label: "Courses & Catalog",
     href: "/student/dashboard/courses",
     icon: BookOpen,
   },

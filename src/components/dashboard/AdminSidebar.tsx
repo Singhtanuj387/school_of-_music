@@ -48,9 +48,14 @@ const navItems: NavItem[] = [
     icon: BookOpen,
   },
   {
-    name: "1:1 Course Scheduling",
-    href: "/admin/enrollments",
+    name: "Student Courses",
+    href: "/admin/student-courses",
     icon: GraduationCap,
+  },
+  {
+    name: "1:1 Lesson Scheduling",
+    href: "/admin/enrollments",
+    icon: Calendar,
   },
   {
     name: "Trial Requests",

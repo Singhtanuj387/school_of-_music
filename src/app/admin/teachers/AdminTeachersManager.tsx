@@ -15,7 +15,6 @@ import {
   GraduationCap,
   Sparkles,
   ExternalLink,
-  QrCode,
   CreditCard,
   X,
   FileText,
@@ -45,7 +44,6 @@ export interface AdminTeacherProfileData {
   hourlyRate: number; // paise
   payoutPerSession: number; // paise
   upiId: string | null;
-  paymentQrCodeUrl: string | null;
   isPublished: boolean;
   approvalStatus: TeacherApprovalStatus;
   approvedAt: string | null;

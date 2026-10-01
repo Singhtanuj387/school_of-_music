@@ -1,12 +1,9 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
-import Image from "next/image";
+import { useState, useTransition } from "react";
 import {
   updateTeacherProfileAction,
   updateTeacherPaymentDetailsAction,
-  uploadTeacherPaymentQrAction,
-  removeTeacherPaymentQrAction,
 } from "@/actions/teacher";
 import { updateProfileAction, changePasswordAction } from "@/actions/profile";
 import { POPULAR_TIMEZONES, formatDeterministicDate } from "@/lib/timezone";
@@ -26,11 +23,7 @@ import {
   ArrowRightLeft,
   X,
   Plus,
-  QrCode,
   CreditCard,
-  Upload,
-  Trash2,
-  ExternalLink,
   Clock,
   CheckCircle2,
 } from "lucide-react";
@@ -54,7 +47,6 @@ interface TeacherProfileEditorProps {
     hourlyRate: number;
     payoutPerSession: number;
     upiId?: string;
-    paymentQrCodeUrl?: string | null;
     isPublished: boolean;
     approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
     approvedAt?: string | null;
@@ -98,22 +90,11 @@ export function TeacherProfileEditor({
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Payment credentials fields
+  // Payment credentials fields (UPI ID only)
   const [upiId, setUpiId] = useState(profile?.upiId || "");
-  const [paymentQrCodeUrl, setPaymentQrCodeUrl] = useState<string | null>(
-    profile?.paymentQrCodeUrl || null,
-  );
   const [isPendingPayment, startPaymentTransition] = useTransition();
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-
-  const [isUploadingQr, setIsUploadingQr] = useState(false);
-  const [isRemovingQr, setIsRemovingQr] = useState(false);
-  const [qrMessage, setQrMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const qrFileInputRef = useRef<HTMLInputElement>(null);
 
   // Password fields
   const [currentPassword, setCurrentPassword] = useState("");
@@ -137,98 +118,6 @@ export function TeacherProfileEditor({
         setTimeout(() => setPaymentSuccess(false), 3500);
       }
     });
-  };
-
-  const handleQrFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setQrMessage({
-        type: "error",
-        text: "QR code image exceeds 5MB limit. Please upload a smaller file.",
-      });
-      return;
-    }
-
-    const validTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-      "image/svg+xml",
-    ];
-    if (!validTypes.includes(file.type.toLowerCase())) {
-      setQrMessage({
-        type: "error",
-        text: "Please upload a valid image file (PNG, JPG, WebP, or SVG).",
-      });
-      return;
-    }
-
-    setIsUploadingQr(true);
-    setQrMessage(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await uploadTeacherPaymentQrAction(formData);
-
-      if (!res.success || !res.paymentQrCodeUrl) {
-        setQrMessage({
-          type: "error",
-          text: res.error || "Failed to upload QR code.",
-        });
-      } else {
-        setPaymentQrCodeUrl(res.paymentQrCodeUrl);
-        setQrMessage({
-          type: "success",
-          text: "Payment QR code uploaded and saved successfully!",
-        });
-        setTimeout(() => setQrMessage(null), 4000);
-      }
-    } catch {
-      setQrMessage({
-        type: "error",
-        text: "An unexpected error occurred while uploading QR code.",
-      });
-    } finally {
-      setIsUploadingQr(false);
-      if (qrFileInputRef.current) {
-        qrFileInputRef.current.value = "";
-      }
-    }
-  };
-
-  const handleRemoveQrCode = async () => {
-    if (!confirm("Are you sure you want to remove your payout QR code?")) return;
-
-    setIsRemovingQr(true);
-    setQrMessage(null);
-
-    try {
-      const res = await removeTeacherPaymentQrAction();
-      if (!res.success) {
-        setQrMessage({
-          type: "error",
-          text: res.error || "Failed to remove QR code.",
-        });
-      } else {
-        setPaymentQrCodeUrl(null);
-        setQrMessage({
-          type: "success",
-          text: "Payment QR code removed successfully.",
-        });
-        setTimeout(() => setQrMessage(null), 3000);
-      }
-    } catch {
-      setQrMessage({
-        type: "error",
-        text: "Failed to remove QR code.",
-      });
-    } finally {
-      setIsRemovingQr(false);
-    }
   };
 
   const toggleExpert = (inst: string) => {
@@ -794,17 +683,16 @@ export function TeacherProfileEditor({
           </div>
         </form>
       </div>
-
-      {/* ── Institutional Payout & Remuneration Details ── */}
+      {/* ── Institutional Payout & Remuneration Details (UPI ID Only) ── */}
       <div className="rounded-2xl border border-border-default bg-white p-6 shadow-xs space-y-6">
         <div className="border-b border-border-default pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="font-serif text-lg font-bold text-heading flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-accent" />
-              <span>Payout & Banking Details (UPI ID & QR Code)</span>
+              <span>Payout & Banking Details (UPI ID)</span>
             </h2>
             <p className="text-xs text-body mt-0.5 max-w-xl">
-              Enter your UPI ID and upload your payment QR code. Gandharva administration uses these verified coordinates to disburse your 1:1 session remuneration directly to your bank account.
+              Enter your UPI ID (VPA). Gandharva administration uses this verified UPI ID to disburse your 1:1 session remuneration directly to your bank account.
             </p>
           </div>
 
@@ -814,185 +702,64 @@ export function TeacherProfileEditor({
           </div>
         </div>
 
-        {/* Status notification banner */}
-        {qrMessage && (
-          <div
-            className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 font-medium ${
-              qrMessage.type === "success"
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                : "bg-red-50 border-red-200 text-red-700"
-            }`}
-          >
-            {qrMessage.type === "success" ? (
-              <Check className="w-4 h-4 shrink-0 text-emerald-600" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-            )}
-            <span>{qrMessage.text}</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {/* Column 1: UPI ID Configuration */}
-          <form onSubmit={handleSavePaymentDetails} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-heading flex items-center justify-between">
-                <span>Direct UPI ID</span>
-                <span className="text-[10px] text-body font-normal font-sans">
-                  e.g. name@okhdfcbank, 9876543210@paytm
-                </span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  placeholder="yourname@okbank or 9876543210@upi"
-                  className="w-full rounded-xl bg-white border border-border-default pl-3.5 pr-10 py-2.5 text-xs text-heading font-mono placeholder:font-sans placeholder-body/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-xs"
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-body/50 pointer-events-none">
-                  <CreditCard className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-[11px] text-body">
-                Remuneration is directly credited to the bank account linked with this VPA.
-              </p>
-            </div>
-
-            {paymentError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-600" />
-                <span>{paymentError}</span>
-              </div>
-            )}
-
-            {paymentSuccess && (
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
-                <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                <span>UPI ID updated successfully!</span>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isPendingPayment || !upiId.trim()}
-              className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition-all shadow-xs disabled:opacity-40 cursor-pointer active:scale-[0.98] inline-flex items-center gap-2"
-            >
-              {isPendingPayment ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving UPI ID...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Save UPI ID</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Column 2: Payment QR Code Upload & Preview */}
-          <div className="space-y-3 p-5 rounded-2xl bg-neutral-50/70 border border-border-default/80">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-heading flex items-center gap-1.5">
-                <QrCode className="w-4 h-4 text-accent" />
-                <span>Payment QR Code</span>
+        <form onSubmit={handleSavePaymentDetails} className="space-y-4 max-w-lg">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-heading flex items-center justify-between">
+              <span>Direct UPI ID</span>
+              <span className="text-[10px] text-body font-normal font-sans">
+                e.g. name@okhdfcbank, 9876543210@paytm, user@ybl
               </span>
-
-              {paymentQrCodeUrl && (
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-emerald-600" />
-                  Uploaded
-                </span>
-              )}
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                required
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                placeholder="yourname@okbank or 9876543210@upi"
+                className="w-full rounded-xl bg-white border border-border-default pl-3.5 pr-10 py-2.5 text-xs text-heading font-mono placeholder:font-sans placeholder-body/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-xs"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-body/50 pointer-events-none">
+                <CreditCard className="w-4 h-4" />
+              </div>
             </div>
-
-            {paymentQrCodeUrl ? (
-              <div className="space-y-3.5">
-                <div className="relative group w-44 h-44 mx-auto rounded-2xl overflow-hidden border-2 border-primary/20 bg-white p-2 shadow-sm flex items-center justify-center">
-                  <Image
-                    src={paymentQrCodeUrl}
-                    alt="Teacher Payment QR Code"
-                    width={160}
-                    height={160}
-                    className="object-contain w-full h-full rounded-xl"
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[1px]">
-                    <a
-                      href={paymentQrCodeUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 rounded-xl bg-white text-heading hover:bg-neutral-100 transition-all shadow-xs"
-                      title="View full image"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => qrFileInputRef.current?.click()}
-                    disabled={isUploadingQr}
-                    className="px-3.5 py-1.5 rounded-xl border border-border-default bg-white hover:bg-neutral-50 text-heading text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                  >
-                    {isUploadingQr ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Upload className="w-3.5 h-3.5 text-body" />
-                    )}
-                    <span>Replace QR</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleRemoveQrCode}
-                    disabled={isRemovingQr}
-                    className="px-3 py-1.5 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-red-600 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                  >
-                    {isRemovingQr ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
-                    )}
-                    <span>Remove</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div
-                onClick={() => qrFileInputRef.current?.click()}
-                className="border-2 border-dashed border-border-default hover:border-primary/60 rounded-2xl p-6 text-center transition-all cursor-pointer bg-white hover:bg-primary-subtle/10 group space-y-2"
-              >
-                <div className="w-12 h-12 mx-auto rounded-2xl bg-neutral-100 group-hover:bg-primary-subtle flex items-center justify-center transition-colors">
-                  {isUploadingQr ? (
-                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                  ) : (
-                    <QrCode className="w-6 h-6 text-body/70 group-hover:text-primary transition-colors" />
-                  )}
-                </div>
-                <p className="text-xs font-bold text-heading group-hover:text-primary transition-colors">
-                  {isUploadingQr ? "Uploading QR Code..." : "Click or Drag & Drop to Upload QR Code"}
-                </p>
-                <p className="text-[11px] text-body/70 max-w-xs mx-auto">
-                  Upload screenshot of your Google Pay, PhonePe, Paytm, or BHIM QR code (PNG, JPG, WebP up to 5MB).
-                </p>
-              </div>
-            )}
-
-            {/* Hidden file input */}
-            <input
-              ref={qrFileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-              onChange={handleQrFileSelected}
-              className="hidden"
-            />
+            <p className="text-[11px] text-body">
+              Remuneration is directly credited to the bank account linked with this VPA via Google Pay, PhonePe, Paytm, BHIM, or any UPI app.
+            </p>
           </div>
-        </div>
+
+          {paymentError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+              <span>{paymentError}</span>
+            </div>
+          )}
+
+          {paymentSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+              <span>UPI ID updated successfully!</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isPendingPayment || !upiId.trim()}
+            className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-active text-white text-xs font-bold transition-all shadow-xs disabled:opacity-40 cursor-pointer active:scale-[0.98] inline-flex items-center gap-2 btn-tactile"
+          >
+            {isPendingPayment ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Saving UPI ID...</span>
+              </>
+            ) : (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>Save UPI ID</span>
+              </>
+            )}
+          </button>
+        </form>
       </div>
 
       {/* Security & Password Form */}

@@ -53,7 +53,6 @@ export default async function AdminTeachersPage() {
       hourlyRate: profile?.hourlyRate || 0,
       payoutPerSession: profile?.payoutPerSession || 80000,
       upiId: profile?.upiId || null,
-      paymentQrCodeUrl: profile?.paymentQrCodeUrl || null,
       isPublished: !!profile?.isPublished,
       approvalStatus: profile?.approvalStatus || "PENDING",
       approvedAt: profile?.approvedAt ? profile.approvedAt.toISOString() : null,

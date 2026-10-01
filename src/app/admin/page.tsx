@@ -49,6 +49,7 @@ export default async function AdminOverviewPage() {
     pendingTickets,
     pendingTrials,
     pendingCourseEnrollmentsCount,
+    pendingCourseRequestsCount,
     pendingTeacherApprovals,
     recentEnrollments,
     recentPayments,
@@ -87,6 +88,9 @@ export default async function AdminOverviewPage() {
           { lessons: { none: { status: LessonStatus.SCHEDULED } } },
         ],
       },
+    }),
+    db.courseEnrollmentRequest.count({
+      where: { status: "PENDING" },
     }),
     db.teacherProfile.count({
       where: { approvalStatus: "PENDING" },
@@ -196,6 +200,36 @@ export default async function AdminOverviewPage() {
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-all shadow-xs shrink-0 active:scale-[0.98]"
           >
             <span>Review & Approve Faculty &rarr;</span>
+          </Link>
+        </div>
+      )}
+
+      {/* Pending Student Course Requests Alert Banner */}
+      {pendingCourseRequestsCount > 0 && (
+        <div className="relative overflow-hidden rounded-2xl border border-cta/30 bg-cta-subtle/80 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cta text-white shadow-xs">
+              <GraduationCap className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-accent text-white text-[10px] font-bold uppercase tracking-wider">
+                  New Course Requests
+                </span>
+                <p className="text-sm font-bold text-heading font-numeric">
+                  {pendingCourseRequestsCount} Student Course Admission {pendingCourseRequestsCount === 1 ? "Request Needs" : "Requests Need"} Review & Allotment
+                </p>
+              </div>
+              <p className="text-xs text-body mt-0.5">
+                Students have submitted admission requests with EMI / Upfront tuition plans. Review and allot courses directly to their dashboards.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/admin/student-courses"
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-cta hover:bg-cta-hover active:bg-cta-active text-white font-bold text-xs transition-all shadow-xs shrink-0 active:scale-[0.98]"
+          >
+            <span>Review & Allot Student Courses &rarr;</span>
           </Link>
         </div>
       )}

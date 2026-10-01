@@ -16,7 +16,8 @@ import {
   UserCheck,
   Sparkles,
 } from "lucide-react";
-import { RazorpayCheckoutButton } from "@/components/payment/RazorpayCheckoutButton";
+import { CourseEnrollmentRequestModal } from "@/components/courses/CourseEnrollmentRequestModal";
+import { CourseEmiBreakdown } from "@/components/courses/CourseEmiBreakdown";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 import { formatInViewerTimezone, getTimezoneAbbr } from "@/lib/timezone";
 import { PriceDisplay } from "@/components/currency/PriceDisplay";
@@ -55,14 +56,32 @@ export default async function StudentCourseDetailPage({
     notFound();
   }
 
-  // Check if student already enrolled
-  const existingEnrollment = await db.enrollment.findFirst({
-    where: {
-      studentId: user.id,
-      courseId: course.id,
-      status: "ACTIVE",
-    },
-  });
+  // Check if student already enrolled or has pending request
+  const [existingEnrollment, pendingRequestRecord] = await Promise.all([
+    db.enrollment.findFirst({
+      where: {
+        studentId: user.id,
+        courseId: course.id,
+        status: "ACTIVE",
+      },
+    }),
+    db.courseEnrollmentRequest.findFirst({
+      where: {
+        studentId: user.id,
+        courseId: course.id,
+        status: "PENDING",
+      },
+    }),
+  ]);
+
+  const pendingRequest = pendingRequestRecord
+    ? {
+        id: pendingRequestRecord.id,
+        status: pendingRequestRecord.status,
+        paymentPlan: pendingRequestRecord.paymentPlan,
+        createdAt: pendingRequestRecord.createdAt.toISOString(),
+      }
+    : null;
 
   const priceFormatted = `₹${(course.priceMinorUnits / 100).toLocaleString("en-IN")}`;
   const syllabusItems = course.syllabusSummary.split("•").map((s) => s.trim()).filter(Boolean);
@@ -320,12 +339,20 @@ export default async function StudentCourseDetailPage({
             </div>
           </div>
 
-          <RazorpayCheckoutButton
+          {/* EMI Breakdown */}
+          <CourseEmiBreakdown priceMinorUnits={course.priceMinorUnits} />
+
+          {/* Request Course Admission Modal / Actions */}
+          <CourseEnrollmentRequestModal
             courseId={course.id}
             courseTitle={course.title}
-            priceFormatted={priceFormatted}
+            courseSlug={course.slug}
+            sessionCount={course.sessionCount}
+            durationWeeks={course.durationWeeks}
             priceMinorUnits={course.priceMinorUnits}
             isAlreadyEnrolled={!!existingEnrollment}
+            pendingRequest={pendingRequest}
+            isAuthenticated={true}
           />
         </div>
       </div>

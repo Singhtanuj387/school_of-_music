@@ -8,7 +8,8 @@ import {
   TeacherOption,
 } from "./AdminEnrollmentsManager";
 import { SplitHeading } from "@/components/ui/SplitHeading";
-
+import Link from "next/link";
+import { GraduationCap } from "lucide-react";
 import { Suspense } from "react";
 
 export const metadata = {
@@ -104,19 +105,29 @@ export default async function AdminEnrollmentsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-sans">
-          Institutional Operations
-        </span>
-        <SplitHeading
-          firstClause="1:1 Course Scheduling &"
-          accentClause="Enrollment Ledger"
-          as="h1"
-          size="lg"
-        />
-        <p className="text-xs text-body mt-1 max-w-2xl">
-          Allot dedicated faculty teachers to student course enrollments, build personalized 1-on-1 timetables, and audit financial lesson tracking IDs.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-sans">
+            Institutional Operations
+          </span>
+          <SplitHeading
+            firstClause="1:1 Course Scheduling &"
+            accentClause="Enrollment Ledger"
+            as="h1"
+            size="lg"
+          />
+          <p className="text-xs text-body mt-1 max-w-2xl">
+            Allot dedicated faculty teachers to student course enrollments, build personalized 1-on-1 timetables, and audit financial lesson tracking IDs.
+          </p>
+        </div>
+
+        <Link
+          href="/admin/student-courses"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors btn-tactile whitespace-nowrap self-start sm:self-auto"
+        >
+          <GraduationCap className="w-4 h-4" />
+          <span>Student Courses & Admissions</span>
+        </Link>
       </div>
 
       <Suspense fallback={<div className="p-12 text-center text-xs text-body">Loading 1-on-1 scheduling portal...</div>}>

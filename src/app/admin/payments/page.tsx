@@ -12,7 +12,7 @@ import {
 export const metadata = {
   title: "Payment Management | Institutional Administration | Gandharva",
   description:
-    "Manage faculty session payouts, disburse remuneration via UPI and QR code, and track session payment status.",
+    "Manage faculty session payouts, disburse remuneration via UPI ID, and track session payment status.",
 };
 
 export default async function AdminPaymentsPage() {
@@ -32,7 +32,6 @@ export default async function AdminPaymentsPage() {
         select: {
           payoutPerSession: true,
           upiId: true,
-          paymentQrCodeUrl: true,
         },
       },
       student: {
@@ -81,7 +80,6 @@ export default async function AdminPaymentsPage() {
       teacherName: l.teacher.name || "Faculty Instructor",
       teacherEmail: l.teacher.email,
       teacherUpiId: l.teacherProfile?.upiId,
-      teacherQrUrl: l.teacherProfile?.paymentQrCodeUrl,
       payoutRateRupees: rateRupees,
       payoutStatus: isPaid ? "PAID" : "UNPAID",
       payoutPaidAtFormatted: l.payoutPaidAt

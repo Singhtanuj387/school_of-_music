@@ -18,9 +18,7 @@ import {
   Coins,
   Ticket,
   Smartphone,
-  QrCode,
   CreditCard,
-  ExternalLink,
   Copy,
   Check,
   Clock,
@@ -45,7 +43,6 @@ export interface AdminUserData {
     instruments: string[];
     isPublished: boolean;
     upiId?: string | null;
-    paymentQrCodeUrl?: string | null;
     approvalStatus: TeacherApprovalStatus;
     approvedAt?: string | null;
     rejectionReason?: string | null;
@@ -159,7 +156,6 @@ export function AdminUsersManager({
                             ? (u.teacherProfile?.isPublished || false)
                             : false,
                         upiId: u.teacherProfile?.upiId || null,
-                        paymentQrCodeUrl: u.teacherProfile?.paymentQrCodeUrl || null,
                         approvalStatus: editApprovalStatus,
                         approvedAt:
                           editApprovalStatus === TeacherApprovalStatus.APPROVED
@@ -622,7 +618,7 @@ export function AdminUsersManager({
                     </p>
                   </div>
 
-                  {/* Teacher's Payout Coordinates (UPI ID & Payment QR) */}
+                  {/* Teacher's Payout Coordinates (UPI ID) */}
                   <div className="p-3.5 rounded-xl bg-neutral-50/70 border border-border-default/70 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-heading flex items-center gap-1.5">
@@ -662,48 +658,6 @@ export function AdminUsersManager({
                         ) : (
                           <p className="text-body/60 italic text-[11px]">
                             Teacher has not configured their UPI ID yet.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] text-body font-semibold uppercase tracking-wider block">
-                          Payment QR Code
-                        </span>
-                        {selectedUser.teacherProfile?.paymentQrCodeUrl ? (
-                          <div className="flex items-center gap-3 mt-1">
-                            <a
-                              href={selectedUser.teacherProfile.paymentQrCodeUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="group block relative w-16 h-16 rounded-xl border border-border-default overflow-hidden bg-white p-1 hover:border-primary transition-all shrink-0 shadow-xs"
-                              title="Click to view full size QR code"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={selectedUser.teacherProfile.paymentQrCodeUrl}
-                                alt="Teacher QR Code"
-                                className="w-full h-full object-contain rounded-lg"
-                              />
-                            </a>
-                            <div className="space-y-0.5">
-                              <p className="text-[11px] font-semibold text-heading">
-                                Verified Remuneration QR
-                              </p>
-                              <a
-                                href={selectedUser.teacherProfile.paymentQrCodeUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-medium"
-                              >
-                                <span>Open Full QR Image</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-body/60 italic text-[11px] mt-0.5">
-                            Teacher has not uploaded a payment QR code.
                           </p>
                         )}
                       </div>

@@ -90,7 +90,6 @@ export default async function TeacherProfilePage() {
                 hourlyRate: profile.hourlyRate,
                 payoutPerSession: profile.payoutPerSession || 80000,
                 upiId: profile.upiId || "",
-                paymentQrCodeUrl: profile.paymentQrCodeUrl || null,
                 isPublished: profile.isPublished,
                 approvalStatus: profile.approvalStatus,
                 approvedAt: profile.approvedAt ? profile.approvedAt.toISOString() : null,
