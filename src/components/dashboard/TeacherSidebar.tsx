@@ -83,6 +83,7 @@ export function TeacherSidebar({
   const pathname = usePathname();
 
   const isActive = (item: NavItem) => {
+    if (!pathname) return false;
     if (item.exact) {
       return pathname === item.href;
     }

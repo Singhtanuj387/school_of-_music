@@ -110,9 +110,11 @@ export function DashboardSidebar({ user }: { user: SidebarUserInfo }) {
           {/* Nav Items */}
           <nav className="space-y-1.5">
             {STUDENT_NAV_ITEMS.map((item) => {
-              const isActive = item.exact
-                ? pathname === item.href
-                : pathname.startsWith(item.href);
+              const isActive = pathname
+                ? item.exact
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href)
+                : false;
               const Icon = item.icon;
 
               return (
@@ -186,9 +188,11 @@ export function DashboardSidebar({ user }: { user: SidebarUserInfo }) {
       {/* Mobile Top Navigation Tabs (< 768px, 100% usable at 375px) */}
       <div className="md:hidden sticky top-16 z-30 bg-white/95 border-b border-surface-muted/80 backdrop-blur-md px-3 py-2 overflow-x-auto scrollbar-none flex gap-1.5 shadow-xs">
         {STUDENT_NAV_ITEMS.map((item) => {
-          const isActive = item.exact
-            ? pathname === item.href
-            : pathname.startsWith(item.href);
+          const isActive = pathname
+            ? item.exact
+              ? pathname === item.href
+              : pathname.startsWith(item.href)
+            : false;
           const Icon = item.icon;
 
           return (

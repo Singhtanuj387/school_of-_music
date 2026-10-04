@@ -6,12 +6,14 @@ import {
   NotFoundError,
 } from "@/lib/errors";
 import { Role, Lesson } from "@prisma/client";
+import { cache } from "react";
 
 /**
  * Get the current session user, or null if not authenticated.
+ * Deduplicated per-request via React cache() to prevent redundant DB hits.
  * Always synchronizes the latest user role and profile from the database.
  */
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -55,7 +57,7 @@ export async function getCurrentUser() {
   } catch {
     return null;
   }
-}
+});
 
 /**
  * Require a logged-in user. Throws UnauthorizedError if not signed in.

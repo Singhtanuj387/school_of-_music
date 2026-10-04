@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import {
   Role,
   LessonStatus,
@@ -34,137 +35,142 @@ export const metadata = {
 };
 
 export default async function AdminOverviewPage() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login?callbackUrl=/admin");
-  }
-
-  if (user.role !== Role.ADMIN) {
-    redirect("/dashboard");
-  }
-
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
-
-  let activeStudents = 0;
-  let activeTeachers = 0;
-  let totalRevenueRupees = 0;
-  let todayLessons = 0;
-  let pendingTickets = 0;
-  let pendingTrials = 0;
-  let pendingCourseEnrollmentsCount = 0;
-  let pendingCourseRequestsCount = 0;
-  let pendingTeacherApprovals = 0;
-  let recentEnrollments: any[] = [];
-  let recentPayments: any[] = [];
-  const teacherMap = new Map<string, string>();
-
   try {
-    const [
-      _activeStudents,
-      _activeTeachers,
-      totalRevenueAgg,
-      _todayLessons,
-      _pendingTickets,
-      _pendingTrials,
-      _pendingCourseEnrollmentsCount,
-      _pendingCourseRequestsCount,
-      _pendingTeacherApprovals,
-      _recentEnrollments,
-      _recentPayments,
-      _recentLessons,
-      teacherUsers,
-    ] = await Promise.all([
-      db.user.count({
-        where: { role: Role.STUDENT, isActive: true },
-      }),
-      db.user.count({
-        where: { role: Role.TEACHER, isActive: true },
-      }),
-      db.payment.aggregate({
-        _sum: { amountMinorUnits: true },
-        where: { status: PaymentStatus.PAID },
-      }),
-      db.lesson.count({
-        where: {
-          status: LessonStatus.SCHEDULED,
-          startsAt: { gte: startOfToday, lte: endOfToday },
-        },
-      }),
-      db.supportTicket.count({
-        where: {
-          status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] },
-        },
-      }),
-      db.trialRequest.count({
-        where: { status: TrialRequestStatus.PENDING },
-      }),
-      db.enrollment.count({
-        where: {
-          status: EnrollmentStatus.ACTIVE,
-          OR: [
-            { teacherId: null },
-            { lessons: { none: { status: LessonStatus.SCHEDULED } } },
-          ],
-        },
-      }),
-      db.courseEnrollmentRequest.count({
-        where: { status: "PENDING" },
-      }),
-      db.teacherProfile.count({
-        where: { approvalStatus: "PENDING" },
-      }),
-      db.enrollment.findMany({
-        take: 6,
-        orderBy: { startedAt: "desc" },
-        include: {
-          student: { select: { name: true, email: true } },
-          course: { select: { title: true, instrument: true, sessionCount: true } },
-          lessons: { select: { id: true, status: true } },
-        },
-      }),
-      db.payment.findMany({
-        take: 5,
-        orderBy: { createdAt: "desc" },
-        include: {
-          student: { select: { name: true, email: true } },
-        },
-      }),
-      db.lesson.findMany({
-        take: 5,
-        orderBy: { startsAt: "desc" },
-        include: {
-          student: { select: { name: true } },
-          teacher: { select: { name: true } },
-        },
-      }),
-      db.user.findMany({
-        where: { role: Role.TEACHER },
-        select: { id: true, name: true },
-      }),
-    ]);
+    const user = await getCurrentUser();
 
-    activeStudents = _activeStudents;
-    activeTeachers = _activeTeachers;
-    totalRevenueRupees = (totalRevenueAgg._sum?.amountMinorUnits || 0) / 100;
-    todayLessons = _todayLessons;
-    pendingTickets = _pendingTickets;
-    pendingTrials = _pendingTrials;
-    pendingCourseEnrollmentsCount = _pendingCourseEnrollmentsCount;
-    pendingCourseRequestsCount = _pendingCourseRequestsCount;
-    pendingTeacherApprovals = _pendingTeacherApprovals;
-    recentEnrollments = _recentEnrollments;
-    recentPayments = _recentPayments;
-
-    for (const t of teacherUsers) {
-      teacherMap.set(t.id, t.name || "Teacher");
+    if (!user) {
+      redirect("/login?callbackUrl=/admin");
     }
-  } catch (err) {
-    console.error("Failed to load admin overview metrics:", err);
-  }
+
+    if (user.role !== Role.ADMIN) {
+      redirect("/dashboard");
+    }
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    let activeStudents = 0;
+    let activeTeachers = 0;
+    let totalRevenueRupees = 0;
+    let todayLessons = 0;
+    let pendingTickets = 0;
+    let pendingTrials = 0;
+    let pendingCourseEnrollmentsCount = 0;
+    let pendingCourseRequestsCount = 0;
+    let pendingTeacherApprovals = 0;
+    let recentEnrollments: any[] = [];
+    let recentPayments: any[] = [];
+    const teacherMap = new Map<string, string>();
+
+    try {
+      const [
+        activeStudentsRes,
+        activeTeachersRes,
+        totalRevenueRes,
+        todayLessonsRes,
+        pendingTicketsRes,
+        pendingTrialsRes,
+        pendingCourseEnrollmentsRes,
+        pendingCourseRequestsRes,
+        pendingTeacherApprovalsRes,
+        recentEnrollmentsRes,
+        recentPaymentsRes,
+        teacherUsersRes,
+      ] = await Promise.allSettled([
+        db.user.count({
+          where: { role: Role.STUDENT, isActive: true },
+        }),
+        db.user.count({
+          where: { role: Role.TEACHER, isActive: true },
+        }),
+        db.payment.aggregate({
+          _sum: { amountMinorUnits: true },
+          where: { status: PaymentStatus.PAID },
+        }),
+        db.lesson.count({
+          where: {
+            status: LessonStatus.SCHEDULED,
+            startsAt: { gte: startOfToday, lte: endOfToday },
+          },
+        }),
+        db.supportTicket.count({
+          where: {
+            status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] },
+          },
+        }),
+        db.trialRequest.count({
+          where: { status: TrialRequestStatus.PENDING },
+        }),
+        db.enrollment.count({
+          where: {
+            status: EnrollmentStatus.ACTIVE,
+            OR: [
+              { teacherId: null },
+              { lessons: { none: { status: LessonStatus.SCHEDULED } } },
+            ],
+          },
+        }),
+        db.courseEnrollmentRequest.count({
+          where: { status: "PENDING" },
+        }),
+        db.teacherProfile.count({
+          where: { approvalStatus: "PENDING" },
+        }),
+        db.enrollment.findMany({
+          take: 6,
+          orderBy: { startedAt: "desc" },
+          include: {
+            student: { select: { name: true, email: true } },
+            course: { select: { title: true, instrument: true, sessionCount: true } },
+            lessons: { select: { id: true, status: true } },
+          },
+        }),
+        db.payment.findMany({
+          take: 5,
+          orderBy: { createdAt: "desc" },
+          include: {
+            student: { select: { name: true, email: true } },
+          },
+        }),
+        db.user.findMany({
+          where: { role: Role.TEACHER },
+          select: { id: true, name: true },
+        }),
+      ]);
+
+      if (activeStudentsRes.status === "fulfilled") activeStudents = activeStudentsRes.value;
+      if (activeTeachersRes.status === "fulfilled") activeTeachers = activeTeachersRes.value;
+      if (totalRevenueRes.status === "fulfilled") {
+        totalRevenueRupees = (totalRevenueRes.value._sum?.amountMinorUnits || 0) / 100;
+      }
+      if (todayLessonsRes.status === "fulfilled") todayLessons = todayLessonsRes.value;
+      if (pendingTicketsRes.status === "fulfilled") pendingTickets = pendingTicketsRes.value;
+      if (pendingTrialsRes.status === "fulfilled") pendingTrials = pendingTrialsRes.value;
+      if (pendingCourseEnrollmentsRes.status === "fulfilled") {
+        pendingCourseEnrollmentsCount = pendingCourseEnrollmentsRes.value;
+      }
+      if (pendingCourseRequestsRes.status === "fulfilled") {
+        pendingCourseRequestsCount = pendingCourseRequestsRes.value;
+      }
+      if (pendingTeacherApprovalsRes.status === "fulfilled") {
+        pendingTeacherApprovals = pendingTeacherApprovalsRes.value;
+      }
+      if (recentEnrollmentsRes.status === "fulfilled") {
+        recentEnrollments = recentEnrollmentsRes.value;
+      }
+      if (recentPaymentsRes.status === "fulfilled") {
+        recentPayments = recentPaymentsRes.value;
+      }
+      if (teacherUsersRes.status === "fulfilled") {
+        for (const t of teacherUsersRes.value) {
+          teacherMap.set(t.id, t.name || "Teacher");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load admin overview metrics:", err);
+    }
 
   return (
     <div className="space-y-8">
@@ -646,4 +652,34 @@ export default async function AdminOverviewPage() {
       </div>
     </div>
   );
+  } catch (err) {
+    if (isRedirectError(err)) {
+      throw err;
+    }
+    console.error("Admin overview page render error:", err);
+    return (
+      <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-8 text-center space-y-4 shadow-xs">
+        <h2 className="font-serif text-lg font-bold text-amber-950">
+          Temporary Operations Sync Notice
+        </h2>
+        <p className="text-xs text-amber-900/80 max-w-md mx-auto">
+          The operations dashboard encountered a transient delay while synchronizing metrics. Platform configurations and credentials remain protected.
+        </p>
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs shadow-xs transition-all"
+          >
+            Retry Sync
+          </Link>
+          <Link
+            href="/admin/users"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border-default hover:bg-white text-heading font-semibold text-xs transition-all"
+          >
+            User Management
+          </Link>
+        </div>
+      </div>
+    );
+  }
 }

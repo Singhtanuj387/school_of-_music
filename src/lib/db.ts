@@ -15,6 +15,13 @@ const isSupabaseOrSsl =
 
 // Clean connection string so pg driver uses explicit ssl object without forcing verify-full
 let connectionString = rawConnectionString;
+
+// Automatically route Supabase connections to the dedicated PgBouncer / Supavisor connection pooler (port 6543)
+// so that concurrent multi-browser / multi-user requests never exhaust direct connection limits (port 5432)
+if (connectionString.includes(".supabase.co:5432")) {
+  connectionString = connectionString.replace(".supabase.co:5432", ".supabase.co:6543");
+}
+
 if (isSupabaseOrSsl && connectionString.includes("sslmode=")) {
   connectionString = connectionString
     .replace(/([?&])sslmode=[^&]+(&|$)/, "$1")
@@ -26,7 +33,7 @@ const pool =
   new Pool({
     connectionString,
     ssl: isSupabaseOrSsl ? { rejectUnauthorized: false } : undefined,
-    max: 10,
+    max: 8,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   });
