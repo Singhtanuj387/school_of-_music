@@ -1,5 +1,6 @@
-import { requireRole } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { Role } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { AdminSidebar } from "@/components/dashboard/AdminSidebar";
 
 export const metadata = {
@@ -12,7 +13,15 @@ export default async function AdminPortalLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireRole(Role.ADMIN);
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login?callbackUrl=/admin");
+  }
+
+  if (user.role !== Role.ADMIN) {
+    redirect("/dashboard");
+  }
 
   return (
     <div className="flex flex-col md:flex-row min-h-[calc(100vh-4rem)] bg-gradient-to-b from-bg via-bg-alt/15 to-bg text-heading">

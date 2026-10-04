@@ -1,5 +1,6 @@
-import { requireRole } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
+import { redirect } from "next/navigation";
 import {
   Role,
   LessonStatus,
@@ -33,104 +34,137 @@ export const metadata = {
 };
 
 export default async function AdminOverviewPage() {
-  await requireRole(Role.ADMIN);
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login?callbackUrl=/admin");
+  }
+
+  if (user.role !== Role.ADMIN) {
+    redirect("/dashboard");
+  }
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
 
-  // Parallel KPI queries
-  const [
-    activeStudents,
-    activeTeachers,
-    totalRevenueAgg,
-    todayLessons,
-    pendingTickets,
-    pendingTrials,
-    pendingCourseEnrollmentsCount,
-    pendingCourseRequestsCount,
-    pendingTeacherApprovals,
-    recentEnrollments,
-    recentPayments,
-    recentLessons,
-    teacherUsers,
-  ] = await Promise.all([
-    db.user.count({
-      where: { role: Role.STUDENT, isActive: true },
-    }),
-    db.user.count({
-      where: { role: Role.TEACHER, isActive: true },
-    }),
-    db.payment.aggregate({
-      _sum: { amountMinorUnits: true },
-      where: { status: PaymentStatus.PAID },
-    }),
-    db.lesson.count({
-      where: {
-        status: LessonStatus.SCHEDULED,
-        startsAt: { gte: startOfToday, lte: endOfToday },
-      },
-    }),
-    db.supportTicket.count({
-      where: {
-        status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] },
-      },
-    }),
-    db.trialRequest.count({
-      where: { status: TrialRequestStatus.PENDING },
-    }),
-    db.enrollment.count({
-      where: {
-        status: EnrollmentStatus.ACTIVE,
-        OR: [
-          { teacherId: null },
-          { lessons: { none: { status: LessonStatus.SCHEDULED } } },
-        ],
-      },
-    }),
-    db.courseEnrollmentRequest.count({
-      where: { status: "PENDING" },
-    }),
-    db.teacherProfile.count({
-      where: { approvalStatus: "PENDING" },
-    }),
-    db.enrollment.findMany({
-      take: 6,
-      orderBy: { startedAt: "desc" },
-      include: {
-        student: { select: { name: true, email: true } },
-        course: { select: { title: true, instrument: true, sessionCount: true } },
-        lessons: { select: { id: true, status: true } },
-      },
-    }),
-    db.payment.findMany({
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      include: {
-        student: { select: { name: true, email: true } },
-      },
-    }),
-    db.lesson.findMany({
-      take: 5,
-      orderBy: { startsAt: "desc" },
-      include: {
-        student: { select: { name: true } },
-        teacher: { select: { name: true } },
-      },
-    }),
-    db.user.findMany({
-      where: { role: Role.TEACHER },
-      select: { id: true, name: true },
-    }),
-  ]);
-
+  let activeStudents = 0;
+  let activeTeachers = 0;
+  let totalRevenueRupees = 0;
+  let todayLessons = 0;
+  let pendingTickets = 0;
+  let pendingTrials = 0;
+  let pendingCourseEnrollmentsCount = 0;
+  let pendingCourseRequestsCount = 0;
+  let pendingTeacherApprovals = 0;
+  let recentEnrollments: any[] = [];
+  let recentPayments: any[] = [];
   const teacherMap = new Map<string, string>();
-  for (const t of teacherUsers) {
-    teacherMap.set(t.id, t.name || "Teacher");
-  }
 
-  const totalRevenueRupees = (totalRevenueAgg._sum.amountMinorUnits || 0) / 100;
+  try {
+    const [
+      _activeStudents,
+      _activeTeachers,
+      totalRevenueAgg,
+      _todayLessons,
+      _pendingTickets,
+      _pendingTrials,
+      _pendingCourseEnrollmentsCount,
+      _pendingCourseRequestsCount,
+      _pendingTeacherApprovals,
+      _recentEnrollments,
+      _recentPayments,
+      _recentLessons,
+      teacherUsers,
+    ] = await Promise.all([
+      db.user.count({
+        where: { role: Role.STUDENT, isActive: true },
+      }),
+      db.user.count({
+        where: { role: Role.TEACHER, isActive: true },
+      }),
+      db.payment.aggregate({
+        _sum: { amountMinorUnits: true },
+        where: { status: PaymentStatus.PAID },
+      }),
+      db.lesson.count({
+        where: {
+          status: LessonStatus.SCHEDULED,
+          startsAt: { gte: startOfToday, lte: endOfToday },
+        },
+      }),
+      db.supportTicket.count({
+        where: {
+          status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] },
+        },
+      }),
+      db.trialRequest.count({
+        where: { status: TrialRequestStatus.PENDING },
+      }),
+      db.enrollment.count({
+        where: {
+          status: EnrollmentStatus.ACTIVE,
+          OR: [
+            { teacherId: null },
+            { lessons: { none: { status: LessonStatus.SCHEDULED } } },
+          ],
+        },
+      }),
+      db.courseEnrollmentRequest.count({
+        where: { status: "PENDING" },
+      }),
+      db.teacherProfile.count({
+        where: { approvalStatus: "PENDING" },
+      }),
+      db.enrollment.findMany({
+        take: 6,
+        orderBy: { startedAt: "desc" },
+        include: {
+          student: { select: { name: true, email: true } },
+          course: { select: { title: true, instrument: true, sessionCount: true } },
+          lessons: { select: { id: true, status: true } },
+        },
+      }),
+      db.payment.findMany({
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        include: {
+          student: { select: { name: true, email: true } },
+        },
+      }),
+      db.lesson.findMany({
+        take: 5,
+        orderBy: { startsAt: "desc" },
+        include: {
+          student: { select: { name: true } },
+          teacher: { select: { name: true } },
+        },
+      }),
+      db.user.findMany({
+        where: { role: Role.TEACHER },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    activeStudents = _activeStudents;
+    activeTeachers = _activeTeachers;
+    totalRevenueRupees = (totalRevenueAgg._sum?.amountMinorUnits || 0) / 100;
+    todayLessons = _todayLessons;
+    pendingTickets = _pendingTickets;
+    pendingTrials = _pendingTrials;
+    pendingCourseEnrollmentsCount = _pendingCourseEnrollmentsCount;
+    pendingCourseRequestsCount = _pendingCourseRequestsCount;
+    pendingTeacherApprovals = _pendingTeacherApprovals;
+    recentEnrollments = _recentEnrollments;
+    recentPayments = _recentPayments;
+
+    for (const t of teacherUsers) {
+      teacherMap.set(t.id, t.name || "Teacher");
+    }
+  } catch (err) {
+    console.error("Failed to load admin overview metrics:", err);
+  }
 
   return (
     <div className="space-y-8">
@@ -508,7 +542,9 @@ export default async function AdminOverviewPage() {
             <div className="space-y-3">
               {recentEnrollments.map((enr) => {
                 const teacherName = enr.teacherId ? teacherMap.get(enr.teacherId) : null;
-                const scheduledCount = enr.lessons.filter((l) => l.status === "SCHEDULED").length;
+                const scheduledCount = Array.isArray(enr.lessons)
+                  ? enr.lessons.filter((l: any) => l.status === "SCHEDULED").length
+                  : 0;
 
                 return (
                   <div
@@ -517,15 +553,23 @@ export default async function AdminOverviewPage() {
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-bold text-heading">{enr.student.name || "Student"}</p>
-                        <span className="text-[10px] text-body">({enr.student.email})</span>
+                        <p className="font-bold text-heading">{enr.student?.name || "Student"}</p>
+                        {enr.student?.email && (
+                          <span className="text-[10px] text-body">({enr.student.email})</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-[11px] text-body flex-wrap">
-                        <span className="font-semibold text-accent-dark">{enr.course.title}</span>
+                        <span className="font-semibold text-accent-dark">{enr.course?.title || "Course"}</span>
+                        {enr.course?.instrument && (
+                          <>
+                            <span>•</span>
+                            <span>{enr.course.instrument}</span>
+                          </>
+                        )}
                         <span>•</span>
-                        <span>{enr.course.instrument}</span>
-                        <span>•</span>
-                        <span className="font-numeric font-medium">{scheduledCount} / {enr.course.sessionCount} Scheduled</span>
+                        <span className="font-numeric font-medium">
+                          {scheduledCount} / {enr.course?.sessionCount ?? 0} Scheduled
+                        </span>
                       </div>
                       <div className="pt-0.5">
                         {teacherName ? (
@@ -581,17 +625,17 @@ export default async function AdminOverviewPage() {
                   className="p-3 rounded-xl bg-bg-alt/20 border border-border-default/50 flex items-center justify-between text-xs"
                 >
                   <div className="space-y-0.5">
-                    <p className="font-bold text-heading">{p.student.name}</p>
+                    <p className="font-bold text-heading">{p.student?.name || "Student"}</p>
                     <p className="text-[11px] text-body font-numeric">
-                      {p.gatewayPaymentId || p.gatewayOrderId}
+                      {p.gatewayPaymentId || p.gatewayOrderId || "Payment"}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-emerald-700 font-numeric">
-                      ₹{(p.amountMinorUnits / 100).toLocaleString("en-IN")}
+                      ₹{((p.amountMinorUnits || 0) / 100).toLocaleString("en-IN")}
                     </p>
                     <p className="text-[10px] text-body font-numeric">
-                      {new Date(p.createdAt).toLocaleDateString()}
+                      {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "—"}
                     </p>
                   </div>
                 </div>

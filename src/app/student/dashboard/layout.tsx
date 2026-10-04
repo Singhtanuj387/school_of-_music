@@ -1,5 +1,6 @@
-import { requireRole } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { Role } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 
@@ -8,7 +9,16 @@ export default async function StudentDashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireRole(Role.STUDENT);
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login?callbackUrl=/student/dashboard");
+  }
+
+  if (user.role !== Role.STUDENT) {
+    redirect("/dashboard");
+  }
+
   const dbUser = await db.user.findUnique({
     where: { id: user.id },
     select: { image: true, name: true, email: true },

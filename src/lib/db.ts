@@ -26,19 +26,28 @@ const pool =
   new Pool({
     connectionString,
     ssl: isSupabaseOrSsl ? { rejectUnauthorized: false } : undefined,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
   });
+
+if (!globalForPrisma.pool) {
+  globalForPrisma.pool = pool;
+}
 
 const adapter = new PrismaPg(pool);
 
-export const db = new PrismaClient({
-  adapter,
-  log:
-    process.env.NODE_ENV === "development"
-      ? ["query", "error", "warn"]
-      : ["error"],
-});
+export const db =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter,
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
+  });
 
-if (process.env.NODE_ENV !== "production") {
+if (!globalForPrisma.prisma) {
   globalForPrisma.prisma = db;
-  globalForPrisma.pool = pool;
 }
+
