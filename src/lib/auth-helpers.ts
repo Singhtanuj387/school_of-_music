@@ -9,11 +9,49 @@ import { Role, Lesson } from "@prisma/client";
 
 /**
  * Get the current session user, or null if not authenticated.
+ * Always synchronizes the latest user role and profile from the database.
  */
 export async function getCurrentUser() {
   try {
     const session = await auth();
-    return session?.user ?? null;
+    if (!session?.user?.id) {
+      return null;
+    }
+
+    try {
+      const dbUser = await db.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          image: true,
+          timezone: true,
+          emailVerified: true,
+          isActive: true,
+        },
+      });
+
+      if (dbUser) {
+        if (!dbUser.isActive) {
+          return null;
+        }
+        return {
+          ...session.user,
+          role: dbUser.role,
+          name: dbUser.name || session.user.name,
+          email: dbUser.email || session.user.email,
+          image: dbUser.image || session.user.image,
+          timezone: dbUser.timezone || session.user.timezone || "UTC",
+          emailVerified: dbUser.emailVerified,
+        };
+      }
+    } catch {
+      // Fallback to session user if database query encounters a transient error
+    }
+
+    return session.user;
   } catch {
     return null;
   }

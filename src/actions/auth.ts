@@ -589,6 +589,8 @@ export async function logoutAction(): Promise<void> {
   await signOut({ redirectTo: "/login" });
 }
 
+export const signOutAction = logoutAction;
+
 /**
  * Handle request for password reset email.
  */

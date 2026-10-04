@@ -33,11 +33,21 @@ export const authConfig: NextAuthConfig = {
         isTeacherRoute || isStudentRoute || isAdminRoute || isLessonRoute || isDashboardRoute;
 
       const getRedirectUrl = (target: string) => {
-        const forwardedHost =
-          headers.get("x-forwarded-host") || headers.get("host");
-        const forwardedProto = headers.get("x-forwarded-proto") || "https";
-        if (forwardedHost && !forwardedHost.startsWith("localhost")) {
-          return new URL(target, `${forwardedProto}://${forwardedHost}`);
+        try {
+          const rawHost =
+            headers.get("x-forwarded-host") || headers.get("host") || "";
+          const forwardedHost = rawHost.split(",")[0].trim();
+          const rawProto = headers.get("x-forwarded-proto") || "https";
+          const forwardedProto = rawProto.split(",")[0].trim();
+          if (
+            forwardedHost &&
+            !forwardedHost.startsWith("localhost") &&
+            !forwardedHost.startsWith("127.0.0.1")
+          ) {
+            return new URL(target, `${forwardedProto}://${forwardedHost}`);
+          }
+        } catch {
+          // Fall through to nextUrl
         }
         return new URL(target, nextUrl);
       };
