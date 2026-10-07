@@ -13,8 +13,9 @@ import {
   EnrollmentStatus,
   TrialRequestStatus,
   TrialStatus,
-  TeacherPayoutStatus,
   TeacherApprovalStatus,
+  TeacherPayoutStatus,
+  PaymentStatus,
   NotificationType,
 } from "@prisma/client";
 import { hashPassword } from "@/lib/password";
@@ -656,6 +657,153 @@ export async function deleteOrCancelEnrollmentLessonAction(
   } catch (error) {
     logger.error({ error, lessonId }, "Error cancelling enrollment lesson");
     return { success: false, error: "Failed to cancel lesson." };
+  }
+}
+
+export async function saveFullEnrollmentPlanAction(input: {
+  enrollmentId?: string | null;
+  trialRequestId?: string | null;
+  studentId: string;
+  courseId: string;
+  teacherId?: string | null;
+  sessionsRemaining?: number;
+  status?: EnrollmentStatus;
+  adminNotes?: string | null;
+  paymentFeeRupees?: number;
+  paidAmountRupees?: number;
+  paymentStatus?: "UNPAID" | "PARTIALLY_PAID" | "FULLY_PAID";
+  generatedSlots?: Array<{ startsAt: string; durationMinutes?: number }>;
+}): Promise<AdminActionResponse<{ enrollmentId: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const student = await db.user.findUnique({
+      where: { id: input.studentId },
+      select: { id: true, name: true, email: true },
+    });
+    if (!student) {
+      return { success: false, error: "Student not found." };
+    }
+
+    const course = await db.course.findUnique({
+      where: { id: input.courseId },
+      select: { id: true, title: true, instrument: true, sessionCount: true, priceMinorUnits: true },
+    });
+    if (!course) {
+      return { success: false, error: "Course not found." };
+    }
+
+    let teacher = null;
+    if (input.teacherId) {
+      teacher = await db.user.findUnique({
+        where: { id: input.teacherId },
+        include: { teacherProfile: true },
+      });
+    }
+
+    const totalSessions =
+      input.sessionsRemaining !== undefined && input.sessionsRemaining > 0
+        ? input.sessionsRemaining
+        : course.sessionCount;
+
+    let targetEnrollmentId = input.enrollmentId;
+
+    if (targetEnrollmentId) {
+      await db.enrollment.update({
+        where: { id: targetEnrollmentId },
+        data: {
+          courseId: course.id,
+          teacherId: input.teacherId || null,
+          sessionsRemaining: totalSessions,
+          status: input.status || EnrollmentStatus.ACTIVE,
+          adminNotes: input.adminNotes !== undefined ? input.adminNotes : undefined,
+        },
+      });
+    } else {
+      const created = await db.enrollment.create({
+        data: {
+          studentId: student.id,
+          courseId: course.id,
+          teacherId: input.teacherId || null,
+          sessionsRemaining: totalSessions,
+          status: input.status || EnrollmentStatus.ACTIVE,
+          adminNotes: input.adminNotes || "Created from Enrollment Planner",
+        },
+      });
+      targetEnrollmentId = created.id;
+    }
+
+    // Convert Trial Lead if linked
+    if (input.trialRequestId) {
+      await db.trialRequest.updateMany({
+        where: { id: input.trialRequestId },
+        data: {
+          isConverted: true,
+          convertedAt: new Date(),
+        },
+      });
+    }
+
+    // Record payment if paid amount specified
+    if (input.paidAmountRupees && input.paidAmountRupees > 0) {
+      const amountMinorUnits = Math.round(input.paidAmountRupees * 100);
+      const isFull =
+        input.paymentFeeRupees && input.paidAmountRupees >= input.paymentFeeRupees;
+      const receiptCode = `RCPT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      await db.payment.create({
+        data: {
+          studentId: student.id,
+          amountMinorUnits,
+          currency: "INR",
+          gateway: "manual",
+          gatewayOrderId: `rec_order_${receiptCode}`,
+          gatewayPaymentId: receiptCode,
+          status: isFull ? PaymentStatus.PAID : PaymentStatus.PAID,
+        },
+      });
+    }
+
+    // Generate scheduled 1-on-1 lessons if slots provided and teacher allotted
+    if (input.generatedSlots && input.generatedSlots.length > 0 && teacher && teacher.teacherProfile) {
+      for (const slot of input.generatedSlots) {
+        const slotDate = new Date(slot.startsAt);
+        if (!isNaN(slotDate.getTime())) {
+          const trackingCode = await generateUniqueLessonTrackingCode();
+          await db.lesson.create({
+            data: {
+              teacherId: teacher.id,
+              teacherProfileId: teacher.teacherProfile.id,
+              studentId: student.id,
+              instrument: course.instrument,
+              startsAt: slotDate,
+              durationMinutes: slot.durationMinutes || 60,
+              status: LessonStatus.SCHEDULED,
+              lessonSource: LessonSource.ENROLLMENT,
+              enrollmentId: targetEnrollmentId,
+              trackingCode,
+            },
+          });
+        }
+      }
+    }
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/trials");
+    revalidatePath("/admin/students");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+
+    return {
+      success: true,
+      message: `Enrollment for ${student.name} in ${course.title} saved successfully!`,
+      data: { enrollmentId: targetEnrollmentId },
+    };
+  } catch (error) {
+    logger.error({ error, input }, "Error saving full enrollment plan");
+    const errMsg = error instanceof Error ? error.message : "Failed to save enrollment.";
+    return { success: false, error: errMsg };
   }
 }
 
@@ -1434,6 +1582,270 @@ export async function cancelTrialRequestAction(trialRequestId: string): Promise<
   }
 }
 
+export async function updateTrialLeadStatusAction(input: {
+  trialRequestId: string;
+  isContacted?: boolean;
+  followUpAt?: string | null;
+  leadIntent?: string;
+  leadOwner?: string;
+  leadSource?: string;
+  teacherFeedback?: string;
+  studentNotes?: string;
+  status?: TrialRequestStatus;
+  allottedTeacherId?: string | null;
+  lessonStatus?: string;
+  isConverted?: boolean;
+  requestedStartsAt?: string;
+}): Promise<AdminActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const updateData: Record<string, unknown> = {};
+    if (input.isContacted !== undefined) {
+      updateData.isContacted = input.isContacted;
+      if (input.isContacted) {
+        updateData.contactedAt = new Date();
+      }
+    }
+    if (input.status !== undefined) {
+      updateData.status = input.status;
+    }
+    if (input.allottedTeacherId !== undefined) {
+      updateData.allottedTeacherId = input.allottedTeacherId;
+    }
+    if (input.followUpAt !== undefined) {
+      updateData.followUpAt = input.followUpAt ? new Date(input.followUpAt) : null;
+    }
+    if (input.leadIntent !== undefined) {
+      updateData.leadIntent = input.leadIntent;
+    }
+    if (input.leadOwner !== undefined) {
+      updateData.leadOwner = input.leadOwner;
+    }
+    if (input.leadSource !== undefined) {
+      updateData.leadSource = input.leadSource;
+    }
+    if (input.teacherFeedback !== undefined) {
+      updateData.teacherFeedback = input.teacherFeedback;
+    }
+    if (input.studentNotes !== undefined) {
+      updateData.studentNotes = input.studentNotes;
+    }
+    if (input.isConverted !== undefined) {
+      updateData.isConverted = input.isConverted;
+      if (input.isConverted) {
+        updateData.convertedAt = new Date();
+      }
+    }
+    if (input.requestedStartsAt !== undefined) {
+      updateData.requestedStartsAt = new Date(input.requestedStartsAt);
+    }
+
+    const updated = await db.trialRequest.update({
+      where: { id: input.trialRequestId },
+      data: updateData,
+    });
+
+    if (input.lessonStatus && updated.allottedLessonId) {
+      await db.lesson.update({
+        where: { id: updated.allottedLessonId },
+        data: { status: input.lessonStatus as any },
+      }).catch(() => {});
+    }
+
+    revalidatePath("/admin/trials");
+    return { success: true };
+  } catch (error) {
+    logger.error({ error }, "Error updating trial lead status");
+    return { success: false, error: "Failed to update trial lead status." };
+  }
+}
+
+export async function convertTrialToEnrollmentAction(input: {
+  trialRequestId: string;
+  courseId: string;
+  teacherId?: string | null;
+  sessionsRemaining?: number;
+  adminNotes?: string;
+}): Promise<AdminActionResponse<{ enrollmentId: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const trialRequest = await db.trialRequest.findUnique({
+      where: { id: input.trialRequestId },
+      include: { student: true },
+    });
+
+    if (!trialRequest) {
+      return { success: false, error: "Trial lead not found." };
+    }
+
+    const course = await db.course.findUnique({
+      where: { id: input.courseId },
+    });
+
+    if (!course) {
+      return { success: false, error: "Course not found." };
+    }
+
+    const teacherId = input.teacherId || trialRequest.allottedTeacherId || null;
+    const sessionCount =
+      input.sessionsRemaining && input.sessionsRemaining > 0
+        ? input.sessionsRemaining
+        : course.sessionCount;
+
+    const enrollment = await db.$transaction(async (tx) => {
+      // Create active enrollment in student dashboard
+      const enr = await tx.enrollment.create({
+        data: {
+          studentId: trialRequest.studentId,
+          courseId: course.id,
+          teacherId: teacherId,
+          sessionsRemaining: sessionCount,
+          status: EnrollmentStatus.ACTIVE,
+          adminNotes: input.adminNotes || `Converted from Trial CRM Lead #${trialRequest.id.slice(-6)}`,
+        },
+      });
+
+      // Update trial request as converted
+      await tx.trialRequest.update({
+        where: { id: trialRequest.id },
+        data: {
+          isConverted: true,
+          convertedAt: new Date(),
+        },
+      });
+
+      return enr;
+    });
+
+    // Notify student
+    try {
+      await createNotification({
+        userId: trialRequest.studentId,
+        type: NotificationType.COURSE_REQUEST_APPROVED,
+        title: "Course Enrollment Confirmed!",
+        body: `Congratulations! Your enrollment for "${course.title}" is now active. Explore your student dashboard.`,
+        link: `/student/dashboard/courses/${course.slug}`,
+      });
+
+      if (teacherId) {
+        await createNotification({
+          userId: teacherId,
+          type: NotificationType.SYSTEM,
+          title: "New Student Converted & Allotted",
+          body: `${trialRequest.studentName} has enrolled in "${course.title}" and is allotted to you.`,
+          link: "/teacher/dashboard",
+        });
+      }
+    } catch {
+      // Non-blocking notification emission
+    }
+
+    revalidatePath("/admin/trials");
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+
+    return { success: true, data: { enrollmentId: enrollment.id } };
+  } catch (error) {
+    logger.error({ error }, "Error converting trial lead to enrollment");
+    return { success: false, error: "Failed to convert trial lead to student enrollment." };
+  }
+}
+
+export async function createAdminTrialLeadAction(input: {
+  studentName: string;
+  studentEmail: string;
+  studentPhone?: string;
+  guardianName?: string;
+  guardianPhone?: string;
+  instrument: string;
+  category?: string;
+  ageGroup?: string;
+  requestedStartsAt: string;
+  preferredTimeSlot?: string;
+  timezone?: string;
+  leadSource?: string;
+  leadIntent?: string;
+  leadOwner?: string;
+  studentNotes?: string;
+}): Promise<AdminActionResponse<{ trialRequestId: string }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const email = input.studentEmail.trim().toLowerCase();
+    let student = await db.user.findUnique({
+      where: { email },
+    });
+
+    if (!student) {
+      student = await db.user.create({
+        data: {
+          email,
+          name: input.studentName.trim(),
+          phone: input.studentPhone?.trim() || null,
+          guardianName: input.guardianName?.trim() || null,
+          guardianPhone: input.guardianPhone?.trim() || null,
+          timezone: input.timezone || "Asia/Kolkata",
+          role: Role.STUDENT,
+        },
+      });
+
+      // Initialize trial status
+      const settings = await db.platformSettings.findFirst();
+      await db.studentTrialStatus.create({
+        data: {
+          studentId: student.id,
+          lessonsGranted: settings?.freeTrialLessonCount ?? 2,
+          lessonsUsed: 0,
+        },
+      });
+    } else {
+      if (input.guardianName || input.guardianPhone || input.studentPhone) {
+        await db.user.update({
+          where: { id: student.id },
+          data: {
+            phone: input.studentPhone?.trim() || student.phone,
+            guardianName: input.guardianName?.trim() || student.guardianName,
+            guardianPhone: input.guardianPhone?.trim() || student.guardianPhone,
+          },
+        });
+      }
+    }
+
+    const startsAt = new Date(input.requestedStartsAt);
+    const validStartsAt = !isNaN(startsAt.getTime()) ? startsAt : new Date();
+
+    const trial = await db.trialRequest.create({
+      data: {
+        studentId: student.id,
+        studentName: input.studentName.trim(),
+        studentEmail: email,
+        studentPhone: input.studentPhone?.trim() || student.phone || null,
+        instrument: input.instrument,
+        category: input.category || "General",
+        ageGroup: input.ageGroup || "Adult (18+)",
+        requestedStartsAt: validStartsAt,
+        preferredTimeSlot: input.preferredTimeSlot || "Morning",
+        timezone: input.timezone || student.timezone || "Asia/Kolkata",
+        leadSource: input.leadSource || "Direct Web",
+        leadIntent: input.leadIntent || "HIGH",
+        leadOwner: input.leadOwner || "Admissions - Neha",
+        studentNotes: input.studentNotes?.trim() || null,
+        status: TrialRequestStatus.PENDING,
+      },
+    });
+
+    revalidatePath("/admin/trials");
+    return { success: true, data: { trialRequestId: trial.id } };
+  } catch (error) {
+    logger.error({ error }, "Error creating admin trial lead");
+    return { success: false, error: "Failed to create trial lead." };
+  }
+}
+
+
 /**
  * Admin action to mark a teacher session as PAID or UNPAID with payout transaction details.
  */
@@ -1522,6 +1934,7 @@ export async function updateTeacherApprovalAction(input: {
   rejectionReason?: string | null;
   adminNotes?: string | null;
   payoutPerSession?: number | null;
+  isPublished?: boolean | null;
 }): Promise<AdminActionResponse> {
   try {
     const admin = await requireRole(Role.ADMIN);
@@ -1572,6 +1985,10 @@ export async function updateTeacherApprovalAction(input: {
 
     if (input.payoutPerSession !== undefined && input.payoutPerSession !== null) {
       updateData.payoutPerSession = Math.max(0, Math.floor(input.payoutPerSession));
+    }
+
+    if (input.isPublished !== undefined && input.isPublished !== null) {
+      updateData.isPublished = Boolean(input.isPublished);
     }
 
     await db.teacherProfile.update({

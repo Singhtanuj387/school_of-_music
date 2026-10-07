@@ -12,6 +12,12 @@ import path from "path";
 export type UpdateProfileInput = {
   name: string;
   timezone: string;
+  country?: string | null;
+  age?: number | null;
+  gender?: string | null;
+  guardianName?: string | null;
+  guardianPhone?: string | null;
+  address?: string | null;
 };
 
 export async function updateProfileAction(input: UpdateProfileInput) {
@@ -27,13 +33,27 @@ export async function updateProfileAction(input: UpdateProfileInput) {
       data: {
         name: input.name.trim(),
         timezone: input.timezone || user.timezone || "UTC",
+        country: input.country !== undefined ? (input.country?.trim() || null) : undefined,
+        age:
+          input.age !== undefined
+            ? input.age !== null && !isNaN(Number(input.age))
+              ? Number(input.age)
+              : null
+            : undefined,
+        gender: input.gender !== undefined ? (input.gender?.trim() || null) : undefined,
+        guardianName: input.guardianName !== undefined ? (input.guardianName?.trim() || null) : undefined,
+        guardianPhone: input.guardianPhone !== undefined ? (input.guardianPhone?.trim() || null) : undefined,
+        address: input.address !== undefined ? (input.address?.trim() || null) : undefined,
       },
     });
 
-    revalidatePath("/student/dashboard/profile");
-    revalidatePath("/student/dashboard");
-    revalidatePath("/teacher/dashboard/profile");
-    revalidatePath("/teacher/dashboard");
+    if (user.role === "TEACHER") {
+      revalidatePath("/teacher/dashboard/profile");
+      revalidatePath("/teacher/dashboard");
+    } else {
+      revalidatePath("/student/dashboard/profile");
+      revalidatePath("/student/dashboard");
+    }
 
     return { success: true };
   } catch (error) {

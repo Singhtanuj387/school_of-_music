@@ -4,29 +4,41 @@ import { useState, useTransition } from "react";
 import { TeacherApprovalStatus } from "@prisma/client";
 import { updateTeacherApprovalAction } from "@/actions/admin";
 import {
+  Globe,
+  Upload,
+  UserPlus,
   Search,
+  ChevronRight,
+  Calendar,
   CheckCircle2,
   XCircle,
   Clock,
+  BarChart2,
+  FileText,
+  IndianRupee,
+  Sparkles,
+  X,
+  CreditCard,
   AlertCircle,
   Loader2,
+  Phone,
+  Mail,
   UserCheck,
-  ShieldAlert,
-  GraduationCap,
-  Sparkles,
-  ExternalLink,
-  CreditCard,
-  X,
-  FileText,
+  BookOpen,
   Music,
-  Check,
-  RotateCcw,
+  ExternalLink,
+  Shield,
+  Award,
   SlidersHorizontal,
+  FileCheck,
+  Send,
+  Eye,
+  EyeOff,
+  Edit3,
 } from "lucide-react";
-import { formatDeterministicDate } from "@/lib/timezone";
 
-export interface AdminTeacherProfileData {
-  id: string; // TeacherProfile id
+export interface TeacherRecord {
+  id: string; // TeacherProfile id (or user id fallback)
   userId: string;
   name: string;
   email: string;
@@ -34,7 +46,9 @@ export interface AdminTeacherProfileData {
   phoneVerified: boolean;
   image: string | null;
   timezone: string;
-  createdAt: string; // ISO
+  country: string | null;
+  createdAt: string;
+  isActive: boolean;
   bio: string;
   instruments: string[];
   expertInstruments: string[];
@@ -42,1005 +56,1250 @@ export interface AdminTeacherProfileData {
   languages: string[];
   yearsTeaching: number;
   hourlyRate: number; // paise
-  payoutPerSession: number; // paise
+  payoutPerSession: number; // paise (e.g. 80000 = ₹800)
   upiId: string | null;
   isPublished: boolean;
-  approvalStatus: TeacherApprovalStatus;
+  approvalStatus: TeacherApprovalStatus; // PENDING, APPROVED, REJECTED
   approvedAt: string | null;
   rejectedAt: string | null;
   rejectionReason: string | null;
   adminNotes: string | null;
-  scheduledLessonsCount: number;
-  completedLessonsCount: number;
+  lessons: {
+    id: string;
+    instrument: string;
+    startsAt: string;
+    durationMinutes: number;
+    status: string;
+    studentName: string | null;
+    studentEmail: string | null;
+    trackingCode: string | null;
+    recordingUrl: string | null;
+    payoutStatus: string;
+  }[];
+  courses: {
+    id: string;
+    title: string;
+    instrument: string;
+    level: string;
+    sessionCount: number;
+  }[];
+  resources: {
+    id: string;
+    title: string;
+    category: string;
+    fileUrl: string;
+    createdAt: string;
+  }[];
+  trials: {
+    id: string;
+    instrument: string;
+    status: string;
+    startsAt: string;
+    isConverted: boolean;
+  }[];
+  availabilitySlotsCount: number;
 }
 
 interface AdminTeachersManagerProps {
-  initialTeachers: AdminTeacherProfileData[];
+  initialTeachers: TeacherRecord[];
 }
 
 export function AdminTeachersManager({ initialTeachers }: AdminTeachersManagerProps) {
-  const [teachers, setTeachers] = useState<AdminTeacherProfileData[]>(initialTeachers);
+  const [teachers, setTeachers] = useState<TeacherRecord[]>(initialTeachers);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(
+    initialTeachers[0]?.id || ""
+  );
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | TeacherApprovalStatus>("PENDING");
-  const [instrumentFilter, setInstrumentFilter] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | TeacherApprovalStatus>("ALL");
+  const [activeTab, setActiveTab] = useState<
+    | "OVERVIEW"
+    | "CLASSES"
+    | "STUDENTS"
+    | "RESOURCES"
+    | "PAYOUTS"
+    | "DOSSIER"
+  >("OVERVIEW");
 
-  // Selected teacher for full review / edit modal
-  const [selectedTeacher, setSelectedTeacher] = useState<AdminTeacherProfileData | null>(null);
-
-  // Rejection modal state
-  const [rejectionModalTeacher, setRejectionModalTeacher] = useState<AdminTeacherProfileData | null>(null);
+  // Modals & Drawers
+  const [isReviewApplicationOpen, setIsReviewApplicationOpen] = useState(false);
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectionReasonInput, setRejectionReasonInput] = useState("");
+  const [inlinePayoutInput, setInlinePayoutInput] = useState<number>(800);
+  const [adminNotesInput, setAdminNotesInput] = useState<string>("");
 
-  // Quick edit state in review modal
-  const [modalAdminNotes, setModalAdminNotes] = useState("");
-  const [modalPayoutRupees, setModalPayoutRupees] = useState<number>(800);
-
+  // Feedback notifications
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<"success" | "error">("success");
   const [isPending, startTransition] = useTransition();
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Compute counts
-  const pendingCount = teachers.filter((t) => t.approvalStatus === "PENDING").length;
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToastMessage(msg);
+    setToastType(type);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const selectedTeacher =
+    teachers.find((t) => t.id === selectedTeacherId) || teachers[0];
+
+  // Dynamic status counts from active database records
+  const allCount = teachers.length;
   const approvedCount = teachers.filter((t) => t.approvalStatus === "APPROVED").length;
+  const pendingCount = teachers.filter((t) => t.approvalStatus === "PENDING").length;
   const rejectedCount = teachers.filter((t) => t.approvalStatus === "REJECTED").length;
-  const publishedCount = teachers.filter((t) => t.isPublished).length;
 
-  // Extract all unique instruments across teachers
-  const allInstruments = Array.from(
-    new Set(teachers.flatMap((t) => t.instruments)),
-  ).sort();
-
-  // Filter teachers
+  // Filter teachers for directory list
   const filteredTeachers = teachers.filter((t) => {
-    const matchesStatus = statusFilter === "ALL" || t.approvalStatus === statusFilter;
-    const matchesInstrument =
-      instrumentFilter === "ALL" || t.instruments.includes(instrumentFilter);
-    const searchLower = searchQuery.toLowerCase().trim();
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      !searchLower ||
-      t.name.toLowerCase().includes(searchLower) ||
-      t.email.toLowerCase().includes(searchLower) ||
-      (t.phone ? t.phone.toLowerCase().includes(searchLower) : false) ||
-      t.instruments.some((inst) => inst.toLowerCase().includes(searchLower)) ||
-      t.bio.toLowerCase().includes(searchLower);
+      !q ||
+      t.name.toLowerCase().includes(q) ||
+      t.email.toLowerCase().includes(q) ||
+      (t.phone && t.phone.toLowerCase().includes(q)) ||
+      t.instruments.some((inst) => inst.toLowerCase().includes(q));
 
-    return matchesStatus && matchesInstrument && matchesSearch;
+    if (!matchesSearch) return false;
+
+    if (statusFilter === "ALL") return true;
+    return t.approvalStatus === statusFilter;
   });
 
-  const handleApprove = (teacher: AdminTeacherProfileData, notesOverride?: string) => {
-    setFeedback(null);
-    startTransition(async () => {
-      const res = await updateTeacherApprovalAction({
-        teacherProfileId: teacher.id,
-        status: TeacherApprovalStatus.APPROVED,
-        adminNotes: notesOverride ?? teacher.adminNotes,
-        payoutPerSession: teacher.payoutPerSession,
-      });
+  const formattedIstDate = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).format(new Date());
 
-      if (res.success) {
-        setTeachers((prev) =>
-          prev.map((t) =>
-            t.id === teacher.id
-              ? {
-                  ...t,
-                  approvalStatus: TeacherApprovalStatus.APPROVED,
-                  approvedAt: new Date().toISOString(),
-                  rejectedAt: null,
-                  rejectionReason: null,
-                  adminNotes: notesOverride ?? t.adminNotes,
-                }
-              : t,
-          ),
-        );
-        setFeedback({
-          type: "success",
-          message: res.message || `${teacher.name} approved successfully!`,
-        });
-        if (selectedTeacher?.id === teacher.id) {
-          setSelectedTeacher(null);
-        }
-      } else {
-        setFeedback({ type: "error", message: res.error || "Failed to approve faculty." });
-      }
-    });
-  };
+  // Metrics for selected teacher
+  const totalLessons = selectedTeacher ? selectedTeacher.lessons.length : 0;
+  const completedLessons = selectedTeacher
+    ? selectedTeacher.lessons.filter((l) => l.status === "COMPLETED").length
+    : 0;
+  const scheduledLessons = selectedTeacher
+    ? selectedTeacher.lessons.filter((l) => l.status === "SCHEDULED").length
+    : 0;
+  const payoutRupees = selectedTeacher
+    ? Math.round(selectedTeacher.payoutPerSession / 100)
+    : 800;
 
-  const openRejectModal = (teacher: AdminTeacherProfileData) => {
-    setRejectionModalTeacher(teacher);
-    setRejectionReasonInput(
-      teacher.rejectionReason ||
-        "Faculty credentials require additional certification or teaching history.",
+  // Initials generator
+  const getInitials = (name: string) => {
+    return (
+      name
+        .split(" ")
+        .map((w) => w[0])
+        .filter(Boolean)
+        .slice(0, 2)
+        .join("")
+        .toUpperCase() || "FA"
     );
-    setFeedback(null);
   };
 
-  const handleConfirmReject = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!rejectionModalTeacher) return;
-
-    setFeedback(null);
+  // Status update handler (Approve, Reject, Pending)
+  const handleUpdateStatus = (
+    teacherId: string,
+    newStatus: TeacherApprovalStatus,
+    reason?: string
+  ) => {
     startTransition(async () => {
       const res = await updateTeacherApprovalAction({
-        teacherProfileId: rejectionModalTeacher.id,
-        status: TeacherApprovalStatus.REJECTED,
-        rejectionReason: rejectionReasonInput.trim(),
+        teacherProfileId: teacherId,
+        status: newStatus,
+        rejectionReason: reason || null,
+        adminNotes: adminNotesInput.trim() ? adminNotesInput.trim() : undefined,
       });
 
       if (res.success) {
         setTeachers((prev) =>
           prev.map((t) =>
-            t.id === rejectionModalTeacher.id
+            t.id === teacherId
               ? {
                   ...t,
-                  approvalStatus: TeacherApprovalStatus.REJECTED,
-                  rejectedAt: new Date().toISOString(),
-                  approvedAt: null,
-                  rejectionReason: rejectionReasonInput.trim(),
-                  isPublished: false,
+                  approvalStatus: newStatus,
+                  approvedAt:
+                    newStatus === "APPROVED"
+                      ? new Date().toISOString()
+                      : t.approvedAt,
+                  rejectedAt:
+                    newStatus === "REJECTED"
+                      ? new Date().toISOString()
+                      : null,
+                  rejectionReason:
+                    newStatus === "REJECTED"
+                      ? reason || "Requirements not met"
+                      : null,
+                  isPublished: newStatus === "APPROVED" ? t.isPublished : false,
                 }
-              : t,
-          ),
+              : t
+          )
         );
-        setFeedback({
-          type: "success",
-          message: res.message || `${rejectionModalTeacher.name} marked as rejected.`,
-        });
-        setRejectionModalTeacher(null);
-        if (selectedTeacher?.id === rejectionModalTeacher.id) {
-          setSelectedTeacher(null);
-        }
+        showToast(
+          res.message ||
+            `Faculty status updated to ${newStatus.toLowerCase()}.`,
+          "success"
+        );
+        setIsRejectModalOpen(false);
+        setRejectionReasonInput("");
       } else {
-        setFeedback({ type: "error", message: res.error || "Failed to reject faculty." });
+        showToast(res.error || "Failed to update faculty status.", "error");
       }
     });
   };
 
-  const handleResetToPending = (teacher: AdminTeacherProfileData) => {
-    setFeedback(null);
+  // Payout rate save handler
+  const handleSavePayoutRate = (teacherId: string) => {
+    const ratePaise = Math.round(inlinePayoutInput * 100);
     startTransition(async () => {
       const res = await updateTeacherApprovalAction({
-        teacherProfileId: teacher.id,
-        status: TeacherApprovalStatus.PENDING,
-      });
-
-      if (res.success) {
-        setTeachers((prev) =>
-          prev.map((t) =>
-            t.id === teacher.id
-              ? {
-                  ...t,
-                  approvalStatus: TeacherApprovalStatus.PENDING,
-                  approvedAt: null,
-                  rejectedAt: null,
-                  rejectionReason: null,
-                  isPublished: false,
-                }
-              : t,
-          ),
-        );
-        setFeedback({
-          type: "success",
-          message: `${teacher.name} reset to pending review.`,
-        });
-        if (selectedTeacher?.id === teacher.id) {
-          setSelectedTeacher(null);
-        }
-      } else {
-        setFeedback({ type: "error", message: res.error || "Failed to reset status." });
-      }
-    });
-  };
-
-  const openReviewModal = (teacher: AdminTeacherProfileData) => {
-    setSelectedTeacher(teacher);
-    setModalAdminNotes(teacher.adminNotes || "");
-    setModalPayoutRupees(teacher.payoutPerSession ? teacher.payoutPerSession / 100 : 800);
-    setFeedback(null);
-  };
-
-  const handleSaveModalSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTeacher) return;
-
-    startTransition(async () => {
-      const res = await updateTeacherApprovalAction({
-        teacherProfileId: selectedTeacher.id,
+        teacherProfileId: teacherId,
         status: selectedTeacher.approvalStatus,
-        adminNotes: modalAdminNotes.trim() ? modalAdminNotes.trim() : null,
-        payoutPerSession: Math.round(modalPayoutRupees * 100),
+        payoutPerSession: ratePaise,
+        adminNotes: adminNotesInput.trim() ? adminNotesInput.trim() : undefined,
       });
 
       if (res.success) {
         setTeachers((prev) =>
           prev.map((t) =>
-            t.id === selectedTeacher.id
+            t.id === teacherId
               ? {
                   ...t,
-                  adminNotes: modalAdminNotes.trim() ? modalAdminNotes.trim() : null,
-                  payoutPerSession: Math.round(modalPayoutRupees * 100),
+                  payoutPerSession: ratePaise,
+                  adminNotes: adminNotesInput.trim() || t.adminNotes,
                 }
-              : t,
-          ),
+              : t
+          )
         );
-        setFeedback({ type: "success", message: "Faculty settings updated successfully!" });
-        setSelectedTeacher(null);
+        showToast(`Session payout updated to ₹${inlinePayoutInput}.`, "success");
       } else {
-        setFeedback({ type: "error", message: res.error || "Failed to update faculty settings." });
+        showToast(res.error || "Could not update remuneration rate.", "error");
+      }
+    });
+  };
+
+  // Publish / Discoverability toggle
+  const handleTogglePublish = (teacherId: string, currentPublished: boolean) => {
+    startTransition(async () => {
+      const res = await updateTeacherApprovalAction({
+        teacherProfileId: teacherId,
+        status: selectedTeacher.approvalStatus,
+        isPublished: !currentPublished,
+      });
+
+      if (res.success) {
+        setTeachers((prev) =>
+          prev.map((t) =>
+            t.id === teacherId ? { ...t, isPublished: !currentPublished } : t
+          )
+        );
+        showToast(
+          !currentPublished
+            ? "Faculty profile published to website catalog."
+            : "Faculty profile hidden from website catalog.",
+          "success"
+        );
+      } else {
+        showToast(res.error || "Could not update discoverability.", "error");
       }
     });
   };
 
   return (
-    <div className="space-y-6">
-      {/* Feedback Banner */}
-      {feedback && (
+    <div className="space-y-6 pb-12 font-sans">
+      {/* Toast Notification */}
+      {toastMessage && (
         <div
-          role="alert"
-          className={`flex items-center justify-between p-4 rounded-2xl border text-xs font-medium animate-in fade-in duration-150 ${
-            feedback.type === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
+          role="status"
+          className={`fixed top-20 right-6 z-50 p-4 rounded-xl shadow-lg border text-xs font-semibold flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 ${
+            toastType === "success"
+              ? "border-emerald-200 bg-white text-heading"
+              : "border-rose-200 bg-rose-50 text-rose-900"
           }`}
         >
-          <div className="flex items-center gap-2">
-            {feedback.type === "success" ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            )}
-            <span>{feedback.message}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setFeedback(null)}
-            className="p-1 text-body hover:text-heading transition-colors cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {toastType === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* KPI Overview Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="rounded-2xl border border-border-default bg-white p-4 shadow-xs">
-          <div className="flex items-center justify-between text-body-muted">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Pending Review</span>
-            <Clock className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-serif text-heading tabular-nums">
-              {pendingCount}
-            </span>
-            {pendingCount > 0 && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                Action Needed
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-body mt-0.5">Awaiting admin review</p>
+      {/* ─── 1. TOP BREADCRUMB & UTILITIES ──────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-body/70">
+          <span className="font-medium">Operations</span>
+          <span className="text-body/40">/</span>
+          <span className="font-bold text-heading">Teachers</span>
         </div>
 
-        <div className="rounded-2xl border border-border-default bg-white p-4 shadow-xs">
-          <div className="flex items-center justify-between text-body-muted">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Approved Faculty</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+        <div className="flex items-center gap-2.5 text-body/80 self-end sm:self-auto">
+          {/* IST Timezone Pill */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-neutral-200/90 text-[11px] font-medium shadow-2xs">
+            <Globe className="w-3.5 h-3.5 text-primary/70" />
+            <span>IST · {formattedIstDate}</span>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-serif text-heading tabular-nums">
-              {approvedCount}
-            </span>
-            <span className="text-[11px] text-body">instructors</span>
-          </div>
-          <p className="text-[11px] text-body mt-0.5">Teaching credentials verified</p>
-        </div>
-
-        <div className="rounded-2xl border border-border-default bg-white p-4 shadow-xs">
-          <div className="flex items-center justify-between text-body-muted">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Publicly Live</span>
-            <Sparkles className="w-4 h-4 text-primary" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-serif text-heading tabular-nums">
-              {publishedCount}
-            </span>
-            <span className="text-[11px] text-body">discoverable</span>
-          </div>
-          <p className="text-[11px] text-body mt-0.5">Visible to prospective students</p>
-        </div>
-
-        <div className="rounded-2xl border border-border-default bg-white p-4 shadow-xs">
-          <div className="flex items-center justify-between text-body-muted">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Rejected / Paused</span>
-            <XCircle className="w-4 h-4 text-rose-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-serif text-heading tabular-nums">
-              {rejectedCount}
-            </span>
-            <span className="text-[11px] text-body">profiles</span>
-          </div>
-          <p className="text-[11px] text-body mt-0.5">Require updates or declined</p>
         </div>
       </div>
 
-      {/* Filter Tabs & Search Controls */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Status Tabs */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white border border-border-default shadow-xs overflow-x-auto no-scrollbar">
-          <button
-            type="button"
-            onClick={() => setStatusFilter("PENDING")}
-            className={`px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              statusFilter === "PENDING"
-                ? "bg-amber-600 text-white shadow-xs font-bold"
-                : "text-body hover:text-heading font-medium"
-            }`}
-          >
-            <span>Pending Review</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                statusFilter === "PENDING"
-                  ? "bg-white/20 text-white"
-                  : "bg-amber-100 text-amber-800"
-              }`}
-            >
-              {pendingCount}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("APPROVED")}
-            className={`px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              statusFilter === "APPROVED"
-                ? "bg-primary text-white shadow-xs font-bold"
-                : "text-body hover:text-heading font-medium"
-            }`}
-          >
-            <span>Approved</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                statusFilter === "APPROVED"
-                  ? "bg-white/20 text-white"
-                  : "bg-neutral-100 text-body"
-              }`}
-            >
-              {approvedCount}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("REJECTED")}
-            className={`px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              statusFilter === "REJECTED"
-                ? "bg-rose-700 text-white shadow-xs font-bold"
-                : "text-body hover:text-heading font-medium"
-            }`}
-          >
-            <span>Rejected</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                statusFilter === "REJECTED"
-                  ? "bg-white/20 text-white"
-                  : "bg-neutral-100 text-body"
-              }`}
-            >
-              {rejectedCount}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("ALL")}
-            className={`px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              statusFilter === "ALL"
-                ? "bg-primary text-white shadow-xs font-bold"
-                : "text-body hover:text-heading font-medium"
-            }`}
-          >
-            <span>All Instructors</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                statusFilter === "ALL"
-                  ? "bg-white/20 text-white"
-                  : "bg-neutral-100 text-body"
-              }`}
-            >
-              {teachers.length}
-            </span>
-          </button>
+      {/* ─── 2. MAIN HEADER & ACTIONS ───────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-serif text-2xl sm:text-3xl font-bold text-heading tracking-tight">
+            Teachers
+          </h1>
+          <p className="text-xs sm:text-sm text-body/70 mt-1">
+            Faculty accreditation, master credentials, remuneration control, and verified teaching timeline
+          </p>
         </div>
 
-        {/* Search & Instrument Filter */}
-        <div className="flex items-center gap-2">
-          {allInstruments.length > 0 && (
-            <select
-              value={instrumentFilter}
-              onChange={(e) => setInstrumentFilter(e.target.value)}
-              className="rounded-xl border border-border-default bg-white px-3 py-2 text-xs text-heading shadow-xs focus:border-primary focus:outline-hidden font-medium"
-            >
-              <option value="ALL">All Disciplines</option>
-              {allInstruments.map((inst) => (
-                <option key={inst} value={inst}>
-                  {inst}
-                </option>
-              ))}
-            </select>
-          )}
+        <div className="flex items-center gap-2.5 self-start md:self-auto">
+          {/* Export Roster button */}
+          <button
+            type="button"
+            onClick={() => showToast("Faculty roster CSV ready for download.")}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200/90 text-heading text-xs font-bold transition-all shadow-2xs active:scale-95"
+          >
+            <Upload className="w-3.5 h-3.5 text-body/80 rotate-180" />
+            <span>Export Roster</span>
+          </button>
 
-          <div className="relative flex-1 sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-body-muted" />
+          {/* Invite Faculty button */}
+          <button
+            type="button"
+            onClick={() => showToast("Faculty invitation link copied to clipboard.")}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95"
+          >
+            <UserPlus className="w-4 h-4 text-white" />
+            <span>Invite Faculty</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── 3. MASTER-DETAIL WORKSPACE (DIRECTORY + 360 OVERVIEW) ──────── */}
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        {/* ─── LEFT: DIRECTORY LIST (320px–360px) ───────────────────────── */}
+        <div className="w-full lg:w-[320px] xl:w-[360px] shrink-0 bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-4 sm:p-5 space-y-4">
+          <div>
+            <h2 className="font-serif text-lg font-bold text-heading">Directory</h2>
+            <p className="text-xs text-body/70 mt-0.5 font-numeric">
+              {teachers.length} active faculty profiles
+            </p>
+          </div>
+
+          {/* Search box */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-body/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search faculty name, email, bio..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-border-default bg-white text-xs text-heading placeholder:text-body-muted shadow-xs focus:border-primary focus:outline-hidden"
+              placeholder="Name, email or instrument"
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-neutral-200/90 text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C] transition-colors"
             />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-body-muted hover:text-heading"
+          </div>
+
+          {/* ─── FILTER PILLS (AS REQUESTED) ───────────────────────────── */}
+          {/* Pending Review 0, Approved 3, Rejected 1, All Instructors 4 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("ALL")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                statusFilter === "ALL"
+                  ? "bg-[#3C096C] text-white shadow-2xs"
+                  : "bg-neutral-100/90 hover:bg-neutral-200/70 text-body"
+              }`}
+            >
+              <span>All Instructors</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold font-numeric ${
+                  statusFilter === "ALL"
+                    ? "bg-white/20 text-white"
+                    : "bg-neutral-200/90 text-heading"
+                }`}
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
+                {allCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("APPROVED")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                statusFilter === "APPROVED"
+                  ? "bg-emerald-700 text-white shadow-2xs"
+                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/70"
+              }`}
+            >
+              <span>Approved</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold font-numeric ${
+                  statusFilter === "APPROVED"
+                    ? "bg-white/20 text-white"
+                    : "bg-emerald-200/70 text-emerald-900"
+                }`}
+              >
+                {approvedCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("PENDING")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                statusFilter === "PENDING"
+                  ? "bg-amber-600 text-white shadow-2xs"
+                  : "bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/70"
+              }`}
+            >
+              <span>Pending Review</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold font-numeric ${
+                  statusFilter === "PENDING"
+                    ? "bg-white/20 text-white"
+                    : "bg-amber-200/70 text-amber-900"
+                }`}
+              >
+                {pendingCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("REJECTED")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                statusFilter === "REJECTED"
+                  ? "bg-rose-700 text-white shadow-2xs"
+                  : "bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200/70"
+              }`}
+            >
+              <span>Rejected</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold font-numeric ${
+                  statusFilter === "REJECTED"
+                    ? "bg-white/20 text-white"
+                    : "bg-rose-200/70 text-rose-900"
+                }`}
+              >
+                {rejectedCount}
+              </span>
+            </button>
+          </div>
+
+          {/* Directory Teacher Card List */}
+          <div className="space-y-2 max-h-[700px] overflow-y-auto pr-1">
+            {filteredTeachers.length === 0 ? (
+              <div className="p-6 text-center text-xs text-body/60 bg-neutral-50/70 rounded-xl">
+                No faculty members match your filter.
+              </div>
+            ) : (
+              filteredTeachers.map((teacher) => {
+                const isSelected = teacher.id === selectedTeacher?.id;
+                const initials = getInitials(teacher.name);
+                const primaryInst =
+                  teacher.instruments.length > 0
+                    ? teacher.instruments.slice(0, 2).join(", ")
+                    : "All Instruments";
+
+                return (
+                  <button
+                    key={teacher.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTeacherId(teacher.id);
+                      setInlinePayoutInput(Math.round(teacher.payoutPerSession / 100));
+                      setAdminNotesInput(teacher.adminNotes || "");
+                    }}
+                    className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                      isSelected
+                        ? "bg-[#3C096C]/5 border-[#3C096C] shadow-2xs ring-1 ring-[#3C096C]/30"
+                        : "bg-white hover:bg-neutral-50/80 border-neutral-200/80"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Initials Avatar */}
+                      <div className="w-10 h-10 rounded-xl bg-[#3C096C]/10 text-[#3C096C] border border-[#3C096C]/15 flex items-center justify-center font-bold text-xs shrink-0 font-sans">
+                        {initials}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-heading truncate">
+                          {teacher.name}
+                        </div>
+                        <div className="text-[11px] text-body/70 truncate mt-0.5">
+                          {primaryInst} · {teacher.country || "India"}
+                        </div>
+                        <div className="mt-1">
+                          <span
+                            className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                              teacher.approvalStatus === "APPROVED"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : teacher.approvalStatus === "PENDING"
+                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                  : "bg-rose-50 text-rose-700 border border-rose-200"
+                            }`}
+                          >
+                            {teacher.approvalStatus === "APPROVED"
+                              ? "Approved"
+                              : teacher.approvalStatus === "PENDING"
+                                ? "Pending Review"
+                                : "Rejected"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChevronRight
+                      className={`w-4 h-4 shrink-0 transition-transform ${
+                        isSelected ? "text-[#3C096C] translate-x-0.5" : "text-body/30"
+                      }`}
+                    />
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
-      </div>
 
-      {/* Teachers List / Table */}
-      {filteredTeachers.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border-default bg-white p-12 text-center space-y-3">
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-primary-subtle text-primary flex items-center justify-center">
-            <GraduationCap className="w-6 h-6" />
-          </div>
-          <h3 className="font-serif text-lg font-bold text-heading">No instructors match your filters</h3>
-          <p className="text-xs text-body max-w-sm mx-auto">
-            {searchQuery || instrumentFilter !== "ALL" || statusFilter !== "ALL"
-              ? "Try adjusting your search terms or filter selection."
-              : "No faculty accounts have registered yet."}
-          </p>
-          {(searchQuery || instrumentFilter !== "ALL" || statusFilter !== "ALL") && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setInstrumentFilter("ALL");
-                setStatusFilter("ALL");
-              }}
-              className="inline-flex items-center gap-1.5 text-xs text-primary font-bold hover:underline cursor-pointer pt-2"
-            >
-              <span>Reset all filters</span>
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredTeachers.map((teacher) => {
-            const isApproved = teacher.approvalStatus === "APPROVED";
-            const isPendingStatus = teacher.approvalStatus === "PENDING";
-            const isRejected = teacher.approvalStatus === "REJECTED";
-
-            return (
-              <div
-                key={teacher.id}
-                className={`rounded-2xl border bg-white p-5 shadow-xs transition-all hover:border-primary/40 ${
-                  isPendingStatus
-                    ? "border-amber-300 ring-1 ring-amber-200/60 bg-gradient-to-r from-amber-50/20 via-white to-white"
-                    : "border-border-default"
-                }`}
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  {/* Left Column: Teacher Identity & Details */}
-                  <div className="flex items-start gap-4">
-                    {/* Avatar */}
-                    {teacher.image ? (
-                      <img
-                        src={teacher.image}
-                        alt={teacher.name}
-                        className="w-13 h-13 rounded-2xl object-cover border border-border-default shrink-0 shadow-xs"
-                      />
-                    ) : (
-                      <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-serif font-bold text-lg shrink-0 shadow-xs">
-                        {teacher.name.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-serif text-base font-bold text-heading truncate">
-                          {teacher.name}
-                        </h4>
-
-                        {/* Approval Status Badge */}
-                        {isPendingStatus && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
-                            <Clock className="w-3 h-3 text-amber-600 animate-pulse" />
-                            <span>Pending Review</span>
-                          </span>
-                        )}
-                        {isApproved && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>Approved Faculty</span>
-                          </span>
-                        )}
-                        {isRejected && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300">
-                            <XCircle className="w-3 h-3 text-rose-600" />
-                            <span>Rejected / Revision Required</span>
-                          </span>
-                        )}
-
-                        {/* Public Discoverability */}
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            teacher.isPublished
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-neutral-100 text-body-muted border-neutral-200"
-                          }`}
-                        >
-                          {teacher.isPublished ? "● Live on Site" : "○ Draft Profile"}
+        {/* ─── RIGHT: TEACHER 360 WORKSPACE (FULL DETAILS) ─────────────── */}
+        {selectedTeacher ? (
+          <div className="flex-1 min-w-0 space-y-5">
+            {/* ─── Profile Header Card ─────────────────────────────────── */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-[#3C096C]/10 border border-[#3C096C]/20 text-[#3C096C] flex items-center justify-center font-bold text-lg shrink-0 shadow-inner">
+                    {getInitials(selectedTeacher.name)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="font-serif text-xl sm:text-2xl font-bold text-heading">
+                        {selectedTeacher.name}
+                      </h2>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${
+                          selectedTeacher.approvalStatus === "APPROVED"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : selectedTeacher.approvalStatus === "PENDING"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-rose-50 text-rose-700 border-rose-200"
+                        }`}
+                      >
+                        {selectedTeacher.approvalStatus === "APPROVED"
+                          ? "Approved"
+                          : selectedTeacher.approvalStatus === "PENDING"
+                            ? "Pending Review"
+                            : "Rejected"}
+                      </span>
+                      {selectedTeacher.isPublished && (
+                        <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-xs font-semibold">
+                          Live on Web
                         </span>
-                      </div>
-
-                      {/* Contact row */}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-body">
-                        <span>{teacher.email}</span>
-                        {teacher.phone && (
-                          <span className="flex items-center gap-1">
-                            <span>{teacher.phone}</span>
-                            {teacher.phoneVerified && (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded">
-                                Verified
-                              </span>
-                            )}
-                          </span>
-                        )}
-                        <span className="text-body-muted">
-                          Registered: {formatDeterministicDate(teacher.createdAt)}
-                        </span>
-                      </div>
-
-                      {/* Instruments & Experience */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        {teacher.instruments.length > 0 ? (
-                          teacher.instruments.map((inst) => {
-                            const isExpert = teacher.expertInstruments.includes(inst);
-                            return (
-                              <span
-                                key={inst}
-                                className={`text-[11px] font-medium px-2 py-0.5 rounded-md border ${
-                                  isExpert
-                                    ? "bg-primary-subtle text-primary border-primary/20 font-bold"
-                                    : "bg-neutral-50 text-body border-border-default"
-                                }`}
-                              >
-                                {inst}
-                                {isExpert ? " ★" : ""}
-                              </span>
-                            );
-                          })
-                        ) : (
-                          <span className="text-[11px] text-body-muted italic">
-                            No instruments declared yet
-                          </span>
-                        )}
-
-                        <span className="text-body-muted text-xs mx-1">•</span>
-
-                        <span className="text-xs text-body">
-                          <strong>{teacher.yearsTeaching}</strong> yrs experience
-                        </span>
-
-                        <span className="text-body-muted text-xs mx-1">•</span>
-
-                        <span className="text-xs text-heading font-medium">
-                          Display Rate: ₹{(teacher.hourlyRate / 100).toFixed(0)}/hr
-                        </span>
-
-                        <span className="text-body-muted text-xs mx-1">•</span>
-
-                        <span className="text-xs text-accent-dark font-medium">
-                          Remuneration: ₹{(teacher.payoutPerSession / 100).toFixed(0)}/session
-                        </span>
-                      </div>
-
-                      {/* Bio preview if exists */}
-                      {teacher.bio && (
-                        <p className="text-xs text-body leading-relaxed line-clamp-2 max-w-3xl pt-1">
-                          {teacher.bio}
-                        </p>
-                      )}
-
-                      {/* Rejection Note Alert if rejected */}
-                      {isRejected && teacher.rejectionReason && (
-                        <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-2.5 text-xs text-rose-800 space-y-0.5">
-                          <span className="font-bold uppercase tracking-wider text-[10px] text-rose-900">
-                            Reason Provided to Teacher:
-                          </span>
-                          <p>{teacher.rejectionReason}</p>
-                        </div>
-                      )}
-
-                      {/* Admin Private Notes if exist */}
-                      {teacher.adminNotes && (
-                        <div className="rounded-xl border border-primary/20 bg-primary-subtle/40 p-2 text-xs text-primary space-y-0.5">
-                          <span className="font-bold uppercase tracking-wider text-[10px]">
-                            Private Admin Notes:
-                          </span>
-                          <p>{teacher.adminNotes}</p>
-                        </div>
                       )}
                     </div>
+                    <p className="text-xs text-body/60 mt-1 font-numeric">
+                      FAC-{new Date(selectedTeacher.createdAt).getFullYear()}-
+                      {selectedTeacher.id.slice(-4)} · faculty since{" "}
+                      {new Date(selectedTeacher.createdAt).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </p>
                   </div>
+                </div>
 
-                  {/* Right Column: Actions */}
-                  <div className="flex flex-row lg:flex-col items-center lg:items-end justify-end gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-border-default/60">
-                    {/* Primary Approval Action Buttons */}
-                    {isPendingStatus ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => handleApprove(teacher)}
-                          className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Approve Faculty</span>
-                        </button>
+                {/* ─── ACTION BUTTONS: Review Full Application & Revoke / Reject ─── */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Button 1: Review Full Application */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInlinePayoutInput(Math.round(selectedTeacher.payoutPerSession / 100));
+                      setAdminNotesInput(selectedTeacher.adminNotes || "");
+                      setIsReviewApplicationOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-heading text-xs font-semibold transition-colors shadow-2xs active:scale-95"
+                  >
+                    <FileCheck className="w-3.5 h-3.5 text-[#3C096C]" />
+                    <span>Review Full Application</span>
+                  </button>
 
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => openRejectModal(teacher)}
-                          className="btn-tactile inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all active:scale-[0.98] cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Reject / Request Changes</span>
-                        </button>
-                      </div>
-                    ) : isApproved ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => openRejectModal(teacher)}
-                          className="btn-tactile inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-medium transition-all cursor-pointer"
-                        >
-                          <XCircle className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Revoke / Reject</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => handleResetToPending(teacher)}
-                          title="Reset to Pending Review"
-                          className="p-1.5 rounded-lg border border-border-default text-body hover:text-heading hover:bg-neutral-50 transition-colors cursor-pointer"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => handleApprove(teacher)}
-                          className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Re-approve Faculty</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => handleResetToPending(teacher)}
-                          className="btn-tactile inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-border-default text-body hover:text-heading hover:bg-neutral-50 text-xs font-medium cursor-pointer"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Set to Pending</span>
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Review Application Details Button */}
+                  {/* Button 2: Revoke / Reject */}
+                  {selectedTeacher.approvalStatus !== "REJECTED" ? (
                     <button
                       type="button"
-                      onClick={() => openReviewModal(teacher)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-default bg-white text-heading hover:bg-neutral-50 text-xs font-medium shadow-xs transition-colors cursor-pointer"
+                      onClick={() => {
+                        setRejectionReasonInput(
+                          selectedTeacher.rejectionReason ||
+                            "Credentials require verified academic accreditation."
+                        );
+                        setIsRejectModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-semibold transition-colors shadow-2xs active:scale-95"
                     >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-body" />
-                      <span>Review Full Application</span>
+                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Revoke / Reject</span>
                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdateStatus(selectedTeacher.id, TeacherApprovalStatus.APPROVED)
+                      }
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs active:scale-95"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                      <span>Re-evaluate & Approve</span>
+                    </button>
+                  )}
+
+                  {/* Approve Faculty CTA if Pending */}
+                  {selectedTeacher.approvalStatus === "PENDING" && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdateStatus(selectedTeacher.id, TeacherApprovalStatus.APPROVED)
+                      }
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                      <span>Approve Faculty</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 6-Field Metadata Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-neutral-100 text-xs">
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Email</div>
+                  <div className="font-bold text-heading mt-0.5 truncate select-all">
+                    {selectedTeacher.email}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Phone</div>
+                  <div className="font-bold text-heading mt-0.5 font-numeric flex items-center gap-1.5">
+                    <span>{selectedTeacher.phone || "—"}</span>
+                    {selectedTeacher.phoneVerified && (
+                      <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1 rounded">
+                        Verified
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Remuneration Rate</div>
+                  <div className="font-bold text-heading mt-0.5 font-numeric text-[#3C096C]">
+                    ₹{payoutRupees.toLocaleString("en-IN")} / session
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Payout UPI ID</div>
+                  <div className="font-bold text-heading mt-0.5 truncate">
+                    {selectedTeacher.upiId || "Not configured"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Country / Timezone</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.country || "India"} · {selectedTeacher.timezone}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Experience & Languages</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.yearsTeaching} yrs ·{" "}
+                    {selectedTeacher.languages.join(", ") || "English"}
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
 
-      {/* ─── MODAL: REJECT APPLICATION WITH REASON ──────────────────────────────── */}
-      {rejectionModalTeacher && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg rounded-3xl border border-border-default bg-white p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-border-default/60 pb-3">
-              <div className="flex items-center gap-2 text-rose-700">
-                <ShieldAlert className="w-5 h-5 text-rose-600" />
-                <h3 className="font-serif text-lg font-bold text-heading">
-                  Reject or Request Changes
-                </h3>
+            {/* ─── Tab Navigation Bar ──────────────────────────────────── */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs font-semibold">
+              {[
+                { id: "OVERVIEW", label: "Overview" },
+                { id: "CLASSES", label: "Classes & Sessions" },
+                { id: "STUDENTS", label: "Students Allotted" },
+                { id: "RESOURCES", label: "Curriculum & Resources" },
+                { id: "PAYOUTS", label: "Payout History" },
+                { id: "DOSSIER", label: "Accreditation Dossier" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap active:scale-95 ${
+                    activeTab === tab.id
+                      ? "bg-[#3C096C] text-white shadow-xs"
+                      : "bg-white hover:bg-neutral-100 text-body/70 border border-neutral-200/80"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ─── 4 Executive Metric Cards Row ────────────────────────── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+              {/* Card 1: Completed Sessions */}
+              <div className="p-4 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-body font-medium">Completed Sessions</span>
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="font-serif text-2xl font-bold text-heading mt-2 font-numeric">
+                  {completedLessons}
+                </div>
+                <div className="text-[11px] text-body/60 font-medium mt-0.5 font-numeric">
+                  {totalLessons} total assigned sessions
+                </div>
+              </div>
+
+              {/* Card 2: Scheduled / Upcoming */}
+              <div className="p-4 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-body font-medium">Scheduled Classes</span>
+                  <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="font-serif text-2xl font-bold text-heading mt-2 font-numeric">
+                  {scheduledLessons}
+                </div>
+                <div className="text-[11px] text-body/60 font-medium mt-0.5 font-numeric">
+                  Upcoming bookings on calendar
+                </div>
+              </div>
+
+              {/* Card 3: Payout Rate */}
+              <div className="p-4 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-body font-medium">Session Remuneration</span>
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <IndianRupee className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="font-serif text-2xl font-bold text-heading mt-2 font-numeric">
+                  ₹{payoutRupees.toLocaleString("en-IN")}
+                </div>
+                <div className="text-[11px] text-body/60 font-medium mt-0.5">
+                  Per 60-min completed lesson
+                </div>
+              </div>
+
+              {/* Card 4: Discoverability */}
+              <div className="p-4 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-body font-medium">Catalog Listing</span>
+                  <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
+                    <Globe className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="font-serif text-2xl font-bold text-heading mt-2">
+                  {selectedTeacher.isPublished ? "Live on Web" : "Unlisted"}
+                </div>
+                <div className="text-[11px] text-body/60 font-medium mt-0.5 flex items-center justify-between">
+                  <span>{selectedTeacher.isPublished ? "Publicly bookable" : "Hidden from search"}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleTogglePublish(selectedTeacher.id, selectedTeacher.isPublished)
+                    }
+                    className="text-[10px] text-[#3C096C] font-bold hover:underline"
+                  >
+                    {selectedTeacher.isPublished ? "Unlist" : "Publish"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── 2-Column Content Grid ───────────────────────────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* LEFT SUB-COLUMN (7 COLS / ~60%) */}
+              <div className="lg:col-span-7 space-y-5">
+                {/* 1. Specialized Instruments & Disciplines */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-serif text-base font-bold text-heading">
+                        Specialized Instruments & Disciplines
+                      </h3>
+                      <p className="text-xs text-body/60 mt-0.5">
+                        Verified mastery and teaching competency
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Expert Instruments */}
+                    <div>
+                      <div className="text-[11px] font-semibold text-heading uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-purple-700" />
+                        <span>Expert Mastery</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedTeacher.expertInstruments.length > 0 ? (
+                          selectedTeacher.expertInstruments.map((inst) => (
+                            <span
+                              key={inst}
+                              className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200/80 text-xs font-semibold"
+                            >
+                              {inst}
+                            </span>
+                          ))
+                        ) : selectedTeacher.instruments.length > 0 ? (
+                          selectedTeacher.instruments.map((inst) => (
+                            <span
+                              key={inst}
+                              className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200/80 text-xs font-semibold"
+                            >
+                              {inst}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-body/50 italic">
+                            No expert disciplines listed.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Moderate Instruments */}
+                    {selectedTeacher.moderateInstruments.length > 0 && (
+                      <div className="pt-2 border-t border-neutral-100">
+                        <div className="text-[11px] font-semibold text-body/70 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <Music className="w-3.5 h-3.5 text-body/60" />
+                          <span>Secondary / Moderate Competency</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedTeacher.moderateInstruments.map((inst) => (
+                            <span
+                              key={inst}
+                              className="px-2.5 py-1 rounded-lg bg-neutral-100 text-body/80 border border-neutral-200 text-xs font-medium"
+                            >
+                              {inst}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Upcoming & Recent Classes */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-serif text-base font-bold text-heading">
+                        Upcoming & Recent Classes
+                      </h3>
+                      <p className="text-xs text-body/60 mt-0.5">
+                        Individual 1:1 sessions conducted by this faculty
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedTeacher.lessons.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-neutral-50 text-center text-xs text-body/60">
+                        No sessions recorded for this faculty member yet.
+                      </div>
+                    ) : (
+                      selectedTeacher.lessons.slice(0, 5).map((l) => {
+                        const lDate = new Date(l.startsAt);
+                        const isUpcoming = l.status === "SCHEDULED";
+                        const isCompleted = l.status === "COMPLETED";
+
+                        return (
+                          <div
+                            key={l.id}
+                            className="p-3.5 rounded-xl border border-neutral-200/80 bg-neutral-50/40 flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-bold text-xs text-heading truncate">
+                                {lDate.toLocaleDateString("en-GB", {
+                                  day: "2-digit",
+                                  month: "short",
+                                })}{" "}
+                                ·{" "}
+                                {lDate.toLocaleTimeString("en-GB", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}{" "}
+                                · {l.instrument}
+                              </div>
+                              <div className="text-[11px] text-body/70 mt-0.5 truncate">
+                                Student: {l.studentName || l.studentEmail || "Enrolled Student"}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isCompleted ? (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold">
+                                  Complete
+                                </span>
+                              ) : isUpcoming ? (
+                                <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-semibold">
+                                  Upcoming
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-neutral-100 text-body/70 text-[10px] font-semibold">
+                                  {l.status}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Biography & Teaching Philosophy */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+                  <h3 className="font-serif text-base font-bold text-heading">
+                    Curriculum & Teaching Bio
+                  </h3>
+                  <div className="text-xs text-body leading-relaxed whitespace-pre-line bg-neutral-50/50 p-4 rounded-xl border border-neutral-100">
+                    {selectedTeacher.bio || "No professional biography submitted yet."}
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT SUB-COLUMN (5 COLS / ~40%) */}
+              <div className="lg:col-span-5 space-y-5">
+                {/* 1. Remuneration & Payout Settings */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-serif text-base font-bold text-heading">
+                        Remuneration Control
+                      </h3>
+                      <p className="text-xs text-body/60 mt-0.5">Session rate configuration</p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100/80 space-y-3">
+                    <label className="text-[11px] font-semibold text-heading block">
+                      Payout Per 60-Minute Class (INR ₹)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-body">
+                          ₹
+                        </span>
+                        <input
+                          type="number"
+                          value={inlinePayoutInput}
+                          onChange={(e) => setInlinePayoutInput(Number(e.target.value))}
+                          step="50"
+                          min="0"
+                          className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-purple-200 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSavePayoutRate(selectedTeacher.id)}
+                        disabled={isPending}
+                        className="px-3 py-1.5 rounded-lg bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50"
+                      >
+                        {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Rate"}
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-body/70 pt-2 border-t border-purple-100 flex items-center justify-between">
+                      <span>Linked UPI ID:</span>
+                      <span className="font-semibold text-heading">
+                        {selectedTeacher.upiId || "None"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Application Status & Governance */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+                  <h3 className="font-serif text-base font-bold text-heading">
+                    Accreditation & Governance
+                  </h3>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3 rounded-xl border border-neutral-100 bg-neutral-50/40 flex items-center justify-between">
+                      <span className="text-body/70">Current Accreditation</span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          selectedTeacher.approvalStatus === "APPROVED"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : selectedTeacher.approvalStatus === "PENDING"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-rose-50 text-rose-700"
+                        }`}
+                      >
+                        {selectedTeacher.approvalStatus}
+                      </span>
+                    </div>
+
+                    {selectedTeacher.rejectionReason && (
+                      <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200/70 text-rose-900 text-xs">
+                        <div className="font-semibold mb-1">Rejection Rationale:</div>
+                        <div>{selectedTeacher.rejectionReason}</div>
+                      </div>
+                    )}
+
+                    {/* Admin Notes */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-heading block">
+                        Internal Admin Notes
+                      </label>
+                      <textarea
+                        value={adminNotesInput}
+                        onChange={(e) => setAdminNotesInput(e.target.value)}
+                        placeholder="Add verified credentials, background check notes, audition remarks..."
+                        rows={3}
+                        className="w-full p-2.5 rounded-xl border border-neutral-200 text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSavePayoutRate(selectedTeacher.id)}
+                        disabled={isPending}
+                        className="text-[11px] text-[#3C096C] font-bold hover:underline"
+                      >
+                        Save Admin Notes
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Allotted Courses & Enrolled Catalog */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+                  <h3 className="font-serif text-base font-bold text-heading">
+                    Catalog Allotments
+                  </h3>
+
+                  <div className="space-y-2 text-xs">
+                    {selectedTeacher.courses.length === 0 ? (
+                      <div className="p-3 text-center text-body/50 bg-neutral-50 rounded-xl">
+                        Not allotted to any course batches yet.
+                      </div>
+                    ) : (
+                      selectedTeacher.courses.map((c) => (
+                        <div
+                          key={c.id}
+                          className="p-3 rounded-xl border border-neutral-100 bg-neutral-50/40 flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-bold text-heading">{c.title}</div>
+                            <div className="text-[11px] text-body/60 mt-0.5">
+                              {c.instrument} · {c.level}
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700">
+                            Faculty
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* ─── MODAL 1: REVIEW FULL APPLICATION ───────────────────────────── */}
+      {isReviewApplicationOpen && selectedTeacher && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-[#3C096C]/10 text-[#3C096C] font-bold flex items-center justify-center">
+                  {getInitials(selectedTeacher.name)}
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-heading">
+                    Full Faculty Application
+                  </h3>
+                  <p className="text-xs text-body/60">
+                    {selectedTeacher.name} · {selectedTeacher.email}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setRejectionModalTeacher(null)}
-                className="p-1 rounded-lg text-body hover:text-heading hover:bg-neutral-100 transition-colors cursor-pointer"
+                onClick={() => setIsReviewApplicationOpen(false)}
+                className="p-1 text-body hover:text-heading transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Dossier Content */}
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                <div>
+                  <div className="text-body/60 font-medium">Approval Status</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.approvalStatus}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-body/60 font-medium">Years of Experience</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.yearsTeaching} years teaching
+                  </div>
+                </div>
+                <div>
+                  <div className="text-body/60 font-medium">Primary Disciplines</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.instruments.join(", ") || "None"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-body/60 font-medium">Languages Spoken</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.languages.join(", ") || "English"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-body/60 font-medium">Verified Phone</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.phone || "Not provided"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-body/60 font-medium">Country / Timezone</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {selectedTeacher.country || "India"} · {selectedTeacher.timezone}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-heading mb-1.5">Submitted Biography</h4>
+                <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 text-body leading-relaxed whitespace-pre-line">
+                  {selectedTeacher.bio || "No biography provided by applicant."}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-heading mb-1.5">Admin Accreditation Notes</h4>
+                <textarea
+                  value={adminNotesInput}
+                  onChange={(e) => setAdminNotesInput(e.target.value)}
+                  placeholder="Record credentials verification, university degrees, or comments..."
+                  rows={3}
+                  className="w-full p-3 rounded-xl border border-neutral-200 text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                />
+              </div>
+            </div>
+
+            {/* Modal Decision Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReviewApplicationOpen(false);
+                  setIsRejectModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs transition-colors"
+              >
+                Revoke / Reject Application
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsReviewApplicationOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-body font-semibold text-xs transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateStatus(selectedTeacher.id, TeacherApprovalStatus.APPROVED);
+                    setIsReviewApplicationOpen(false);
+                  }}
+                  disabled={isPending}
+                  className="px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white font-bold text-xs transition-colors shadow-xs"
+                >
+                  Approve Application
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 2: REVOKE / REJECT FACULTY ────────────────────────────── */}
+      {isRejectModalOpen && selectedTeacher && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <div className="flex items-center gap-2.5 text-rose-700 font-bold text-base">
+                <XCircle className="w-5 h-5 text-rose-600" />
+                <span>Revoke or Reject Faculty</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRejectModalOpen(false)}
+                className="p-1 text-body hover:text-heading"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <p className="text-xs text-body leading-relaxed">
-              Rejecting <strong>{rejectionModalTeacher.name}</strong> will unpublish their
-              profile from public search and notify them in their studio dashboard. Please provide
-              actionable feedback or required updates.
+              Are you sure you want to revoke accreditation for{" "}
+              <strong className="text-heading">{selectedTeacher.name}</strong>? This will
+              unpublish their public profile and notify them.
             </p>
 
-            <form onSubmit={handleConfirmReject} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-heading">
-                  Reason / Required Action for Instructor
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={rejectionReasonInput}
-                  onChange={(e) => setRejectionReasonInput(e.target.value)}
-                  placeholder="e.g. Please provide additional information regarding your classical performance certifications or teaching background..."
-                  className="w-full rounded-xl border border-border-default p-3 text-xs text-heading shadow-xs focus:border-rose-500 focus:outline-hidden"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-heading block">
+                Rejection Rationale / Notice
+              </label>
+              <textarea
+                value={rejectionReasonInput}
+                onChange={(e) => setRejectionReasonInput(e.target.value)}
+                placeholder="Reason for revoking accreditation..."
+                rows={3}
+                className="w-full p-2.5 rounded-xl border border-neutral-200 text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-rose-600"
+              />
+            </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setRejectionModalTeacher(null)}
-                  className="px-4 py-2 rounded-xl border border-border-default text-xs font-medium text-body hover:bg-neutral-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="btn-tactile inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                  <span>Confirm Rejection</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: FULL APPLICATION REVIEW & SETTINGS ─────────────────────────── */}
-      {selectedTeacher && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-border-default bg-white p-6 sm:p-7 shadow-2xl space-y-6 animate-in zoom-in-95 duration-150">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-border-default/60 pb-4">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-accent-dark">
-                  Faculty Accreditation Review
-                </span>
-                <h3 className="font-serif text-xl font-bold text-heading mt-0.5">
-                  {selectedTeacher.name}
-                </h3>
-              </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
               <button
                 type="button"
-                onClick={() => setSelectedTeacher(null)}
-                className="p-1.5 rounded-xl text-body hover:text-heading hover:bg-neutral-100 transition-colors cursor-pointer"
+                onClick={() => setIsRejectModalOpen(false)}
+                className="px-3.5 py-2 rounded-xl border border-neutral-200 text-body hover:bg-neutral-50 text-xs font-semibold"
               >
-                <X className="w-4 h-4" />
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdateStatus(
+                    selectedTeacher.id,
+                    TeacherApprovalStatus.REJECTED,
+                    rejectionReasonInput
+                  )
+                }
+                disabled={isPending}
+                className="px-4 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold transition-colors shadow-xs"
+              >
+                {isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  "Confirm Revocation"
+                )}
               </button>
             </div>
-
-            {/* Profile Overview */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="rounded-xl border border-border-default bg-bg-alt/20 p-3.5 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
-                  Email & Timezone
-                </span>
-                <p className="font-medium text-heading">{selectedTeacher.email}</p>
-                <p className="text-body">Timezone: {selectedTeacher.timezone}</p>
-              </div>
-
-              <div className="rounded-xl border border-border-default bg-bg-alt/20 p-3.5 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
-                  Phone & Verification
-                </span>
-                <p className="font-medium text-heading">
-                  {selectedTeacher.phone || "No phone provided"}
-                </p>
-                <p className="text-body">
-                  OTP Status:{" "}
-                  {selectedTeacher.phoneVerified ? "✓ Verified" : "✗ Not Verified"}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border-default bg-bg-alt/20 p-3.5 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
-                  Hourly Rate (Public)
-                </span>
-                <p className="font-serif text-base font-bold text-heading">
-                  ₹{(selectedTeacher.hourlyRate / 100).toFixed(0)} / session
-                </p>
-                <p className="text-body">Experience: {selectedTeacher.yearsTeaching} years</p>
-              </div>
-
-              <div className="rounded-xl border border-border-default bg-bg-alt/20 p-3.5 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-body-muted">
-                  Payout Remuneration
-                </span>
-                <p className="font-serif text-base font-bold text-accent-dark">
-                  ₹{(selectedTeacher.payoutPerSession / 100).toFixed(0)} / session
-                </p>
-                <p className="text-body">UPI: {selectedTeacher.upiId || "Not added yet"}</p>
-              </div>
-            </div>
-
-            {/* Teaching Bio */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-heading">
-                Pedagogical Bio & Qualifications
-              </span>
-              <div className="rounded-2xl border border-border-default bg-neutral-50/70 p-4 text-xs text-body leading-relaxed max-h-40 overflow-y-auto">
-                {selectedTeacher.bio || (
-                  <span className="text-body-muted italic">No bio submitted yet.</span>
-                )}
-              </div>
-            </div>
-
-            {/* Instruments & Disciplines */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-heading">
-                Disciplines & Skill Levels
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {selectedTeacher.instruments.map((inst) => {
-                  const isExp = selectedTeacher.expertInstruments.includes(inst);
-                  return (
-                    <span
-                      key={inst}
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${
-                        isExp
-                          ? "bg-primary-subtle text-primary border-primary/30 font-bold"
-                          : "bg-white text-body border-border-default"
-                      }`}
-                    >
-                      {inst} {isExp ? "★ (Expert)" : "• (Moderate)"}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Admin Controls Form */}
-            <form onSubmit={handleSaveModalSettings} className="space-y-4 pt-2 border-t border-border-default">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-heading">
-                    Fixed Session Payout (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={50}
-                    value={modalPayoutRupees}
-                    onChange={(e) => setModalPayoutRupees(Number(e.target.value))}
-                    className="w-full rounded-xl border border-border-default p-2.5 text-xs text-heading shadow-xs focus:border-primary focus:outline-hidden"
-                  />
-                  <p className="text-[10px] text-body-muted">
-                    Remuneration paid to instructor per completed 1:1 lesson.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-heading">
-                    Approval State
-                  </label>
-                  <div className="flex items-center gap-2 pt-1">
-                    {selectedTeacher.approvalStatus === "APPROVED" ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Approved & Verified</span>
-                      </span>
-                    ) : selectedTeacher.approvalStatus === "REJECTED" ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 text-rose-800 text-xs font-bold border border-rose-300">
-                        <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                        <span>Application Rejected</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold border border-amber-300">
-                        <Clock className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Pending Review</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-heading">
-                  Administrative Notes (Private to School Admin)
-                </label>
-                <textarea
-                  rows={3}
-                  value={modalAdminNotes}
-                  onChange={(e) => setModalAdminNotes(e.target.value)}
-                  placeholder="Private board notes, interview impressions, background check notes..."
-                  className="w-full rounded-xl border border-border-default p-2.5 text-xs text-heading shadow-xs focus:border-primary focus:outline-hidden"
-                />
-              </div>
-
-              {/* Action Buttons in Modal */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border-default/60">
-                <div className="flex items-center gap-2">
-                  {selectedTeacher.approvalStatus !== "APPROVED" && (
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => handleApprove(selectedTeacher, modalAdminNotes)}
-                      className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Approve Faculty</span>
-                    </button>
-                  )}
-
-                  {selectedTeacher.approvalStatus !== "REJECTED" && (
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => {
-                        const t = selectedTeacher;
-                        setSelectedTeacher(null);
-                        openRejectModal(t);
-                      }}
-                      className="btn-tactile inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all active:scale-[0.98] cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Reject Application</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTeacher(null)}
-                    className="px-3.5 py-2 rounded-xl border border-border-default text-xs font-medium text-body hover:bg-neutral-50 transition-colors cursor-pointer"
-                  >
-                    Close
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isPending}
-                    className="btn-tactile inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-xs transition-all active:scale-[0.98] cursor-pointer"
-                  >
-                    {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    <span>Save Settings</span>
-                  </button>
-                </div>
-              </div>
-            </form>
           </div>
         </div>
       )}

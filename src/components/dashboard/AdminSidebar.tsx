@@ -1,22 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Users,
-  BookOpen,
-  CreditCard,
-  Video,
-  Calendar,
-  HelpCircle,
-  Settings,
-  ShieldAlert,
   Sparkles,
+  Users,
   GraduationCap,
-  UserCheck,
+  BookOpen,
+  Calendar,
+  CreditCard,
+  FileText,
+  Settings,
+  HelpCircle,
+  LogOut,
 } from "lucide-react";
+import { signOutAction } from "@/actions/auth";
 
 interface NavItem {
   name: string;
@@ -33,63 +33,60 @@ const navItems: NavItem[] = [
     exact: true,
   },
   {
-    name: "Faculty Approvals",
-    href: "/admin/teachers",
-    icon: UserCheck,
-  },
-  {
-    name: "User Management",
-    href: "/admin/users",
-    icon: Users,
-  },
-  {
-    name: "Courses Catalog",
-    href: "/admin/courses",
-    icon: BookOpen,
-  },
-  {
-    name: "Student Courses",
-    href: "/admin/student-courses",
-    icon: GraduationCap,
-  },
-  {
-    name: "1:1 Lesson Scheduling",
-    href: "/admin/enrollments",
-    icon: Calendar,
-  },
-  {
-    name: "Trial Requests",
+    name: "Trial Bookings",
     href: "/admin/trials",
     icon: Sparkles,
   },
   {
-    name: "Global Lessons",
-    href: "/admin/lessons",
-    icon: Video,
+    name: "Students",
+    href: "/admin/students",
+    icon: Users,
   },
   {
-    name: "Payment Management",
+    name: "Teachers",
+    href: "/admin/teachers",
+    icon: GraduationCap,
+  },
+  {
+    name: "Enrollments",
+    href: "/admin/enrollments",
+    icon: BookOpen,
+  },
+  {
+    name: "Classes",
+    href: "/admin/lessons",
+    icon: Calendar,
+  },
+  {
+    name: "Payments",
     href: "/admin/payments",
     icon: CreditCard,
   },
   {
-    name: "Events & Workshops",
-    href: "/admin/events",
-    icon: Calendar,
+    name: "Resources",
+    href: "/admin/resources",
+    icon: FileText,
   },
   {
-    name: "Support Desk",
-    href: "/admin/support",
-    icon: HelpCircle,
-  },
-  {
-    name: "Platform Settings",
+    name: "Settings",
     href: "/admin/settings",
     icon: Settings,
   },
+  {
+    name: "Help & Support",
+    href: "/admin/support",
+    icon: HelpCircle,
+  },
 ];
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+  currentUser?: {
+    name?: string | null;
+    email?: string | null;
+  };
+}
+
+export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
   const pathname = usePathname();
 
   const isActive = (item: NavItem) => {
@@ -100,81 +97,130 @@ export function AdminSidebar() {
     return pathname.startsWith(item.href);
   };
 
+  const displayName = currentUser?.name || "Administrator";
+  const displayEmail = currentUser?.email || "India · Global portal";
+  const initials = displayName
+    .split(" ")
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "AM";
+
   return (
     <>
-      {/* Desktop Persistent 240px Sidebar */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 border-r border-border-default/60 bg-white min-h-[calc(100vh-4rem)] p-4 space-y-6 shadow-xs">
-        <div className="px-2 py-2 flex items-center justify-between border-b border-border-default/60 pb-4">
-          <Link href="/" className="flex items-center">
+      {/* Desktop Persistent Sidebar with Color #32134F */}
+      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-[#32134F] text-white h-full max-h-[calc(100vh-4rem)] p-4 space-y-4 shadow-xl z-40 select-none overflow-hidden">
+        {/* Brand Header with Attached Gandharva Logo */}
+        <div className="px-2 pt-1 pb-2">
+          <Link href="/admin" className="flex items-center group">
             <Image
-              src="/cropped-Add-a-subheading-5-png-scaled.webp"
+              src="/gandharva-logo-full.png"
               alt="Gandharva School of Music"
-              width={130}
-              height={40}
-              className="h-8 w-auto object-contain"
+              width={190}
+              height={48}
+              priority
+              className="h-10 w-auto object-contain group-hover:scale-[1.02] transition-transform"
             />
           </Link>
-          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-primary/10 text-primary">
-            Admin
-          </span>
         </div>
 
-        <nav className="space-y-1.5 flex-1">
+        {/* Navigation Items List */}
+        <nav className="space-y-0.5 flex-1 overflow-y-auto pr-1 text-xs sidebar-scroll">
           {navItems.map((item) => {
             const active = isActive(item);
             const Icon = item.icon;
 
             return (
               <Link
-                key={item.href}
+                key={item.name}
                 href={item.href}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all ${
+                className={`relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all active:scale-[0.98] ${
                   active
-                    ? "bg-primary text-white shadow-xs font-bold"
-                    : "text-body hover:text-heading hover:bg-bg-alt/30 font-medium"
+                    ? "bg-white/15 text-white font-bold shadow-xs"
+                    : "text-white/70 hover:text-white hover:bg-white/5 font-medium"
                 }`}
               >
                 <Icon
-                  className={`w-4 h-4 shrink-0 ${
-                    active ? "text-white" : "text-body group-hover:text-heading"
+                  className={`w-4 h-4 shrink-0 transition-colors ${
+                    active ? "text-white" : "text-white/60"
                   }`}
                 />
                 <span className="truncate flex-1">{item.name}</span>
                 {active && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                  <span className="w-1.5 h-4 rounded-full bg-[#FF7803] shrink-0" />
                 )}
               </Link>
             );
           })}
         </nav>
 
-        {/* Status indicator */}
-        <div className="p-3.5 rounded-xl bg-bg-alt/30 border border-border-default/60 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <p className="text-[11px] font-bold text-heading">System Operational</p>
+        {/* User Card at Bottom without any white line borders */}
+        <div className="pt-2">
+          <div className="p-2.5 rounded-2xl bg-black/25 flex items-center justify-between gap-2.5 shadow-2xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#4E1A8E] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-inner">
+                {initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-xs text-white truncate">
+                  {displayName}
+                </div>
+                <div className="text-[10px] text-white/50 truncate">
+                  {displayEmail}
+                </div>
+              </div>
+            </div>
+            <form action={signOutAction} className="shrink-0">
+              <button
+                type="submit"
+                title="Sign Out"
+                className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </form>
           </div>
-          <p className="text-[10px] text-body leading-relaxed">
-            Role gate: ADMIN active. All operational audit events are recorded.
-          </p>
         </div>
       </aside>
 
-      {/* Mobile Horizontal Navigation Tabs (375px+ responsive) */}
-      <div className="md:hidden border-b border-border-default bg-white sticky top-16 z-30 overflow-x-auto no-scrollbar shadow-xs">
-        <div className="flex items-center gap-1.5 px-3 py-2 min-w-max">
+      {/* Mobile Horizontal Navigation Header */}
+      <div className="md:hidden bg-[#32134F] text-white sticky top-16 z-40 shadow-md">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <Link href="/admin" className="flex items-center">
+            <Image
+              src="/gandharva-logo-full.png"
+              alt="Gandharva School of Music"
+              width={140}
+              height={36}
+              priority
+              className="h-8 w-auto object-contain"
+            />
+          </Link>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/10 text-[#FF9E40]">
+              Admin
+            </span>
+            <div className="w-6 h-6 rounded-full bg-[#4E1A8E] text-white flex items-center justify-center font-bold text-[10px]">
+              {initials}
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable Tabs */}
+        <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto no-scrollbar">
           {navItems.map((item) => {
             const active = isActive(item);
             const Icon = item.icon;
 
             return (
               <Link
-                key={item.href}
+                key={item.name}
                 href={item.href}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all ${
                   active
-                    ? "bg-primary text-white shadow-xs font-bold"
-                    : "text-body hover:text-heading hover:bg-neutral-100"
+                    ? "bg-white/15 text-white font-bold"
+                    : "text-white/70 hover:text-white hover:bg-white/5"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />

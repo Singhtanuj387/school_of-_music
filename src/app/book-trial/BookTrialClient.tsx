@@ -19,6 +19,11 @@ import {
 import { createTrialRequestAction } from "@/actions/trial";
 import { sendPhoneOtpAction, verifyPhoneOtpForSignupAction } from "@/actions/auth";
 import { SplitHeading } from "@/components/ui/SplitHeading";
+import {
+  CountryCodeSelector,
+  SUPPORTED_COUNTRIES,
+  CountryOption,
+} from "@/components/ui/CountryCodeSelector";
 
 export interface BookTrialClientProps {
   currentUser?: {
@@ -109,7 +114,27 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<string>("Children (8 - 12 years)");
   const [studentName, setStudentName] = useState(currentUser?.name || "");
   const [studentEmail, setStudentEmail] = useState(currentUser?.email || "");
-  const [studentPhone, setStudentPhone] = useState(currentUser?.phone || "");
+  const [selectedCountry, setSelectedCountry] = useState<CountryOption>(() => {
+    if (currentUser?.phone) {
+      const matched = SUPPORTED_COUNTRIES.find((c) =>
+        currentUser.phone?.startsWith(c.dialCode)
+      );
+      if (matched) return matched;
+    }
+    return SUPPORTED_COUNTRIES[0];
+  });
+  const [studentPhone, setStudentPhone] = useState(() => {
+    if (currentUser?.phone) {
+      const matched = SUPPORTED_COUNTRIES.find((c) =>
+        currentUser.phone?.startsWith(c.dialCode)
+      );
+      if (matched) {
+        return currentUser.phone.slice(matched.dialCode.length).trim();
+      }
+      return currentUser.phone;
+    }
+    return "";
+  });
   const [studentNotes, setStudentNotes] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -140,19 +165,37 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
+  // Compute full international phone number
+  const getFullPhoneNumber = () => {
+    const raw = studentPhone.trim();
+    if (!raw) return "";
+    if (raw.startsWith("+")) {
+      return raw;
+    }
+    const cleanDigits = raw.replace(/\D/g, "");
+    return `${selectedCountry.dialCode}${cleanDigits}`;
+  };
+
   const handleSendOtp = () => {
     setPhoneError(null);
     setOtpError(null);
     setOtpBanner(null);
 
-    const trimmed = studentPhone.trim();
-    if (!trimmed) {
+    const cleanDigits = studentPhone.replace(/\D/g, "");
+    if (!cleanDigits) {
       setPhoneError("Please enter your mobile phone number.");
       return;
     }
 
+    if (cleanDigits.length < 6) {
+      setPhoneError("Please enter a valid phone number.");
+      return;
+    }
+
+    const fullPhone = getFullPhoneNumber();
+
     startSendOtpTransition(async () => {
-      const res = await sendPhoneOtpAction(trimmed, "SIGNUP");
+      const res = await sendPhoneOtpAction(fullPhone, "SIGNUP");
       if (!res.success) {
         setPhoneError(res.error || "Failed to dispatch verification code.");
       } else {
@@ -175,8 +218,10 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
       return;
     }
 
+    const fullPhone = getFullPhoneNumber();
+
     startVerifyOtpTransition(async () => {
-      const res = await verifyPhoneOtpForSignupAction(studentPhone, trimmedCode);
+      const res = await verifyPhoneOtpForSignupAction(fullPhone, trimmedCode);
       if (!res.success) {
         setOtpError(res.error || "Invalid or expired OTP code.");
       } else {
@@ -280,7 +325,7 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
         ageGroup: selectedAgeGroup,
         studentName,
         studentEmail,
-        studentPhone: studentPhone || undefined,
+        studentPhone: getFullPhoneNumber() || undefined,
         otpCode: !currentUser ? (verifiedOtpCode || otpCode) : undefined,
         studentNotes: studentNotes || undefined,
         password: !currentUser ? password : undefined,
@@ -768,7 +813,7 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       <div>
-                        <p className="font-bold text-emerald-950 font-mono">{studentPhone}</p>
+                        <p className="font-bold text-emerald-950 font-mono">{getFullPhoneNumber()}</p>
                         <p className="text-[10px] text-emerald-700">Phone verified successfully via OTP</p>
                       </div>
                     </div>
@@ -783,25 +828,39 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
                     )}
                   </div>
                 ) : (
-                  /* Phone input + Send OTP */
+                  /* Phone input with CountryCodeSelector + Send OTP */
                   <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {/* Country Code Selector + Phone Input Container */}
+                      <div className="flex-1 flex items-center rounded-xl border border-surface-muted/90 bg-white shadow-xs transition-all focus-within:border-cta focus-within:ring-4 focus-within:ring-cta/15">
+                        <CountryCodeSelector
+                          selectedCountry={selectedCountry}
+                          onSelect={(country) => {
+                            setSelectedCountry(country);
+                            setPhoneError(null);
+                          }}
+                        />
+                        <div className="h-6 w-px bg-border-default/80 shrink-0" />
                         <input
                           id="studentPhone"
                           type="tel"
+                          inputMode="tel"
                           value={studentPhone}
-                          onChange={(e) => setStudentPhone(e.target.value)}
-                          placeholder="+91 98765 43210"
+                          onChange={(e) => {
+                            setStudentPhone(e.target.value);
+                            setPhoneError(null);
+                          }}
+                          placeholder="Enter a phone number"
                           disabled={otpSent}
-                          className={inputClass + " disabled:bg-neutral-50 disabled:opacity-80"}
+                          className="block flex-1 border-0 bg-transparent px-3.5 py-2 text-sm text-heading placeholder-body/40 focus:outline-none focus:ring-0 disabled:opacity-75 disabled:cursor-not-allowed"
                         />
                       </div>
+
                       <button
                         type="button"
                         disabled={isSendingOtp || resendCooldown > 0 || !studentPhone.trim()}
                         onClick={handleSendOtp}
-                        className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
+                        className="px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shrink-0 flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs btn-tactile active:scale-[0.98]"
                       >
                         {isSendingOtp ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
@@ -813,15 +872,35 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
                       </button>
                     </div>
 
+                    <div className="flex items-center justify-between text-[11px] text-body-muted">
+                      <span>
+                        Includes country code: <strong className="font-mono text-heading">{selectedCountry.dialCode}</strong> ({selectedCountry.name})
+                      </span>
+                      {otpSent && !isPhoneVerified && (
+                        <button
+                          type="button"
+                          onClick={handleChangePhone}
+                          className="font-semibold text-blue-600 hover:underline cursor-pointer"
+                        >
+                          Change number
+                        </button>
+                      )}
+                    </div>
+
                     {/* 6-Digit OTP verification block */}
                     {otpSent && (
-                      <div className="p-3 rounded-xl bg-white border border-border-default/80 space-y-2.5 animate-fade-in">
-                        <label
-                          htmlFor="trial-otp-input"
-                          className="block text-[11px] font-bold uppercase tracking-wider text-heading"
-                        >
-                          Enter 6-Digit OTP Code
-                        </label>
+                      <div className="p-3.5 rounded-2xl bg-white border border-border-default/80 space-y-3 animate-fade-in shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <label
+                            htmlFor="trial-otp-input"
+                            className="block text-xs font-bold uppercase tracking-wider text-heading"
+                          >
+                            Enter 6-Digit OTP Code
+                          </label>
+                          <span className="text-[11px] text-body">
+                            Sent to <strong className="font-mono text-heading">{getFullPhoneNumber()}</strong>
+                          </span>
+                        </div>
                         <div className="flex gap-2">
                           <input
                             id="trial-otp-input"
@@ -837,13 +916,13 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
                               }
                             }}
                             placeholder="••••••"
-                            className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3 py-2 text-center text-base tracking-[0.3em] font-mono text-heading placeholder:tracking-normal placeholder:font-sans placeholder-body/40 shadow-xs focus:border-cta focus:outline-none focus:ring-3 focus:ring-cta/15"
+                            className="block flex-1 rounded-xl border border-surface-muted/90 bg-white px-3 py-2.5 text-center text-lg tracking-[0.3em] font-mono font-bold text-heading placeholder:tracking-normal placeholder:font-sans placeholder-body/40 shadow-xs focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
                           />
                           <button
                             type="button"
                             disabled={isVerifyingOtp || otpCode.trim().length !== 6}
                             onClick={() => handleVerifyOtp()}
-                            className="px-4 py-2 rounded-xl bg-cta hover:bg-cta-hover text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
+                            className="px-5 py-2.5 rounded-xl bg-cta hover:bg-cta-hover text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs btn-tactile active:scale-[0.98]"
                           >
                             {isVerifyingOtp ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />

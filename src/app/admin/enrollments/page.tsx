@@ -3,45 +3,47 @@ import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
 import {
   AdminEnrollmentsManager,
-  AdminEnrollmentItem,
-  AdminPaymentItem,
-  TeacherOption,
+  EnrollmentRecord,
+  CourseCatalogOption,
+  FacultyOption,
+  StudentOption,
+  TrialLeadOption,
 } from "./AdminEnrollmentsManager";
-import { SplitHeading } from "@/components/ui/SplitHeading";
-import Link from "next/link";
-import { GraduationCap } from "lucide-react";
 import { Suspense } from "react";
 
 export const metadata = {
-  title: "1:1 Course Scheduling & Enrollments | Admin Portal | Gandharva School of Music",
-  description: "Allot certified faculty teachers to enrolled students, customize 1-on-1 timetables, and audit session tracking.",
+  title: "Create Enrollment & 1:1 Scheduling | Admin Portal | Gandharva School of Music",
+  description: "Convert qualified trials into scheduled billable learning plans, allot faculty, and manage 1-on-1 timetables.",
 };
 
 export default async function AdminEnrollmentsPage() {
   await requireRole(Role.ADMIN);
 
-  const [dbEnrollments, dbPayments, dbTeachers] = await Promise.all([
-    db.enrollment.findMany({
-      include: {
-        student: { select: { id: true, name: true, email: true, timezone: true } },
-        course: { select: { id: true, title: true, instrument: true, sessionCount: true } },
-        lessons: {
-          select: {
-            id: true,
-            status: true,
-          },
-        },
+  let dbCourses: any[] = [];
+  let dbTeachers: any[] = [];
+  let dbStudents: any[] = [];
+  let dbTrialLeads: any[] = [];
+  let dbEnrollments: any[] = [];
+
+  try {
+    // 1. Fetch catalog
+    dbCourses = await db.course.findMany({
+      where: { isPublished: true },
+      select: {
+        id: true,
+        title: true,
+        instrument: true,
+        level: true,
+        sessionCount: true,
+        priceMinorUnits: true,
+        durationWeeks: true,
       },
-      orderBy: { startedAt: "desc" },
-    }),
-    db.payment.findMany({
-      include: {
-        student: { select: { name: true, email: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.user.findMany({
-      where: { role: Role.TEACHER, isActive: true },
+      orderBy: { title: "asc" },
+    });
+
+    // 2. Fetch faculty teachers
+    dbTeachers = await db.user.findMany({
+      where: { role: Role.TEACHER },
       include: {
         teacherProfile: {
           select: {
@@ -51,92 +53,196 @@ export default async function AdminEnrollmentsPage() {
         },
       },
       orderBy: { name: "asc" },
-    }),
-  ]);
+    });
 
-  const teacherMap = new Map<string, string>();
-  for (const t of dbTeachers) {
-    teacherMap.set(t.id, t.name || "Teacher");
+    // 3. Fetch students roster
+    dbStudents = await db.user.findMany({
+      where: { role: Role.STUDENT },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        timezone: true,
+        guardianName: true,
+        guardianPhone: true,
+        country: true,
+        age: true,
+      },
+      orderBy: { name: "asc" },
+    });
+
+    // 4. Fetch trial leads
+    dbTrialLeads = await db.trialRequest.findMany({
+      select: {
+        id: true,
+        studentId: true,
+        studentName: true,
+        studentEmail: true,
+        instrument: true,
+        status: true,
+        isConverted: true,
+        preferredTimeSlot: true,
+        allottedTeacherId: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+
+    // 5. Fetch full relational enrollments with optimized select
+    dbEnrollments = await db.enrollment.findMany({
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            timezone: true,
+            guardianName: true,
+            guardianPhone: true,
+            country: true,
+            age: true,
+          },
+        },
+        course: {
+          select: {
+            id: true,
+            title: true,
+            instrument: true,
+            level: true,
+            sessionCount: true,
+            priceMinorUnits: true,
+            durationWeeks: true,
+          },
+        },
+        lessons: {
+          select: {
+            id: true,
+            trackingCode: true,
+            startsAt: true,
+            durationMinutes: true,
+            status: true,
+            teacherId: true,
+          },
+          orderBy: { startsAt: "asc" },
+        },
+        payment: {
+          select: {
+            id: true,
+            amountMinorUnits: true,
+            status: true,
+            gatewayPaymentId: true,
+          },
+        },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+  } catch (error) {
+    console.error("[AdminEnrollmentsPage] Error querying PostgreSQL:", error);
   }
 
-  const formattedEnrollments: AdminEnrollmentItem[] = dbEnrollments.map((e) => {
-    const scheduledLessonsCount = e.lessons.filter((l) => l.status === "SCHEDULED").length;
-    const completedLessonsCount = e.lessons.filter((l) => l.status === "COMPLETED").length;
+  const teacherMap = new Map<string, { name: string; payoutRupees: number }>();
+  for (const t of dbTeachers) {
+    teacherMap.set(t.id, {
+      name: t.name || "Faculty Teacher",
+      payoutRupees: Math.round((t.teacherProfile?.payoutPerSession || 80000) / 100),
+    });
+  }
+
+  const formattedEnrollments: EnrollmentRecord[] = dbEnrollments.map((e: any) => {
+    const assignedFaculty = e.teacherId ? teacherMap.get(e.teacherId) : null;
 
     return {
       id: e.id,
       studentId: e.studentId,
       studentName: e.student.name || "Student",
       studentEmail: e.student.email,
-      studentTimezone: e.student.timezone || "UTC",
+      studentPhone: e.student.phone,
+      studentTimezone: e.student.timezone || "Asia/Kolkata",
+      studentGuardianName: e.student.guardianName,
+      studentGuardianPhone: e.student.guardianPhone,
+      studentCountry: e.student.country,
+      studentAge: e.student.age,
       courseId: e.courseId,
       courseTitle: e.course.title,
       courseInstrument: e.course.instrument,
+      courseLevel: e.course.level,
+      courseSessionCount: e.course.sessionCount,
+      coursePriceMinorUnits: e.course.priceMinorUnits,
+      courseDurationWeeks: e.course.durationWeeks,
       teacherId: e.teacherId,
-      teacherName: e.teacherId ? teacherMap.get(e.teacherId) || "Assigned Teacher" : null,
+      teacherName: assignedFaculty?.name || null,
+      teacherPayoutRupees: assignedFaculty?.payoutRupees || 800,
       sessionsRemaining: e.sessionsRemaining,
       sessionsTotal: e.course.sessionCount,
-      scheduledLessonsCount,
-      completedLessonsCount,
       status: e.status,
       startedAt: e.startedAt.toISOString(),
+      adminNotes: e.adminNotes,
+      lessons: (e.lessons || []).map((l: any) => ({
+        id: l.id,
+        trackingCode: l.trackingCode || `GS-LSN-${l.id.slice(-8).toUpperCase()}`,
+        startsAt: l.startsAt.toISOString(),
+        durationMinutes: l.durationMinutes,
+        status: l.status,
+        teacherId: l.teacherId,
+        teacherName: (l.teacherId ? teacherMap.get(l.teacherId)?.name : null) || assignedFaculty?.name || "Assigned Faculty",
+        payoutRupees: (l.teacherId ? teacherMap.get(l.teacherId)?.payoutRupees : null) || assignedFaculty?.payoutRupees || 800,
+      })),
+      payment: e.payment,
     };
   });
 
-  const formattedPayments: AdminPaymentItem[] = dbPayments.map((p) => ({
-    id: p.id,
-    gatewayPaymentId: p.gatewayPaymentId,
-    gatewayOrderId: p.gatewayOrderId,
-    amountMinorUnits: p.amountMinorUnits,
-    currency: p.currency,
-    status: p.status,
-    studentName: p.student.name || "Student",
-    studentEmail: p.student.email,
-    createdAt: p.createdAt.toISOString(),
+  const formattedCourses: CourseCatalogOption[] = dbCourses.map((c) => ({
+    id: c.id,
+    title: c.title,
+    instrument: c.instrument,
+    level: c.level,
+    sessionCount: c.sessionCount,
+    priceMinorUnits: c.priceMinorUnits,
+    durationWeeks: c.durationWeeks,
   }));
 
-  const teacherOptions: TeacherOption[] = dbTeachers.map((t) => ({
+  const formattedTeachers: FacultyOption[] = dbTeachers.map((t) => ({
     id: t.id,
-    name: t.name || "Teacher",
+    name: t.name || "Faculty Teacher",
     email: t.email,
     instruments: t.teacherProfile?.instruments || [],
-    payoutRupees: (t.teacherProfile?.payoutPerSession || 80000) / 100,
+    payoutRupees: Math.round((t.teacherProfile?.payoutPerSession || 80000) / 100),
+  }));
+
+  const formattedStudents: StudentOption[] = dbStudents.map((s) => ({
+    id: s.id,
+    name: s.name || "Student",
+    email: s.email,
+    timezone: s.timezone || "Asia/Kolkata",
+    guardianName: s.guardianName,
+    age: s.age,
+    phone: s.phone,
+    country: s.country,
+  }));
+
+  const formattedTrialLeads: TrialLeadOption[] = dbTrialLeads.map((t) => ({
+    id: t.id,
+    studentId: t.studentId,
+    studentName: t.studentName,
+    studentEmail: t.studentEmail,
+    instrument: t.instrument,
+    status: t.status,
+    isConverted: t.isConverted,
+    preferredTimeSlot: t.preferredTimeSlot,
+    allottedTeacherId: t.allottedTeacherId,
   }));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-sans">
-            Institutional Operations
-          </span>
-          <SplitHeading
-            firstClause="1:1 Course Scheduling &"
-            accentClause="Enrollment Ledger"
-            as="h1"
-            size="lg"
-          />
-          <p className="text-xs text-body mt-1 max-w-2xl">
-            Allot dedicated faculty teachers to student course enrollments, build personalized 1-on-1 timetables, and audit financial lesson tracking IDs.
-          </p>
-        </div>
-
-        <Link
-          href="/admin/student-courses"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors btn-tactile whitespace-nowrap self-start sm:self-auto"
-        >
-          <GraduationCap className="w-4 h-4" />
-          <span>Student Courses & Admissions</span>
-        </Link>
-      </div>
-
-      <Suspense fallback={<div className="p-12 text-center text-xs text-body">Loading 1-on-1 scheduling portal...</div>}>
-        <AdminEnrollmentsManager
-          initialEnrollments={formattedEnrollments}
-          initialPayments={formattedPayments}
-          teachers={teacherOptions}
-        />
-      </Suspense>
-    </div>
+    <Suspense fallback={<div className="p-12 text-center text-xs text-body">Loading enrollment planner...</div>}>
+      <AdminEnrollmentsManager
+        initialEnrollments={formattedEnrollments}
+        courses={formattedCourses}
+        teachers={formattedTeachers}
+        students={formattedStudents}
+        trialLeads={formattedTrialLeads}
+      />
+    </Suspense>
   );
 }

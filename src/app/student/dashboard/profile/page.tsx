@@ -25,20 +25,62 @@ export default async function StudentProfilePage() {
     redirect("/admin/users");
   }
 
-  const user = await db.user.findUnique({
-    where: { id: sessionUser.id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      timezone: true,
-      emailVerified: true,
-      image: true,
-    },
-  });
+  let user: {
+    id: string;
+    name: string | null;
+    email: string;
+    timezone: string;
+    emailVerified: Date | null;
+    image: string | null;
+    createdAt: Date;
+    country: string | null;
+    age: number | null;
+    gender: string | null;
+    guardianName: string | null;
+    guardianPhone: string | null;
+    address: string | null;
+  } | null = null;
+
+  try {
+    user = await db.user.findUnique({
+      where: { id: sessionUser.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        timezone: true,
+        emailVerified: true,
+        image: true,
+        createdAt: true,
+        country: true,
+        age: true,
+        gender: true,
+        guardianName: true,
+        guardianPhone: true,
+        address: true,
+      },
+    });
+  } catch (err) {
+    console.warn("Transient DB error in StudentProfilePage, using fallback session data:", err);
+  }
 
   if (!user) {
-    redirect("/login");
+    if (!sessionUser.id) redirect("/login");
+    user = {
+      id: sessionUser.id,
+      name: sessionUser.name || "Student",
+      email: sessionUser.email || "",
+      timezone: sessionUser.timezone || "UTC",
+      emailVerified: sessionUser.emailVerified ? new Date(sessionUser.emailVerified) : null,
+      image: sessionUser.image || null,
+      createdAt: new Date(),
+      country: null,
+      age: null,
+      gender: null,
+      guardianName: null,
+      guardianPhone: null,
+      address: null,
+    };
   }
 
   return (
@@ -67,6 +109,13 @@ export default async function StudentProfilePage() {
           timezone: user.timezone || "UTC",
           emailVerified: Boolean(user.emailVerified),
           image: user.image,
+          createdAt: user.createdAt.toISOString(),
+          country: user.country || "",
+          age: user.age ?? null,
+          gender: user.gender || "",
+          guardianName: user.guardianName || "",
+          guardianPhone: user.guardianPhone || "",
+          address: user.address || "",
         }}
       />
     </div>

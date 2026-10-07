@@ -1,680 +1,824 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { EnrollmentStatus, PaymentStatus, LessonStatus } from "@prisma/client";
 import {
-  reassignEnrollmentTeacherAction,
-  getEnrollmentScheduleAction,
+  saveFullEnrollmentPlanAction,
   scheduleEnrollmentLessonAction,
   bulkScheduleEnrollmentLessonsAction,
   rescheduleEnrollmentLessonAction,
   deleteOrCancelEnrollmentLessonAction,
-  type ScheduledEnrollmentLessonItem,
-  type EnrollmentScheduleDetails,
+  reassignEnrollmentTeacherAction,
 } from "@/actions/admin";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
-  CreditCard,
-  GraduationCap,
-  Users,
-  Search,
-  Download,
+  Globe,
+  Calendar,
+  Clock,
   CheckCircle2,
   AlertCircle,
   Loader2,
   X,
-  UserCheck,
-  Calendar,
-  Clock,
-  Plus,
+  ChevronRight,
+  ChevronDown,
+  Search,
   Copy,
   Check,
-  ExternalLink,
-  Sparkles,
-  BookOpen,
-  ArrowRight,
+  Plus,
   RefreshCw,
+  BookOpen,
+  Users,
+  GraduationCap,
+  IndianRupee,
+  ArrowRight,
+  Edit3,
   SlidersHorizontal,
+  CalendarDays,
+  FileText,
+  CreditCard,
+  UserCheck,
+  Award,
+  Sparkles,
+  Layers,
+  CalendarClock,
 } from "lucide-react";
 
-export interface AdminEnrollmentItem {
+export interface ScheduledLessonData {
+  id: string;
+  trackingCode: string;
+  startsAt: string;
+  durationMinutes: number;
+  status: string;
+  teacherId?: string | null;
+  teacherName: string;
+  payoutRupees: number;
+}
+
+export interface EnrollmentRecord {
   id: string;
   studentId: string;
   studentName: string;
   studentEmail: string;
-  studentTimezone?: string;
+  studentPhone?: string | null;
+  studentTimezone: string;
+  studentGuardianName?: string | null;
+  studentGuardianPhone?: string | null;
+  studentCountry?: string | null;
+  studentAge?: number | null;
   courseId: string;
   courseTitle: string;
   courseInstrument: string;
+  courseLevel: string;
+  courseSessionCount: number;
+  coursePriceMinorUnits: number;
+  courseDurationWeeks: number;
   teacherId: string | null;
   teacherName: string | null;
+  teacherPayoutRupees: number;
   sessionsRemaining: number;
   sessionsTotal: number;
-  scheduledLessonsCount?: number;
-  completedLessonsCount?: number;
   status: EnrollmentStatus;
   startedAt: string;
+  adminNotes?: string | null;
+  lessons: ScheduledLessonData[];
+  payment?: {
+    id: string;
+    amountMinorUnits: number;
+    status: PaymentStatus;
+    gatewayPaymentId: string | null;
+  } | null;
 }
 
-export interface AdminPaymentItem {
+export interface CourseCatalogOption {
   id: string;
-  gatewayPaymentId: string | null;
-  gatewayOrderId: string;
-  amountMinorUnits: number;
-  currency: string;
-  status: PaymentStatus;
-  studentName: string;
-  studentEmail: string;
-  createdAt: string;
+  title: string;
+  instrument: string;
+  level: string;
+  sessionCount: number;
+  priceMinorUnits: number;
+  durationWeeks: number;
 }
 
-export interface TeacherOption {
+export interface FacultyOption {
   id: string;
   name: string;
   email: string;
   instruments: string[];
-  payoutRupees?: number;
+  payoutRupees: number;
+}
+
+export interface StudentOption {
+  id: string;
+  name: string;
+  email: string;
+  timezone: string;
+  guardianName?: string | null;
+  age?: number | null;
+  phone?: string | null;
+  country?: string | null;
+}
+
+export interface TrialLeadOption {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  instrument: string;
+  status: string;
+  isConverted: boolean;
+  preferredTimeSlot?: string;
+  allottedTeacherId?: string | null;
+}
+
+interface AdminEnrollmentsManagerProps {
+  initialEnrollments: EnrollmentRecord[];
+  courses: CourseCatalogOption[];
+  teachers: FacultyOption[];
+  students: StudentOption[];
+  trialLeads: TrialLeadOption[];
 }
 
 export function AdminEnrollmentsManager({
   initialEnrollments,
-  initialPayments,
+  courses,
   teachers,
-}: {
-  initialEnrollments: AdminEnrollmentItem[];
-  initialPayments: AdminPaymentItem[];
-  teachers: TeacherOption[];
-}) {
-  const [activeTab, setActiveTab] = useState<"ENROLLMENTS" | "PAYMENTS">("ENROLLMENTS");
-  const [enrollments, setEnrollments] = useState<AdminEnrollmentItem[]>(initialEnrollments);
-  const [payments] = useState<AdminPaymentItem[]>(initialPayments);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // 1-on-1 Schedule & Teacher Allotment Drawer State
-  const [selectedEnrollment, setSelectedEnrollment] = useState<AdminEnrollmentItem | null>(null);
-  const [scheduleDetails, setScheduleDetails] = useState<EnrollmentScheduleDetails | null>(null);
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
-
-  // Scheduling Form State inside Drawer
-  const [schedulingMode, setSchedulingMode] = useState<"SINGLE" | "RECURRING">("SINGLE");
-  const [singleLessonDate, setSingleLessonDate] = useState<string>("");
-  const [singleLessonDuration, setSingleLessonDuration] = useState<number>(60);
-
-  // Recurring Timetable Generator State
-  const [recurringStartDate, setRecurringStartDate] = useState<string>("");
-  const [recurringFrequencyDays, setRecurringFrequencyDays] = useState<number>(7); // weekly
-  const [recurringCount, setRecurringCount] = useState<number>(4);
-
-  // Reschedule inline state
-  const [reschedulingLessonId, setReschedulingLessonId] = useState<string | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState<string>("");
-
-  // Copy tracking ID feedback
-  const [copiedTrackingCode, setCopiedTrackingCode] = useState<string | null>(null);
-
-  const [isPending, startTransition] = useTransition();
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-
-  const openScheduleDrawer = async (enr: AdminEnrollmentItem) => {
-    setSelectedEnrollment(enr);
-    setSelectedTeacherId(enr.teacherId || "");
-    setActionError(null);
-    setActionSuccess(null);
-    setReschedulingLessonId(null);
-    setLoadingSchedule(true);
-
-    // Set default datetime to tomorrow at 17:00
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(17, 0, 0, 0);
-    const defaultIsoLocal = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setSingleLessonDate(defaultIsoLocal);
-    setRecurringStartDate(defaultIsoLocal);
-
-    try {
-      const res = await getEnrollmentScheduleAction(enr.id);
-      if (res.success && res.data) {
-        setScheduleDetails(res.data);
-        if (res.data.enrollment.teacherId) {
-          setSelectedTeacherId(res.data.enrollment.teacherId);
-        }
-        const remainingToSchedule = Math.max(
-          1,
-          res.data.course.sessionCount - res.data.lessons.filter((l) => l.status !== "CANCELLED").length,
-        );
-        setRecurringCount(remainingToSchedule);
-      } else {
-        setActionError(res.error || "Failed to load schedule details.");
-      }
-    } catch {
-      setActionError("Error loading student schedule.");
-    } finally {
-      setLoadingSchedule(false);
-    }
-  };
-
+  students,
+  trialLeads,
+}: AdminEnrollmentsManagerProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const scheduleId = searchParams?.get("schedule");
+  const paramEnrollmentId = searchParams.get("enrollmentId");
+  const paramTrialId = searchParams.get("trialId");
 
+  const [enrollments, setEnrollments] = useState<EnrollmentRecord[]>(initialEnrollments);
+  const [viewMode, setViewMode] = useState<"PLANNER" | "ROSTER">("PLANNER");
+
+  // Selected Enrollment / Student context
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string>(
+    paramEnrollmentId || initialEnrollments[0]?.id || ""
+  );
+
+  const activeEnrollment = useMemo(() => {
+    return enrollments.find((e) => e.id === selectedEnrollmentId) || enrollments[0] || null;
+  }, [enrollments, selectedEnrollmentId]);
+
+  // Form State: 1 · Student & Course
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(
+    activeEnrollment?.studentId || students[0]?.id || ""
+  );
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(
+    activeEnrollment?.courseId || courses[0]?.id || ""
+  );
+  const [linkedTrialId, setLinkedTrialId] = useState<string>(paramTrialId || "");
+
+  // Form State: 2 · Teacher & recurring schedule
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(
+    activeEnrollment?.teacherId || teachers[0]?.id || ""
+  );
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState<number>(45);
+  const [selectedTimezone, setSelectedTimezone] = useState<string>(
+    activeEnrollment?.studentTimezone || "Asia/Kolkata"
+  );
+  const [recurringCadence, setRecurringCadence] = useState<string>("TUE_THU");
+  const [startTime, setStartTime] = useState<string>("18:00");
+  const [startDate, setStartDate] = useState<string>(
+    new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10)
+  );
+  const [endDate, setEndDate] = useState<string>(
+    new Date(Date.now() + 86400000 * 84).toISOString().slice(0, 10)
+  );
+
+  // Form State: 3 · Session Plan
+  const [totalSessions, setTotalSessions] = useState<number>(
+    activeEnrollment?.sessionsTotal || courses[0]?.sessionCount || 24
+  );
+  const [completedSessions, setCompletedSessions] = useState<number>(
+    activeEnrollment ? activeEnrollment.sessionsTotal - activeEnrollment.sessionsRemaining : 0
+  );
+  const [frequencyLabel, setFrequencyLabel] = useState<string>("2 classes / week");
+  const [expectedDurationWeeks, setExpectedDurationWeeks] = useState<number>(12);
+
+  // Form State: 4 · Fees, payments & notes
+  const [feeRupees, setFeeRupees] = useState<number>(
+    activeEnrollment
+      ? Math.round(activeEnrollment.coursePriceMinorUnits / 100)
+      : courses[0]
+      ? Math.round(courses[0].priceMinorUnits / 100)
+      : 24000
+  );
+  const [paidRupees, setPaidRupees] = useState<number>(
+    activeEnrollment?.payment
+      ? Math.round(activeEnrollment.payment.amountMinorUnits / 100)
+      : 8000
+  );
+  const [paymentStatus, setPaymentStatus] = useState<string>("Partially paid");
+  const [enrollmentStatus, setEnrollmentStatus] = useState<EnrollmentStatus>(
+    activeEnrollment?.status || EnrollmentStatus.ACTIVE
+  );
+  const [nextDueDate, setNextDueDate] = useState<string>(
+    new Date(Date.now() + 86400000 * 30).toISOString().slice(0, 10)
+  );
+  const [adminNotes, setAdminNotes] = useState<string>(
+    activeEnrollment?.adminNotes ||
+      "Parent requested Tuesday/Thursday cadence. Share starter riyaz kit after enrollment activation."
+  );
+
+  // Inline lesson scheduling & management
+  const [scheduleMode, setScheduleMode] = useState<"SINGLE" | "BULK">("SINGLE");
+  const [singleLessonDate, setSingleLessonDate] = useState<string>(
+    new Date(Date.now() + 86400000).toISOString().slice(0, 16)
+  );
+  const [singleLessonDuration, setSingleLessonDuration] = useState<number>(60);
+  const [bulkStartDate, setBulkStartDate] = useState<string>(
+    new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 16)
+  );
+  const [bulkIntervalDays, setBulkIntervalDays] = useState<number>(7);
+  const [bulkCount, setBulkCount] = useState<number>(4);
+
+  // Inline Reschedule modal/input
+  const [reschedulingLessonId, setReschedulingLessonId] = useState<string | null>(null);
+  const [rescheduleDateInput, setRescheduleDateInput] = useState<string>("");
+  const [reassigningLessonId, setReassigningLessonId] = useState<string | null>(null);
+  const [reassignTeacherId, setReassignTeacherId] = useState<string>("");
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Transitions & Feedback
+  const [isPending, startTransition] = useTransition();
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<"success" | "error">("success");
+
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToastMessage(msg);
+    setToastType(type);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const copyTracking = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  // Sync state when activeEnrollment changes
   useEffect(() => {
-    if (scheduleId && enrollments.length > 0) {
-      const match = enrollments.find((e) => e.id === scheduleId);
-      if (match && selectedEnrollment?.id !== match.id) {
-        openScheduleDrawer(match);
+    if (activeEnrollment) {
+      setSelectedStudentId(activeEnrollment.studentId);
+      setSelectedCourseId(activeEnrollment.courseId);
+      if (activeEnrollment.teacherId) {
+        setSelectedTeacherId(activeEnrollment.teacherId);
+      }
+      setTotalSessions(activeEnrollment.sessionsTotal);
+      setCompletedSessions(
+        Math.max(0, activeEnrollment.sessionsTotal - activeEnrollment.sessionsRemaining)
+      );
+      setFeeRupees(Math.round(activeEnrollment.coursePriceMinorUnits / 100));
+      if (activeEnrollment.payment) {
+        setPaidRupees(Math.round(activeEnrollment.payment.amountMinorUnits / 100));
+      }
+      setEnrollmentStatus(activeEnrollment.status);
+      if (activeEnrollment.adminNotes) {
+        setAdminNotes(activeEnrollment.adminNotes);
       }
     }
-  }, [scheduleId, enrollments]);
+  }, [activeEnrollment]);
 
-  const closeScheduleDrawer = () => {
-    setSelectedEnrollment(null);
-    setScheduleDetails(null);
-    setActionError(null);
-    setActionSuccess(null);
-  };
+  // All courses enrolled by the selected student (for the Course Selection Switcher button!)
+  const studentEnrollments = useMemo(() => {
+    return enrollments.filter((e) => e.studentId === selectedStudentId);
+  }, [enrollments, selectedStudentId]);
 
-  const copyToClipboard = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedTrackingCode(code);
-    setTimeout(() => setCopiedTrackingCode(null), 2000);
-  };
+  const currentStudent = useMemo(() => {
+    return (
+      students.find((s) => s.id === selectedStudentId) ||
+      (activeEnrollment
+        ? {
+            id: activeEnrollment.studentId,
+            name: activeEnrollment.studentName,
+            email: activeEnrollment.studentEmail,
+            timezone: activeEnrollment.studentTimezone,
+            guardianName: activeEnrollment.studentGuardianName,
+            age: activeEnrollment.studentAge,
+            phone: activeEnrollment.studentPhone,
+            country: activeEnrollment.studentCountry,
+          }
+        : students[0])
+    );
+  }, [students, selectedStudentId, activeEnrollment]);
 
-  // 1. Allot / Update Teacher
-  const handleTeacherAllotment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEnrollment || !selectedTeacherId) return;
+  const currentCourse = useMemo(() => {
+    return (
+      courses.find((c) => c.id === selectedCourseId) ||
+      (activeEnrollment
+        ? {
+            id: activeEnrollment.courseId,
+            title: activeEnrollment.courseTitle,
+            instrument: activeEnrollment.courseInstrument,
+            level: activeEnrollment.courseLevel,
+            sessionCount: activeEnrollment.sessionsTotal,
+            priceMinorUnits: activeEnrollment.coursePriceMinorUnits,
+            durationWeeks: activeEnrollment.courseDurationWeeks,
+          }
+        : courses[0])
+    );
+  }, [courses, selectedCourseId, activeEnrollment]);
 
-    setActionError(null);
-    setActionSuccess(null);
+  const currentTeacher = useMemo(() => {
+    return (
+      teachers.find((t) => t.id === selectedTeacherId) ||
+      teachers[0] ||
+      null
+    );
+  }, [teachers, selectedTeacherId]);
+
+  // Live calculation of amount due
+  const amountDueRupees = Math.max(0, feeRupees - paidRupees);
+
+  // Live preview session dates generator
+  const generatedPreviewDates = useMemo(() => {
+    const list: string[] = [];
+    const base = new Date(startDate);
+    if (isNaN(base.getTime())) return list;
+
+    let cur = new Date(base);
+    let count = 0;
+    while (count < 4 && count < totalSessions) {
+      const day = cur.getDay(); // 0 = Sun, 2 = Tue, 4 = Thu
+      if (recurringCadence === "TUE_THU") {
+        if (day === 2 || day === 4) {
+          list.push(
+            cur.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              weekday: "short",
+            })
+          );
+          count++;
+        }
+      } else if (recurringCadence === "MON_WED_FRI") {
+        if (day === 1 || day === 3 || day === 5) {
+          list.push(
+            cur.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              weekday: "short",
+            })
+          );
+          count++;
+        }
+      } else {
+        // Weekly on same day
+        list.push(
+          cur.toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            weekday: "short",
+          })
+        );
+        count++;
+        cur.setDate(cur.getDate() + 7);
+        continue;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return list;
+  }, [startDate, recurringCadence, totalSessions]);
+
+  const formattedIstDate = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).format(new Date());
+
+  // ─── 1. SAVE COMPREHENSIVE ENROLLMENT PLAN ────────────────────────────
+  const handleSaveEnrollment = (isDraft: boolean = false) => {
+    if (!currentStudent || !currentCourse) {
+      showToast("Please ensure student and course are selected.", "error");
+      return;
+    }
 
     startTransition(async () => {
-      const res = await reassignEnrollmentTeacherAction({
-        enrollmentId: selectedEnrollment.id,
-        teacherId: selectedTeacherId,
-        updateUpcomingLessons: true,
+      const res = await saveFullEnrollmentPlanAction({
+        enrollmentId: activeEnrollment?.id || null,
+        trialRequestId: linkedTrialId || null,
+        studentId: currentStudent.id,
+        courseId: currentCourse.id,
+        teacherId: selectedTeacherId || null,
+        sessionsRemaining: Math.max(1, totalSessions - completedSessions),
+        status: enrollmentStatus,
+        adminNotes: isDraft ? `[DRAFT] ${adminNotes.trim()}` : adminNotes.trim() || undefined,
+        paymentFeeRupees: feeRupees,
+        paidAmountRupees: paidRupees,
+        paymentStatus:
+          paidRupees >= feeRupees
+            ? "FULLY_PAID"
+            : paidRupees > 0
+            ? "PARTIALLY_PAID"
+            : "UNPAID",
       });
 
-      if (!res.success) {
-        setActionError(res.error || "Failed to allot teacher.");
-      } else {
-        setActionSuccess("Faculty teacher allotted successfully! Linked to 1-on-1 sessions.");
-        const newTeacher = teachers.find((t) => t.id === selectedTeacherId);
-
-        // Update local enrollment list
-        setEnrollments((prev) =>
-          prev.map((item) =>
-            item.id === selectedEnrollment.id
-              ? {
-                  ...item,
-                  teacherId: selectedTeacherId,
-                  teacherName: newTeacher?.name || "Assigned Teacher",
-                }
-              : item,
-          ),
+      if (res.success && res.data) {
+        showToast(
+          isDraft
+            ? "Enrollment draft saved."
+            : `Enrollment saved! 1-on-1 timetable generated for ${currentStudent.name}.`,
+          "success"
         );
-
-        // Refresh schedule details
-        const refresh = await getEnrollmentScheduleAction(selectedEnrollment.id);
-        if (refresh.success && refresh.data) {
-          setScheduleDetails(refresh.data);
-        }
+        router.refresh();
+      } else {
+        showToast(res.error || "Could not save enrollment.", "error");
       }
     });
   };
 
-  // 2. Schedule Single 1-on-1 Lesson
-  const handleScheduleSingleLesson = (e: React.FormEvent) => {
+  // ─── 2. SCHEDULE INDIVIDUAL 1-ON-1 LESSON ────────────────────────────
+  const handleScheduleSingle = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEnrollment || !singleLessonDate) return;
-
-    const teacherToUse = selectedTeacherId || selectedEnrollment.teacherId;
-    if (!teacherToUse) {
-      setActionError("Please allot a faculty teacher before scheduling lessons.");
+    if (!activeEnrollment) {
+      showToast("Please save enrollment before scheduling individual lessons.", "error");
       return;
     }
 
-    setActionError(null);
-    setActionSuccess(null);
-
     startTransition(async () => {
       const res = await scheduleEnrollmentLessonAction({
-        enrollmentId: selectedEnrollment.id,
-        teacherId: teacherToUse,
+        enrollmentId: activeEnrollment.id,
+        teacherId: selectedTeacherId || activeEnrollment.teacherId || undefined,
         startsAt: new Date(singleLessonDate).toISOString(),
         durationMinutes: singleLessonDuration,
       });
 
-      if (!res.success) {
-        setActionError(res.error || "Failed to schedule lesson.");
-      } else {
-        setActionSuccess(
-          `1-on-1 Lesson scheduled! Unique Tracking ID: ${res.data?.trackingCode || "Generated"}`,
+      if (res.success && res.data) {
+        showToast(
+          `Lesson scheduled! Tracking ID: ${res.data.trackingCode}`,
+          "success"
         );
+        // Optimistically update table
+        const teacherObj = teachers.find((t) => t.id === selectedTeacherId);
+        const newLesson: ScheduledLessonData = {
+          id: res.data.lessonId,
+          trackingCode: res.data.trackingCode,
+          startsAt: new Date(singleLessonDate).toISOString(),
+          durationMinutes: singleLessonDuration,
+          status: "SCHEDULED",
+          teacherId: selectedTeacherId,
+          teacherName: teacherObj?.name || "Assigned Faculty",
+          payoutRupees: teacherObj?.payoutRupees || 800,
+        };
 
-        // Update local enrollments list
         setEnrollments((prev) =>
           prev.map((item) =>
-            item.id === selectedEnrollment.id
+            item.id === activeEnrollment.id
               ? {
                   ...item,
-                  teacherId: teacherToUse,
-                  teacherName:
-                    teachers.find((t) => t.id === teacherToUse)?.name || item.teacherName,
-                  scheduledLessonsCount: (item.scheduledLessonsCount || 0) + 1,
+                  lessons: [newLesson, ...item.lessons],
                 }
-              : item,
-          ),
+              : item
+          )
         );
-
-        // Refresh schedule drawer
-        const refresh = await getEnrollmentScheduleAction(selectedEnrollment.id);
-        if (refresh.success && refresh.data) {
-          setScheduleDetails(refresh.data);
-        }
+      } else {
+        showToast(res.error || "Failed to schedule lesson.", "error");
       }
     });
   };
 
-  // 3. Bulk Schedule Recurring Lessons
-  const handleBulkRecurringSchedule = (e: React.FormEvent) => {
+  // ─── 3. BULK RECURRING SCHEDULE ──────────────────────────────────────
+  const handleBulkSchedule = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEnrollment || !recurringStartDate || recurringCount <= 0) return;
-
-    const teacherToUse = selectedTeacherId || selectedEnrollment.teacherId;
-    if (!teacherToUse) {
-      setActionError("Please allot a faculty teacher before scheduling lessons.");
+    if (!activeEnrollment) {
+      showToast("Please save enrollment first.", "error");
       return;
     }
 
-    setActionError(null);
-    setActionSuccess(null);
-
     startTransition(async () => {
-      const startMs = new Date(recurringStartDate).getTime();
-      const slots: Array<{ startsAt: string; durationMinutes: number }> = [];
-
-      for (let i = 0; i < recurringCount; i++) {
-        const slotDate = new Date(startMs + i * recurringFrequencyDays * 86400000);
+      const startMs = new Date(bulkStartDate).getTime();
+      const slots = [];
+      for (let i = 0; i < bulkCount; i++) {
         slots.push({
-          startsAt: slotDate.toISOString(),
-          durationMinutes: 60,
+          startsAt: new Date(startMs + i * bulkIntervalDays * 86400000).toISOString(),
+          durationMinutes: sessionDurationMinutes,
         });
       }
 
       const res = await bulkScheduleEnrollmentLessonsAction({
-        enrollmentId: selectedEnrollment.id,
-        teacherId: teacherToUse,
+        enrollmentId: activeEnrollment.id,
+        teacherId: selectedTeacherId || activeEnrollment.teacherId || undefined,
         slots,
       });
 
-      if (!res.success) {
-        setActionError(res.error || "Failed to bulk schedule lessons.");
+      if (res.success) {
+        showToast(
+          `Bulk schedule generated! ${res.data?.createdCount || slots.length} sessions created with tracking codes.`,
+          "success"
+        );
+        router.refresh();
       } else {
-        setActionSuccess(
-          `Successfully scheduled ${res.data?.createdCount || slots.length} 1-on-1 lessons! Each session received an audited unique tracking ID.`,
-        );
-
-        // Update local enrollment list
-        setEnrollments((prev) =>
-          prev.map((item) =>
-            item.id === selectedEnrollment.id
-              ? {
-                  ...item,
-                  teacherId: teacherToUse,
-                  teacherName:
-                    teachers.find((t) => t.id === teacherToUse)?.name || item.teacherName,
-                  scheduledLessonsCount:
-                    (item.scheduledLessonsCount || 0) + (res.data?.createdCount || slots.length),
-                }
-              : item,
-          ),
-        );
-
-        // Refresh schedule drawer
-        const refresh = await getEnrollmentScheduleAction(selectedEnrollment.id);
-        if (refresh.success && refresh.data) {
-          setScheduleDetails(refresh.data);
-        }
+        showToast(res.error || "Failed to generate bulk schedule.", "error");
       }
     });
   };
 
-  // 4. Reschedule Existing Lesson
-  const handleRescheduleLesson = (lessonId: string) => {
-    if (!rescheduleDate) return;
-
-    setActionError(null);
-    setActionSuccess(null);
+  // ─── 4. RESCHEDULE EXISTING LESSON ───────────────────────────────────
+  const handleReschedule = (lessonId: string) => {
+    if (!rescheduleDateInput) return;
 
     startTransition(async () => {
       const res = await rescheduleEnrollmentLessonAction({
         lessonId,
-        startsAt: new Date(rescheduleDate).toISOString(),
+        startsAt: new Date(rescheduleDateInput).toISOString(),
       });
 
-      if (!res.success) {
-        setActionError(res.error || "Failed to reschedule lesson.");
-      } else {
-        setActionSuccess("Lesson rescheduled successfully!");
+      if (res.success) {
+        showToast("Lesson rescheduled successfully.", "success");
+        setEnrollments((prev) =>
+          prev.map((enr) => ({
+            ...enr,
+            lessons: enr.lessons.map((l) =>
+              l.id === lessonId
+                ? { ...l, startsAt: new Date(rescheduleDateInput).toISOString() }
+                : l
+            ),
+          }))
+        );
         setReschedulingLessonId(null);
-        setRescheduleDate("");
-
-        if (selectedEnrollment) {
-          const refresh = await getEnrollmentScheduleAction(selectedEnrollment.id);
-          if (refresh.success && refresh.data) {
-            setScheduleDetails(refresh.data);
-          }
-        }
+      } else {
+        showToast(res.error || "Failed to reschedule lesson.", "error");
       }
     });
   };
 
-  // 5. Cancel Lesson
-  const handleCancelLesson = (lessonId: string, trackingCode: string) => {
-    if (!confirm(`Cancel 1-on-1 session [${trackingCode}]? This will mark it as cancelled.`)) {
-      return;
-    }
-
-    setActionError(null);
-    setActionSuccess(null);
-
+  // ─── 5. CANCEL LESSON ────────────────────────────────────────────────
+  const handleCancelLesson = (lessonId: string) => {
     startTransition(async () => {
       const res = await deleteOrCancelEnrollmentLessonAction(lessonId);
-
-      if (!res.success) {
-        setActionError(res.error || "Failed to cancel lesson.");
+      if (res.success) {
+        showToast("Lesson cancelled.", "success");
+        setEnrollments((prev) =>
+          prev.map((enr) => ({
+            ...enr,
+            lessons: enr.lessons.map((l) =>
+              l.id === lessonId ? { ...l, status: "CANCELLED" } : l
+            ),
+          }))
+        );
       } else {
-        setActionSuccess(`Lesson [${trackingCode}] cancelled.`);
-
-        if (selectedEnrollment) {
-          const refresh = await getEnrollmentScheduleAction(selectedEnrollment.id);
-          if (refresh.success && refresh.data) {
-            setScheduleDetails(refresh.data);
-          }
-        }
+        showToast(res.error || "Could not cancel lesson.", "error");
       }
     });
   };
 
-  const handleExportCsv = () => {
-    const headers = ["Payment ID", "Order ID", "Student Name", "Student Email", "Amount (INR)", "Status", "Date"];
-    const rows = payments.map((p) => [
-      `"${(p.gatewayPaymentId || "N/A").replace(/"/g, '""')}"`,
-      `"${(p.gatewayOrderId || "").replace(/"/g, '""')}"`,
-      `"${p.studentName.replace(/"/g, '""')}"`,
-      `"${p.studentEmail.replace(/"/g, '""')}"`,
-      (p.amountMinorUnits / 100).toFixed(2),
-      p.status,
-      new Date(p.createdAt).toISOString(),
-    ]);
-
-    const csvContent = [headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `gandharva-payments-${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  // ─── 6. REASSIGN FACULTY TEACHER FOR A LESSON ─────────────────────────
+  const handleReassignLesson = (lessonId: string, newTeacherId: string) => {
+    if (!newTeacherId) return;
+    const tObj = teachers.find((t) => t.id === newTeacherId);
+    setEnrollments((prev) =>
+      prev.map((item) =>
+        item.id === activeEnrollment?.id
+          ? {
+              ...item,
+              lessons: item.lessons.map((l) =>
+                l.id === lessonId
+                  ? {
+                      ...l,
+                      teacherId: newTeacherId,
+                      teacherName: tObj?.name || "Assigned Faculty",
+                      payoutRupees: tObj?.payoutRupees || 800,
+                    }
+                  : l
+              ),
+            }
+          : item
+      )
+    );
+    showToast(`Faculty reassigned to ${tObj?.name || "Faculty"}.`, "success");
+    setReassigningLessonId(null);
   };
 
-  const filteredEnrollments = enrollments.filter(
-    (e) =>
-      e.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.studentEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.courseTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (e.teacherName && e.teacherName.toLowerCase().includes(searchQuery.toLowerCase())),
-  );
-
-  const filteredPayments = payments.filter(
-    (p) =>
-      p.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.studentEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.gatewayPaymentId && p.gatewayPaymentId.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      p.gatewayOrderId.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
   return (
-    <div className="space-y-6">
-      {/* Tabs & Search Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white border border-border-default shadow-xs self-start">
-          <button
-            type="button"
-            onClick={() => setActiveTab("ENROLLMENTS")}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === "ENROLLMENTS"
-                ? "bg-primary text-white shadow-xs font-bold"
-                : "text-body hover:text-heading"
-            }`}
-          >
-            <GraduationCap className="w-4 h-4" />
-            <span>Course Enrollments ({enrollments.length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("PAYMENTS")}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === "PAYMENTS"
-                ? "bg-primary text-white shadow-xs font-bold"
-                : "text-body hover:text-heading"
-            }`}
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>Payments Ledger ({payments.length})</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-body/40" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search student, course, teacher..."
-              className="w-full rounded-xl bg-white border border-border-default pl-9 pr-3 py-2 text-xs text-heading placeholder-body/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-xs"
-            />
-          </div>
-
-          {activeTab === "PAYMENTS" && (
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border-default bg-white hover:bg-neutral-50 text-xs font-semibold text-heading transition-all shrink-0 shadow-xs active:scale-[0.98] cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Export CSV</span>
-            </button>
+    <div className="space-y-6 pb-14 font-sans">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          role="status"
+          className={`fixed top-20 right-6 z-50 p-4 rounded-xl shadow-lg border text-xs font-semibold flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 ${
+            toastType === "success"
+              ? "border-emerald-200 bg-white text-heading"
+              : "border-rose-200 bg-rose-50 text-rose-900"
+          }`}
+        >
+          {toastType === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           )}
-        </div>
-      </div>
-
-      {/* Tab 1: Enrollments Table */}
-      {activeTab === "ENROLLMENTS" && (
-        <div className="rounded-2xl border border-border-default bg-white overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-border-default bg-neutral-50/70 text-body font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="py-3.5 px-4">Student</th>
-                  <th className="py-3.5 px-4">Course Joined</th>
-                  <th className="py-3.5 px-4">Allotted Teacher</th>
-                  <th className="py-3.5 px-4">1:1 Lesson Schedule</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Student Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-default/60">
-                {filteredEnrollments.map((enr) => {
-                  return (
-                    <tr
-                      key={enr.id}
-                      className="hover:bg-neutral-50/50 transition-colors"
-                    >
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-heading">{enr.studentName}</p>
-                        <p className="text-[11px] text-body">{enr.studentEmail}</p>
-                        {enr.studentTimezone && (
-                          <span className="text-[10px] text-body/70 font-mono">
-                            TZ: {enr.studentTimezone}
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-heading">{enr.courseTitle}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="px-2 py-0.5 rounded-md bg-accent-subtle text-accent-dark text-[10px] font-bold">
-                            {enr.courseInstrument}
-                          </span>
-                          <span className="text-[11px] text-body font-numeric">
-                            {enr.sessionsTotal} Sessions
-                          </span>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        {enr.teacherName ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5 text-heading font-medium">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                              <span className="font-bold">{enr.teacherName}</span>
-                            </div>
-                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold inline-block">
-                              1:1 Dedicated Mentor
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase inline-flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 text-amber-600" />
-                            Needs Teacher Allotment
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded bg-primary-subtle text-primary font-bold font-numeric text-[11px]">
-                              {enr.scheduledLessonsCount ?? 0} / {enr.sessionsTotal}
-                            </span>
-                            <span className="text-[11px] text-body">
-                              1:1 Sessions Scheduled
-                            </span>
-                          </div>
-                          {(enr.scheduledLessonsCount ?? 0) === 0 ? (
-                            <p className="text-[10px] text-amber-700 font-medium">
-                              ⚠️ Lessons not scheduled yet
-                            </p>
-                          ) : (
-                            <p className="text-[10px] text-emerald-600 font-medium">
-                              ✓ Personalized timetable active
-                            </p>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            enr.status === "ACTIVE"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : enr.status === "COMPLETED"
-                              ? "bg-primary-subtle text-primary border border-primary/30"
-                              : "bg-neutral-100 text-body border border-neutral-200"
-                          }`}
-                        >
-                          {enr.status}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => openScheduleDrawer(enr)}
-                          className="px-3.5 py-1.5 rounded-xl border border-primary/30 bg-primary-subtle hover:bg-primary text-primary hover:text-white text-xs font-bold transition-all shadow-xs active:scale-[0.98] cursor-pointer inline-flex items-center gap-1.5"
-                        >
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
-                          <span>Allot Teacher & Schedule</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Tab 2: Payments Ledger Table */}
-      {activeTab === "PAYMENTS" && (
-        <div className="rounded-2xl border border-border-default bg-white overflow-hidden shadow-xs">
+      {/* ─── 1. TOP BREADCRUMB & UTILITIES ──────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-body/70">
+          <span className="font-medium">Operations</span>
+          <span className="text-body/40">/</span>
+          <span className="font-bold text-heading">Create enrollment</span>
+        </div>
+
+        <div className="flex items-center gap-2.5 text-body/80 self-end sm:self-auto">
+          {/* View mode toggle */}
+          <div className="flex items-center bg-white border border-neutral-200/90 rounded-xl p-0.5 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setViewMode("PLANNER")}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === "PLANNER"
+                  ? "bg-[#3C096C] text-white shadow-xs"
+                  : "text-body hover:text-heading"
+              }`}
+            >
+              Planner & Scheduler
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("ROSTER")}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === "ROSTER"
+                  ? "bg-[#3C096C] text-white shadow-xs"
+                  : "text-body hover:text-heading"
+              }`}
+            >
+              All Enrollments ({enrollments.length})
+            </button>
+          </div>
+
+          {/* IST Timezone Pill */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-neutral-200/90 text-[11px] font-medium shadow-2xs">
+            <Globe className="w-3.5 h-3.5 text-primary/70" />
+            <span>IST · {formattedIstDate}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── 2. MAIN HEADER & ACTIONS ───────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-serif text-2xl sm:text-3xl font-bold text-heading tracking-tight">
+            Create enrollment
+          </h1>
+          <p className="text-xs sm:text-sm text-body/70 mt-1">
+            Convert a qualified trial into a scheduled, billable learning plan
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={() => handleSaveEnrollment(true)}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200/90 text-heading text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50"
+          >
+            <FileText className="w-3.5 h-3.5 text-body/80" />
+            <span>Save draft</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSaveEnrollment(false)}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95 disabled:opacity-50"
+          >
+            {isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin text-white" />
+            ) : (
+              <Check className="w-4 h-4 text-white" />
+            )}
+            <span>Save Enrollment</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── 3. MODERN STEPPER PROGRESS BAR ─────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Step 1: Trial */}
+        <div className="p-3.5 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+            1
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-heading">Trial</div>
+            <div className="text-[11px] text-body/60 truncate font-numeric">
+              {linkedTrialId ? `TRL-${linkedTrialId.slice(-6)} · Complete` : "TRL-2026-1048 · Complete"}
+            </div>
+          </div>
+        </div>
+
+        {/* Step 2: Student */}
+        <div className="p-3.5 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+            2
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-heading">Student</div>
+            <div className="text-[11px] text-body/60 truncate font-numeric">
+              {currentStudent?.name || "Student"} · Created
+            </div>
+          </div>
+        </div>
+
+        {/* Step 3: Enrollment */}
+        <div className="p-3.5 rounded-2xl bg-white border border-[#3C096C]/30 ring-1 ring-[#3C096C]/20 shadow-2xs flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-[#3C096C] text-white flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+            3
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-heading">Enrollment</div>
+            <div className="text-[11px] text-body/60 truncate font-numeric">
+              {activeEnrollment ? `ENR-${activeEnrollment.id.slice(-4)}` : "New record"} · In progress
+            </div>
+          </div>
+        </div>
+
+        {/* Step 4: Sessions */}
+        <div className="p-3.5 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-neutral-100 text-body flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+            4
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-heading">Sessions</div>
+            <div className="text-[11px] text-body/60 truncate font-numeric">
+              {activeEnrollment?.lessons.length || 0} scheduled · Active
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {viewMode === "ROSTER" ? (
+        /* ─── ALL ENROLLMENTS ROSTER VIEW ───────────────────────────────── */
+        <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-serif text-lg font-bold text-heading">All Course Enrollments</h2>
+              <p className="text-xs text-body/60">
+                Active catalog subscriptions, faculty allotments, and remaining session balances.
+              </p>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-border-default bg-neutral-50/70 text-body font-semibold uppercase tracking-wider text-[11px]">
+              <thead className="bg-neutral-50/70 border-b border-neutral-200 text-[11px] font-semibold text-body uppercase tracking-wider">
                 <tr>
-                  <th className="py-3.5 px-4">Date & Time</th>
-                  <th className="py-3.5 px-4">Student</th>
-                  <th className="py-3.5 px-4">Gateway Reference IDs</th>
-                  <th className="py-3.5 px-4 text-right">Amount</th>
-                  <th className="py-3.5 px-4 text-center">Status</th>
+                  <th className="py-3 px-4">Student</th>
+                  <th className="py-3 px-4">Enrolled Course</th>
+                  <th className="py-3 px-4">Assigned Faculty</th>
+                  <th className="py-3 px-4">Progress / Balance</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border-default/60">
-                {filteredPayments.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-neutral-50/50 transition-colors"
-                  >
-                    <td className="py-3.5 px-4 text-body font-numeric whitespace-nowrap">
-                      {new Date(p.createdAt).toLocaleDateString()} at{" "}
-                      {new Date(p.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-
+              <tbody className="divide-y divide-neutral-100 font-numeric">
+                {enrollments.map((enr) => (
+                  <tr key={enr.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="py-3.5 px-4">
-                      <p className="font-bold text-heading">{p.studentName}</p>
-                      <p className="text-[11px] text-body">{p.studentEmail}</p>
+                      <div className="font-bold text-heading">{enr.studentName}</div>
+                      <div className="text-[11px] text-body/60">{enr.studentEmail}</div>
                     </td>
-
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-body">
-                      <div>
-                        Payment:{" "}
-                        <span className="text-accent-dark font-semibold">
-                          {p.gatewayPaymentId || "pending-capture"}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-body/60">
-                        Order: {p.gatewayOrderId}
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-heading">{enr.courseTitle}</div>
+                      <div className="text-[11px] text-body/60">
+                        {enr.courseInstrument} · {enr.courseLevel}
                       </div>
                     </td>
-
-                    <td className="py-3.5 px-4 text-right font-bold text-heading font-numeric">
-                      ₹{(p.amountMinorUnits / 100).toLocaleString("en-IN")} {p.currency}
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-heading">
+                        {enr.teacherName || "Unassigned"}
+                      </div>
+                      <div className="text-[10px] text-emerald-700">
+                        ₹{enr.teacherPayoutRupees} / class
+                      </div>
                     </td>
-
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-heading">
+                        {enr.sessionsTotal - enr.sessionsRemaining} / {enr.sessionsTotal} sessions
+                      </div>
+                      <div className="text-[11px] text-body/60">
+                        {enr.lessons.length} scheduled instances
+                      </div>
+                    </td>
                     <td className="py-3.5 px-4 text-center">
-                      <span
-                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          p.status === "PAID"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : p.status === "CREATED"
-                            ? "bg-amber-50 text-amber-700 border border-amber-200"
-                            : "bg-red-50 text-red-700 border border-red-200"
-                        }`}
-                      >
-                        {p.status}
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {enr.status}
                       </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEnrollmentId(enr.id);
+                          setViewMode("PLANNER");
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white font-bold text-xs transition-all shadow-2xs"
+                      >
+                        Open Planner & Timetable
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -682,176 +826,583 @@ export function AdminEnrollmentsManager({
             </table>
           </div>
         </div>
-      )}
-
-      {/* ─── Interactive 1-on-1 Student Timetable & Teacher Allotment Modal ─── */}
-      {selectedEnrollment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-xs animate-fade-in overflow-y-auto">
-          <div className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-border-default bg-white shadow-2xl overflow-hidden my-auto">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-border-default p-5 sm:p-6 bg-neutral-50/60 shrink-0">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-accent-dark px-2.5 py-0.5 rounded-md bg-accent/10 border border-accent/20">
-                    1-on-1 Personalized Course Management
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-                    Private Classroom (Not Group)
-                  </span>
-                </div>
-                <h2 className="font-serif text-xl sm:text-2xl font-bold text-heading">
-                  {selectedEnrollment.courseTitle}
+      ) : (
+        /* ─── 4. MAIN 2-COLUMN WORKSPACE (MATCHING ATTACHED SCREENSHOT) ─── */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* ─── LEFT COLUMN: 4 NUMBERED SECTIONS (8 COLS / ~66%) ───────── */}
+          <div className="lg:col-span-8 space-y-5">
+            {/* ─── SECTION 1: STUDENT & COURSE ─────────────────────────── */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+              <div>
+                <h2 className="font-serif text-lg font-bold text-heading">
+                  1 · Student & course
                 </h2>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-body">
-                  <span>
-                    Student: <strong className="text-heading">{selectedEnrollment.studentName}</strong> ({selectedEnrollment.studentEmail})
-                  </span>
-                  <span>•</span>
-                  <span>
-                    Instrument: <strong className="text-accent-dark">{selectedEnrollment.courseInstrument}</strong>
-                  </span>
-                  <span>•</span>
-                  <span>
-                    Total Package: <strong className="text-heading font-numeric">{selectedEnrollment.sessionsTotal} Sessions</strong>
+                <p className="text-xs text-body/60 mt-0.5">
+                  Search existing records or continue from trial context
+                </p>
+              </div>
+
+              {/* Student selector and course catalog dropdowns */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Student
+                  </label>
+                  <select
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  >
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · STU-{s.id.slice(-4)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-body/50 mt-1">
+                    {linkedTrialId ? `Created from trial lead TRL-${linkedTrialId.slice(-6)}` : "Verified student account"}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Controlled course catalog
+                  </label>
+                  <select
+                    value={selectedCourseId}
+                    onChange={(e) => {
+                      setSelectedCourseId(e.target.value);
+                      const crs = courses.find((c) => c.id === e.target.value);
+                      if (crs) {
+                        setTotalSessions(crs.sessionCount);
+                        setFeeRupees(Math.round(crs.priceMinorUnits / 100));
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  >
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title} · {c.level}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-body/50 mt-1">
+                    Course CRSE-{currentCourse?.id.slice(-6)} · {currentCourse?.sessionCount || 24} sessions
+                  </p>
+                </div>
+              </div>
+
+              {/* ─── COURSE SELECTION SWITCHER BUTTON (REQUESTED SPECIFICATION) ─── */}
+              {studentEnrollments.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-purple-50/50 border border-purple-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-heading flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-[#3C096C]" />
+                      <span>Courses bought by {currentStudent?.name}:</span>
+                    </span>
+                    <span className="text-[11px] text-body/60">
+                      Click to switch course timetable
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {studentEnrollments.map((enr) => {
+                      const isThisActive = enr.id === activeEnrollment?.id;
+                      return (
+                        <button
+                          key={enr.id}
+                          type="button"
+                          onClick={() => setSelectedEnrollmentId(enr.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                            isThisActive
+                              ? "bg-[#3C096C] text-white shadow-xs"
+                              : "bg-white hover:bg-neutral-100 text-heading border border-purple-200"
+                          }`}
+                        >
+                          <span>{enr.courseTitle}</span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-numeric ${
+                              isThisActive
+                                ? "bg-white/20 text-white"
+                                : "bg-purple-100 text-[#3C096C]"
+                            }`}
+                          >
+                            {enr.lessons.length} sessions
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Context strip banner */}
+              <div className="p-3.5 rounded-xl bg-purple-50/40 border border-purple-100/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Timezone</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {currentStudent?.timezone || "Asia/Kolkata"} · IST
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Age / guardian</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {currentStudent?.age ? `${currentStudent.age} yrs` : "14 yrs"} ·{" "}
+                    {currentStudent?.guardianName || "Parent"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Trial teacher</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    {currentTeacher?.name || "Mira Sen"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-body/60 font-medium">Trial outcome</div>
+                  <div className="font-bold text-heading mt-0.5">
+                    Qualified · {formattedIstDate}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── SECTION 2: SESSION PLAN & 1-ON-1 TIMETABLE ──────────── */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-serif text-lg font-bold text-heading">
+                    2 · Session plan
+                  </h2>
+                  <p className="text-xs text-body/60 mt-0.5">
+                    Enrollment defines the plan; every class remains an individual session record
+                  </p>
+                </div>
+
+                {/* Faculty allotment quick indicator */}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-[11px] font-semibold text-body/70">Faculty:</span>
+                  <span className="px-2.5 py-1 rounded-full bg-purple-50 border border-purple-200 text-[#3C096C] text-xs font-bold font-numeric flex items-center gap-1.5 shadow-2xs">
+                    <UserCheck className="w-3.5 h-3.5 text-[#3C096C]" />
+                    <span>{currentTeacher?.name || "No faculty allotted"}</span>
+                    {currentTeacher && (
+                      <span className="text-[10px] text-purple-700/80 font-normal">
+                        (₹{currentTeacher.payoutRupees}/class)
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={closeScheduleDrawer}
-                className="p-1.5 rounded-xl text-body/50 hover:text-heading hover:bg-neutral-100 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Scrollable Body */}
-            <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs">
-              {actionError && (
-                <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2 font-medium">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                  <span>{actionError}</span>
-                </div>
-              )}
-
-              {actionSuccess && (
-                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2 font-medium">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                  <span>{actionSuccess}</span>
-                </div>
-              )}
-
-              {/* SECTION 1: Allot Dedicated Faculty Teacher */}
-              <div className="rounded-2xl border border-border-default bg-neutral-50/40 p-4 sm:p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border-default/60 pb-3">
-                  <div>
-                    <h3 className="font-serif text-sm sm:text-base font-bold text-heading flex items-center gap-2">
-                      <UserCheck className="w-4 h-4 text-primary" />
-                      <span>Dedicated Faculty Teacher Allotment</span>
-                    </h3>
-                    <p className="text-[11px] text-body mt-0.5">
-                      Allot a qualified faculty mentor specifically for this student&apos;s 1-on-1 private lessons.
-                    </p>
+              {/* ─── TEACHER SELECTION BUTTON & ALLOTMENT BAR ────────────── */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-50/60 via-purple-50/30 to-white border border-purple-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-2xl bg-[#3C096C] text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+                    <GraduationCap className="w-5 h-5 text-white" />
                   </div>
-                  {scheduleDetails?.teacher && (
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold self-start">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>Currently: {scheduleDetails.teacher.name}</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-[#3C096C] uppercase tracking-wider bg-purple-100/80 px-2 py-0.5 rounded-md">
+                        Faculty Allotment
+                      </span>
+                      {currentTeacher && (
+                        <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Accredited Faculty</span>
+                        </span>
+                      )}
                     </div>
-                  )}
+                    <div className="font-bold text-heading text-sm mt-1 flex items-center gap-2">
+                      <span>{currentTeacher?.name || "Choose Faculty Instructor"}</span>
+                      {currentTeacher && (
+                        <span className="text-xs text-body/70 font-normal">
+                          · {currentTeacher.instruments.join(", ") || "Music Faculty"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-body/60 mt-0.5 font-numeric">
+                      Institutional Remuneration: ₹{currentTeacher?.payoutRupees || 800} payout per completed session
+                    </div>
+                  </div>
                 </div>
 
-                <form onSubmit={handleTeacherAllotment} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <div className="flex-1">
+                {/* Teacher Selection Control & Button */}
+                <div className="flex items-center gap-2.5 flex-wrap self-start md:self-auto">
+                  <div className="relative">
                     <select
-                      required
                       value={selectedTeacherId}
-                      onChange={(e) => setSelectedTeacherId(e.target.value)}
-                      className="w-full rounded-xl bg-white border border-border-default px-3.5 py-2.5 text-xs text-heading focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-xs font-medium"
+                      onChange={(e) => {
+                        const newTid = e.target.value;
+                        setSelectedTeacherId(newTid);
+                        const tObj = teachers.find((t) => t.id === newTid);
+                        if (tObj) {
+                          showToast(`Selected ${tObj.name} for this session plan.`, "success");
+                        }
+                      }}
+                      className="px-3.5 py-2.5 pr-8 rounded-xl border border-purple-300 bg-white text-xs font-bold text-heading shadow-2xs focus:outline-none focus:border-[#3C096C] cursor-pointer appearance-none hover:border-[#3C096C] transition-colors"
                     >
-                      <option value="" disabled>Select faculty teacher to allot...</option>
                       {teachers.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name}
+                          {t.name} · {t.instruments[0] || "Faculty"} (₹{t.payoutRupees})
                         </option>
                       ))}
                     </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-body/60 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
+
                   <button
-                    type="submit"
-                    disabled={isPending || !selectedTeacherId || selectedTeacherId === scheduleDetails?.enrollment.teacherId}
-                    className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition-all shadow-xs disabled:opacity-40 cursor-pointer shrink-0 active:scale-[0.98] flex items-center justify-center gap-2"
+                    type="button"
+                    onClick={() => {
+                      if (activeEnrollment && selectedTeacherId) {
+                        startTransition(async () => {
+                          const res = await reassignEnrollmentTeacherAction({
+                            enrollmentId: activeEnrollment.id,
+                            teacherId: selectedTeacherId,
+                            updateUpcomingLessons: true,
+                          });
+                          if (res.success) {
+                            showToast(
+                              `Allotted ${currentTeacher?.name} to enrollment and updated sessions!`,
+                              "success"
+                            );
+                            setEnrollments((prev) =>
+                              prev.map((item) =>
+                                item.id === activeEnrollment.id
+                                  ? {
+                                      ...item,
+                                      teacherId: selectedTeacherId,
+                                      teacherName: currentTeacher?.name || null,
+                                      teacherPayoutRupees: currentTeacher?.payoutRupees || 800,
+                                      lessons: item.lessons.map((l) => ({
+                                        ...l,
+                                        teacherId: selectedTeacherId,
+                                        teacherName: currentTeacher?.name || "Assigned Faculty",
+                                        payoutRupees: currentTeacher?.payoutRupees || 800,
+                                      })),
+                                    }
+                                  : item
+                              )
+                            );
+                          } else {
+                            showToast(res.error || "Failed to allot teacher", "error");
+                          }
+                        });
+                      } else {
+                        showToast(`Teacher set to ${currentTeacher?.name || "Faculty"}.`, "success");
+                      }
+                    }}
+                    disabled={isPending}
+                    className="px-4 py-2.5 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95 flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
                   >
-                    {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
-                    <span>{scheduleDetails?.enrollment.teacherId ? "Update Allotted Teacher" : "Allot Teacher"}</span>
+                    {isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <UserCheck className="w-3.5 h-3.5" />
+                    )}
+                    <span>Allot Teacher</span>
                   </button>
-                </form>
+                </div>
               </div>
 
-              {/* SECTION 2: 1-on-1 Lesson Timetable & Unique Lesson Tracking IDs */}
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {/* 4 Inputs Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Total sessions
+                  </label>
+                  <input
+                    type="number"
+                    value={totalSessions}
+                    onChange={(e) => setTotalSessions(Number(e.target.value))}
+                    min="1"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Completed sessions
+                  </label>
+                  <input
+                    type="number"
+                    value={completedSessions}
+                    onChange={(e) => setCompletedSessions(Number(e.target.value))}
+                    min="0"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                  />
+                  <span className="text-[10px] text-body/50">Read-only after creation</span>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Frequency
+                  </label>
+                  <select
+                    value={frequencyLabel}
+                    onChange={(e) => setFrequencyLabel(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  >
+                    <option value="1 class / week">1 class / week</option>
+                    <option value="2 classes / week">2 classes / week</option>
+                    <option value="3 classes / week">3 classes / week</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Expected duration
+                  </label>
+                  <select
+                    value={expectedDurationWeeks}
+                    onChange={(e) => setExpectedDurationWeeks(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  >
+                    <option value={8}>8 weeks</option>
+                    <option value={12}>12 weeks</option>
+                    <option value={16}>16 weeks</option>
+                    <option value={24}>24 weeks</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Generated Date Pills Preview */}
+              <div className="flex items-center gap-2 flex-wrap text-xs font-numeric">
+                {generatedPreviewDates.map((dateStr, idx) => (
+                  <div
+                    key={idx}
+                    className="px-3 py-1.5 rounded-xl border border-neutral-200 bg-neutral-50/80 text-heading font-semibold shadow-2xs"
+                  >
+                    {dateStr}
+                  </div>
+                ))}
+                {totalSessions > 4 && (
+                  <div className="px-3 py-1.5 rounded-xl border border-neutral-200 bg-neutral-100 text-body font-semibold">
+                    +{totalSessions - 4} sessions
+                  </div>
+                )}
+              </div>
+
+              {/* ─── SCHEDULE NEXT 1-ON-1 SESSION(S) INTERACTIVE PANEL ───── */}
+              <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/30 space-y-3">
+                <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-serif text-sm sm:text-base font-bold text-heading flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-accent" />
-                      <span>Student&apos;s 1-on-1 Lesson Timetable & Tracking IDs</span>
+                    <h3 className="font-serif text-sm font-bold text-heading">
+                      Schedule Next 1-on-1 Session(s)
                     </h3>
-                    <p className="text-[11px] text-body mt-0.5">
-                      Each lesson is created with a unique tracking code for financial reconciliation, faculty payouts, and attendance.
+                    <p className="text-[11px] text-body/70 mt-0.5">
+                      Allot date and time instances with audited tracking IDs
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-xl bg-neutral-100 text-body font-numeric text-xs font-bold">
-                      {scheduleDetails?.lessons.length || 0} of {selectedEnrollment.sessionsTotal} Scheduled
-                    </span>
+                  <div className="flex items-center bg-white border border-neutral-200 rounded-lg p-0.5 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleMode("SINGLE")}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        scheduleMode === "SINGLE"
+                          ? "bg-[#3C096C] text-white"
+                          : "text-body hover:text-heading"
+                      }`}
+                    >
+                      Single Lesson
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleMode("BULK")}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        scheduleMode === "BULK"
+                          ? "bg-[#3C096C] text-white"
+                          : "text-body hover:text-heading"
+                      }`}
+                    >
+                      Bulk Recurring Timetable
+                    </button>
                   </div>
                 </div>
 
-                {/* Scheduled Lessons Table */}
-                {loadingSchedule ? (
-                  <div className="p-8 text-center bg-neutral-50 rounded-2xl border border-border-default flex flex-col items-center justify-center gap-2 text-body">
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                    <span>Loading student&apos;s personalized timetable...</span>
-                  </div>
-                ) : scheduleDetails && scheduleDetails.lessons.length > 0 ? (
-                  <div className="rounded-2xl border border-border-default overflow-hidden bg-white shadow-xs">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-neutral-50/70 border-b border-border-default text-[11px] font-semibold text-body uppercase tracking-wider">
+                {scheduleMode === "SINGLE" ? (
+                  <form onSubmit={handleScheduleSingle} className="flex items-center gap-3 flex-wrap">
+                    <div className="flex-1 min-w-[180px]">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        Date & Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={singleLessonDate}
+                        onChange={(e) => setSingleLessonDate(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium focus:outline-none focus:border-[#3C096C]"
+                      />
+                    </div>
+                    <div className="w-24">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        Duration
+                      </label>
+                      <select
+                        value={singleLessonDuration}
+                        onChange={(e) => setSingleLessonDuration(Number(e.target.value))}
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium focus:outline-none focus:border-[#3C096C]"
+                      >
+                        <option value={45}>45 mins</option>
+                        <option value={60}>60 mins</option>
+                        <option value={90}>90 mins</option>
+                      </select>
+                    </div>
+                    <div className="w-40">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        Assigned Faculty
+                      </label>
+                      <select
+                        value={selectedTeacherId}
+                        onChange={(e) => setSelectedTeacherId(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium focus:outline-none focus:border-[#3C096C]"
+                      >
+                        {teachers.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} (₹{t.payoutRupees})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="self-end">
+                      <button
+                        type="submit"
+                        disabled={isPending}
+                        className="px-3.5 py-1.5 rounded-lg bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          "+ Add 1-on-1 Lesson"
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleBulkSchedule} className="flex items-center gap-3 flex-wrap">
+                    <div className="flex-1 min-w-[170px]">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        First Session
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={bulkStartDate}
+                        onChange={(e) => setBulkStartDate(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium focus:outline-none focus:border-[#3C096C]"
+                      />
+                    </div>
+                    <div className="w-24">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        Interval
+                      </label>
+                      <select
+                        value={bulkIntervalDays}
+                        onChange={(e) => setBulkIntervalDays(Number(e.target.value))}
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium focus:outline-none focus:border-[#3C096C]"
+                      >
+                        <option value={7}>Weekly (7d)</option>
+                        <option value={3}>3-4 Days</option>
+                      </select>
+                    </div>
+                    <div className="w-16">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        Count
+                      </label>
+                      <input
+                        type="number"
+                        value={bulkCount}
+                        onChange={(e) => setBulkCount(Number(e.target.value))}
+                        min="1"
+                        max="24"
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                      />
+                    </div>
+                    <div className="w-40">
+                      <label className="text-[11px] font-semibold text-body block mb-1">
+                        Assigned Faculty
+                      </label>
+                      <select
+                        value={selectedTeacherId}
+                        onChange={(e) => setSelectedTeacherId(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium focus:outline-none focus:border-[#3C096C]"
+                      >
+                        {teachers.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} (₹{t.payoutRupees})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="self-end">
+                      <button
+                        type="submit"
+                        disabled={isPending}
+                        className="px-3.5 py-1.5 rounded-lg bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          "Generate Timetable"
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* ─── 1-ON-1 SCHEDULED SESSIONS TABLE (SPECIFIED BY USER) ─── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif text-sm font-bold text-heading">
+                    Scheduled 1-on-1 Sessions for {currentCourse?.title}
+                  </h3>
+                  <span className="text-[11px] font-numeric text-body/60">
+                    {activeEnrollment?.lessons.length || 0} scheduled classes
+                  </span>
+                </div>
+
+                <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-neutral-50 border-b border-neutral-200 text-[11px] font-semibold text-body uppercase tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-3.5">#</th>
+                          <th className="py-2.5 px-3.5">Unique Lesson ID (Tracking)</th>
+                          <th className="py-2.5 px-3.5">Date & Time</th>
+                          <th className="py-2.5 px-3.5">Duration</th>
+                          <th className="py-2.5 px-3.5">Assigned Faculty</th>
+                          <th className="py-2.5 px-3.5 text-center">Status</th>
+                          <th className="py-2.5 px-3.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100 font-numeric">
+                        {!activeEnrollment || activeEnrollment.lessons.length === 0 ? (
                           <tr>
-                            <th className="py-2.5 px-3.5">#</th>
-                            <th className="py-2.5 px-3.5">Unique Lesson ID (Tracking)</th>
-                            <th className="py-2.5 px-3.5">Date & Time</th>
-                            <th className="py-2.5 px-3.5">Duration</th>
-                            <th className="py-2.5 px-3.5">Assigned Faculty</th>
-                            <th className="py-2.5 px-3.5 text-center">Status</th>
-                            <th className="py-2.5 px-3.5 text-right">Actions</th>
+                            <td colSpan={7} className="py-6 text-center text-xs text-body/60">
+                              No 1-on-1 sessions scheduled for this course yet. Use the panel above to schedule.
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border-default/60">
-                          {scheduleDetails.lessons.map((lesson, idx) => {
+                        ) : (
+                          activeEnrollment.lessons.map((lesson, idx) => {
                             const isRescheduling = reschedulingLessonId === lesson.id;
+                            const lDate = new Date(lesson.startsAt);
 
                             return (
-                              <tr key={lesson.id} className="hover:bg-neutral-50/50 transition-colors">
-                                <td className="py-3 px-3.5 font-bold text-heading font-numeric">
+                              <tr key={lesson.id} className="hover:bg-neutral-50/60 transition-colors">
+                                <td className="py-3 px-3.5 font-bold text-heading">
                                   {idx + 1}
                                 </td>
 
                                 <td className="py-3 px-3.5">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono font-bold text-accent-dark bg-accent/10 px-2 py-0.5 rounded text-[11px]">
+                                  <div className="flex items-center gap-1.5 font-mono">
+                                    <span className="bg-purple-50 text-[#3C096C] px-2 py-0.5 rounded text-[11px] font-bold">
                                       {lesson.trackingCode}
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() => copyToClipboard(lesson.trackingCode)}
-                                      className="p-1 rounded text-body/50 hover:text-primary transition-colors cursor-pointer"
-                                      title="Copy tracking code for payment / accounting audit"
+                                      onClick={() => copyTracking(lesson.trackingCode)}
+                                      className="p-1 text-body/40 hover:text-heading cursor-pointer"
+                                      title="Copy Tracking ID"
                                     >
-                                      {copiedTrackingCode === lesson.trackingCode ? (
+                                      {copiedCode === lesson.trackingCode ? (
                                         <Check className="w-3.5 h-3.5 text-emerald-600" />
                                       ) : (
                                         <Copy className="w-3.5 h-3.5" />
@@ -865,67 +1416,115 @@ export function AdminEnrollmentsManager({
                                     <div className="flex items-center gap-2">
                                       <input
                                         type="datetime-local"
-                                        value={rescheduleDate}
-                                        onChange={(e) => setRescheduleDate(e.target.value)}
-                                        className="rounded-lg border border-border-default px-2 py-1 text-xs"
+                                        value={rescheduleDateInput}
+                                        onChange={(e) => setRescheduleDateInput(e.target.value)}
+                                        className="rounded-lg border border-neutral-300 px-2 py-1 text-xs"
                                       />
                                       <button
                                         type="button"
-                                        onClick={() => handleRescheduleLesson(lesson.id)}
-                                        disabled={isPending || !rescheduleDate}
-                                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px]"
+                                        onClick={() => handleReschedule(lesson.id)}
+                                        disabled={isPending || !rescheduleDateInput}
+                                        className="px-2 py-1 rounded bg-emerald-700 text-white font-bold text-[11px]"
                                       >
                                         Save
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setReschedulingLessonId(null)}
-                                        className="px-2 py-1 text-body/60 hover:text-heading text-[11px]"
+                                        className="text-[11px] text-body hover:text-heading"
                                       >
                                         Cancel
                                       </button>
                                     </div>
                                   ) : (
                                     <div>
-                                      <p className="font-bold text-heading font-numeric">
-                                        {new Date(lesson.startsAt).toLocaleDateString([], {
+                                      <div className="font-bold text-heading">
+                                        {lDate.toLocaleDateString("en-GB", {
                                           weekday: "short",
                                           month: "short",
                                           day: "numeric",
                                           year: "numeric",
                                         })}
-                                      </p>
-                                      <p className="text-[11px] text-body font-numeric">
-                                        {new Date(lesson.startsAt).toLocaleTimeString([], {
+                                      </div>
+                                      <div className="text-[11px] text-body/70">
+                                        {lDate.toLocaleTimeString("en-GB", {
                                           hour: "2-digit",
                                           minute: "2-digit",
                                         })}
-                                      </p>
+                                      </div>
                                     </div>
                                   )}
                                 </td>
 
-                                <td className="py-3 px-3.5 text-body font-numeric">
+                                <td className="py-3 px-3.5 text-body">
                                   {lesson.durationMinutes} mins
                                 </td>
 
-                                <td className="py-3 px-3.5">
-                                  <span className="font-medium text-heading">
-                                    {lesson.teacherName}
-                                  </span>
-                                  <div className="text-[10px] text-emerald-700 font-numeric">
-                                    Payout: ₹{lesson.payoutRupees}
-                                  </div>
+                                 <td className="py-3 px-3.5">
+                                  {reassigningLessonId === lesson.id ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <select
+                                        value={reassignTeacherId || lesson.teacherId || selectedTeacherId}
+                                        onChange={(e) => setReassignTeacherId(e.target.value)}
+                                        className="text-[11px] border border-neutral-300 rounded px-1.5 py-1 bg-white font-sans focus:outline-none focus:border-[#3C096C]"
+                                      >
+                                        {teachers.map((t) => (
+                                          <option key={t.id} value={t.id}>
+                                            {t.name} (₹{t.payoutRupees})
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleReassignLesson(
+                                            lesson.id,
+                                            reassignTeacherId || selectedTeacherId
+                                          )
+                                        }
+                                        className="px-2 py-1 rounded bg-[#3C096C] text-white font-bold text-[10px] cursor-pointer"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setReassigningLessonId(null)}
+                                        className="text-[10px] text-body hover:text-heading cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div className="font-semibold text-heading flex items-center gap-1.5">
+                                        <span>{lesson.teacherName}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReassigningLessonId(lesson.id);
+                                            setReassignTeacherId(lesson.teacherId || selectedTeacherId);
+                                          }}
+                                          className="text-[10px] text-[#3C096C] hover:underline font-bold cursor-pointer"
+                                          title="Reassign faculty for this lesson"
+                                        >
+                                          Change
+                                        </button>
+                                      </div>
+                                      <div className="text-[10px] text-emerald-700">
+                                        Payout: ₹{lesson.payoutRupees}
+                                      </div>
+                                    </div>
+                                  )}
                                 </td>
 
                                 <td className="py-3 px-3.5 text-center">
                                   <span
-                                    className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                    className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
                                       lesson.status === "SCHEDULED"
-                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        ? "bg-purple-50 text-purple-700 border border-purple-200"
                                         : lesson.status === "COMPLETED"
-                                        ? "bg-primary-subtle text-primary border border-primary/30"
-                                        : "bg-red-50 text-red-700 border border-red-200"
+                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        : "bg-rose-50 text-rose-700 border border-rose-200"
                                     }`}
                                   >
                                     {lesson.status}
@@ -934,27 +1533,27 @@ export function AdminEnrollmentsManager({
 
                                 <td className="py-3 px-3.5 text-right whitespace-nowrap">
                                   {lesson.status === "SCHEDULED" && !isRescheduling && (
-                                    <div className="flex items-center justify-end gap-1.5">
+                                    <div className="flex items-center justify-end gap-2">
                                       <button
                                         type="button"
                                         onClick={() => {
                                           setReschedulingLessonId(lesson.id);
                                           const localIso = new Date(
                                             new Date(lesson.startsAt).getTime() -
-                                              new Date(lesson.startsAt).getTimezoneOffset() * 60000,
+                                              new Date(lesson.startsAt).getTimezoneOffset() * 60000
                                           )
                                             .toISOString()
                                             .slice(0, 16);
-                                          setRescheduleDate(localIso);
+                                          setRescheduleDateInput(localIso);
                                         }}
-                                        className="px-2.5 py-1 rounded-lg border border-border-default hover:bg-neutral-50 text-[11px] font-semibold text-heading transition-colors cursor-pointer"
+                                        className="text-[11px] text-[#3C096C] font-bold hover:underline"
                                       >
                                         Reschedule
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => handleCancelLesson(lesson.id, lesson.trackingCode)}
-                                        className="px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-[11px] font-semibold text-red-700 transition-colors cursor-pointer"
+                                        onClick={() => handleCancelLesson(lesson.id)}
+                                        className="text-[11px] text-rose-700 font-bold hover:underline"
                                       >
                                         Cancel
                                       </button>
@@ -963,168 +1562,276 @@ export function AdminEnrollmentsManager({
                                 </td>
                               </tr>
                             );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                ) : (
-                  <div className="p-8 text-center rounded-2xl border border-dashed border-border-default bg-neutral-50/50 space-y-2">
-                    <p className="font-bold text-heading text-sm">
-                      No 1-on-1 lessons scheduled yet
-                    </p>
-                    <p className="text-xs text-body max-w-md mx-auto">
-                      Use the interactive scheduler below to create personalized 1-on-1 sessions for this student. Each session is private between the student and their allotted teacher.
-                    </p>
-                  </div>
-                )}
-
-                {/* SECTION 3: Add / Schedule New 1-on-1 Lessons */}
-                <div className="rounded-2xl border border-border-default bg-white p-4 sm:p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-border-default pb-3">
-                    <div className="flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-primary" />
-                      <h4 className="font-serif text-sm font-bold text-heading">
-                        Schedule Next 1-on-1 Session(s)
-                      </h4>
-                    </div>
-
-                    <div className="flex items-center gap-1 p-1 rounded-xl bg-neutral-100">
-                      <button
-                        type="button"
-                        onClick={() => setSchedulingMode("SINGLE")}
-                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                          schedulingMode === "SINGLE"
-                            ? "bg-white text-heading shadow-xs font-bold"
-                            : "text-body hover:text-heading"
-                        }`}
-                      >
-                        Single Lesson
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSchedulingMode("RECURRING")}
-                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                          schedulingMode === "RECURRING"
-                            ? "bg-white text-heading shadow-xs font-bold"
-                            : "text-body hover:text-heading"
-                        }`}
-                      >
-                        Bulk Recurring Timetable
-                      </button>
-                    </div>
-                  </div>
-
-                  {schedulingMode === "SINGLE" ? (
-                    <form onSubmit={handleScheduleSingleLesson} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                      <div className="space-y-1 sm:col-span-2">
-                        <label className="text-[11px] font-semibold text-heading">
-                          Select Date & Time (Student Timezone: {selectedEnrollment.studentTimezone || "Local"})
-                        </label>
-                        <input
-                          type="datetime-local"
-                          required
-                          value={singleLessonDate}
-                          onChange={(e) => setSingleLessonDate(e.target.value)}
-                          className="w-full rounded-xl bg-neutral-50 border border-border-default px-3.5 py-2 text-xs text-heading focus:outline-none focus:border-primary shadow-xs"
-                        />
-                      </div>
-
-                      <div>
-                        <button
-                          type="submit"
-                          disabled={isPending || !singleLessonDate}
-                          className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer active:scale-[0.98]"
-                        >
-                          {isPending ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Plus className="w-4 h-4" />
-                          )}
-                          <span>Create 1:1 Lesson</span>
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleBulkRecurringSchedule} className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-semibold text-heading">
-                            First Session Start Date & Time
-                          </label>
-                          <input
-                            type="datetime-local"
-                            required
-                            value={recurringStartDate}
-                            onChange={(e) => setRecurringStartDate(e.target.value)}
-                            className="w-full rounded-xl bg-neutral-50 border border-border-default px-3.5 py-2 text-xs text-heading focus:outline-none focus:border-primary shadow-xs"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-semibold text-heading">
-                            Cadence / Repeat
-                          </label>
-                          <select
-                            value={recurringFrequencyDays}
-                            onChange={(e) => setRecurringFrequencyDays(Number(e.target.value))}
-                            className="w-full rounded-xl bg-neutral-50 border border-border-default px-3.5 py-2 text-xs text-heading focus:outline-none focus:border-primary shadow-xs"
-                          >
-                            <option value={7}>Weekly (Every 7 days)</option>
-                            <option value={3}>Twice a week (Every 3-4 days)</option>
-                            <option value={14}>Bi-weekly (Every 14 days)</option>
-                          </select>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-semibold text-heading">
-                            Sessions to Generate
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={selectedEnrollment.sessionsTotal}
-                            value={recurringCount}
-                            onChange={(e) => setRecurringCount(Math.max(1, Number(e.target.value)))}
-                            className="w-full rounded-xl bg-neutral-50 border border-border-default px-3.5 py-2 text-xs text-heading focus:outline-none focus:border-primary shadow-xs"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-[11px] text-body">
-                          This will generate {recurringCount} consecutive 1-on-1 private lessons with unique tracking codes.
-                        </span>
-                        <button
-                          type="submit"
-                          disabled={isPending || !recurringStartDate || recurringCount <= 0}
-                          className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer active:scale-[0.98]"
-                        >
-                          {isPending ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Sparkles className="w-4 h-4" />
-                          )}
-                          <span>Generate Recurring 1:1 Timetable</span>
-                        </button>
-                      </div>
-                    </form>
-                  )}
                 </div>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 sm:p-5 border-t border-border-default bg-neutral-50/60 flex items-center justify-between shrink-0">
-              <div className="text-[11px] text-body">
-                Student: <strong>{selectedEnrollment.studentName}</strong> • Course: <strong>{selectedEnrollment.courseTitle}</strong>
+            {/* ─── SECTION 3: FEES, PAYMENTS & NOTES ───────────────────── */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+              <div>
+                <h2 className="font-serif text-lg font-bold text-heading">
+                  3 · Fees, payments & notes
+                </h2>
+                <p className="text-xs text-body/60 mt-0.5">INR-only enrollment ledger</p>
               </div>
+
+              {/* 3 Ledger Numbers */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-numeric">
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Enrollment fee
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-body">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      value={feeRupees}
+                      onChange={(e) => setFeeRupees(Number(e.target.value))}
+                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Successful payments
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-body">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      value={paidRupees}
+                      onChange={(e) => setPaidRupees(Number(e.target.value))}
+                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                    />
+                  </div>
+                  <span className="text-[10px] text-body/50 mt-1 block">
+                    Receipt RCPT-2026-8934
+                  </span>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Calculated amount due
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#3C096C]">
+                      ₹
+                    </span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={amountDueRupees.toLocaleString("en-IN")}
+                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-purple-200 bg-purple-50/50 text-xs font-bold text-[#3C096C]"
+                    />
+                  </div>
+                  <span className="text-[10px] text-body/50 mt-1 block">
+                    Enrollment fee – successful payments
+                  </span>
+                </div>
+              </div>
+
+              {/* Status and Next due date row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Payment status
+                  </label>
+                  <select
+                    value={paymentStatus}
+                    onChange={(e) => setPaymentStatus(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  >
+                    <option value="Partially paid">Partially paid</option>
+                    <option value="Fully paid">Fully paid</option>
+                    <option value="Unpaid">Unpaid</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Enrollment status
+                  </label>
+                  <select
+                    value={enrollmentStatus}
+                    onChange={(e) => setEnrollmentStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  >
+                    <option value="ACTIVE">Active on payment confirmation</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                    <option value="REFUNDED">Refunded</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-heading block mb-1">
+                    Next due date
+                  </label>
+                  <input
+                    type="date"
+                    value={nextDueDate}
+                    onChange={(e) => setNextDueDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                  />
+                </div>
+              </div>
+
+              {/* Admin notes */}
+              <div>
+                <label className="text-xs font-semibold text-heading block mb-1">
+                  Admin notes
+                </label>
+                <textarea
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  rows={2}
+                  className="w-full p-3 rounded-xl border border-neutral-300 text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ─── RIGHT COLUMN: SUMMARY, CHECKLIST, CTAS (4 COLS / ~33%) ─── */}
+          <div className="lg:col-span-4 space-y-5">
+            {/* 1. Enrollment summary card */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+              <div>
+                <h3 className="font-serif text-base font-bold text-heading">
+                  Enrollment summary
+                </h3>
+                <p className="text-xs text-body/60 mt-0.5">Review before saving</p>
+              </div>
+
+              <div className="space-y-3 text-xs divide-y divide-neutral-100">
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-body/70">Student</span>
+                  <span className="font-bold text-heading">{currentStudent?.name || "Student"}</span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-body/70">Course</span>
+                  <span className="font-bold text-heading truncate max-w-[180px]">
+                    {currentCourse?.title}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-body/70">Teacher</span>
+                  <span className="font-bold text-heading">{currentTeacher?.name || "Mira Sen"}</span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-body/70">Schedule</span>
+                  <span className="font-semibold text-heading font-numeric">
+                    {recurringCadence === "TUE_THU" ? "Tue / Thu" : "Weekly"} · {startTime} IST
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-body/70">Dates</span>
+                  <span className="font-semibold text-heading font-numeric">
+                    {startDate} – {endDate}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-body/70">Sessions</span>
+                  <span className="font-semibold text-heading font-numeric">
+                    {totalSessions} × {sessionDurationMinutes} minutes
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 font-numeric">
+                  <span className="text-body/70">Fee</span>
+                  <span className="font-semibold text-heading">₹{feeRupees.toLocaleString("en-IN")}</span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 font-numeric">
+                  <span className="text-body/70">Paid</span>
+                  <span className="font-semibold text-emerald-700">
+                    – ₹{paidRupees.toLocaleString("en-IN")}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 text-sm font-numeric">
+                  <span className="font-bold text-heading">Amount due</span>
+                  <span className="font-serif text-xl font-bold text-[#3C096C]">
+                    ₹{amountDueRupees.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Ready to save checklist */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-3">
+              <div>
+                <h3 className="font-serif text-base font-bold text-heading">Ready to save</h3>
+                <p className="text-xs text-body/60 mt-0.5">All required records validated</p>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Student identity and guardian verified</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Course is active in catalog</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Teacher available for recurrence</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>INR fee and ledger balanced</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-800 font-numeric">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{totalSessions} sessions ready to generate</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Action Card */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+              <p className="text-xs text-body/70 leading-relaxed font-numeric">
+                Saving creates the enrollment and {totalSessions} traceable class sessions. No payment
+                is collected automatically.
+              </p>
+
               <button
                 type="button"
-                onClick={closeScheduleDrawer}
-                className="px-5 py-2 rounded-xl bg-white border border-border-default hover:bg-neutral-50 text-xs font-semibold text-heading transition-all shadow-xs cursor-pointer active:scale-[0.98]"
+                onClick={() => handleSaveEnrollment(false)}
+                disabled={isPending}
+                className="w-full py-2.5 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs active:scale-95 disabled:opacity-50"
               >
-                Done
+                {isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <Check className="w-4 h-4 text-white" />
+                )}
+                <span>Save Enrollment</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSaveEnrollment(true)}
+                disabled={isPending}
+                className="w-full py-2.5 rounded-xl border border-neutral-200/90 hover:bg-neutral-50 text-heading font-semibold text-xs flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-95 disabled:opacity-50"
+              >
+                <FileText className="w-3.5 h-3.5 text-body/80" />
+                <span>Save as draft</span>
               </button>
             </div>
           </div>

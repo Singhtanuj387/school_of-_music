@@ -29,6 +29,7 @@ export function NavbarWrapper({
     return <LandingHeader />;
   }
 
+
   // Otherwise (authenticated, or on /login, /signup, /teachers, /courses, etc.),
   // render the platform navbar which is sticky with fixed height and never submerges content!
   return (

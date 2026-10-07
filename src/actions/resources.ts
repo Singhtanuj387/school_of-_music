@@ -129,6 +129,7 @@ export async function uploadResourceAction(
 
     revalidatePath("/teacher/dashboard/resources");
     revalidatePath("/student/dashboard/resources");
+    revalidatePath("/admin/resources");
 
     return {
       success: true,
@@ -189,6 +190,7 @@ export async function deleteResourceAction(
 
     revalidatePath("/teacher/dashboard/resources");
     revalidatePath("/student/dashboard/resources");
+    revalidatePath("/admin/resources");
 
     return {
       success: true,
@@ -290,6 +292,7 @@ export async function shareResourceAction({
 
     revalidatePath("/teacher/dashboard/resources");
     revalidatePath("/student/dashboard/resources");
+    revalidatePath("/admin/resources");
 
     return {
       success: true,
@@ -334,6 +337,7 @@ export async function unshareResourceAction(
 
     revalidatePath("/teacher/dashboard/resources");
     revalidatePath("/student/dashboard/resources");
+    revalidatePath("/admin/resources");
 
     return {
       success: true,
@@ -568,4 +572,110 @@ export async function getStudentReceivedResources() {
       },
     },
   });
+}
+
+// ─── 9. Fetch All Resources for Admin ─────────────────────────────────────────
+
+export async function getAdminResources() {
+  const session = await auth();
+  if (!session?.user?.id || session.user.role !== Role.ADMIN) return [];
+
+  return db.resource.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      teacher: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+        },
+      },
+      shares: {
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          course: {
+            select: {
+              id: true,
+              title: true,
+              instrument: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ─── 10. Fetch All Students for Admin Resource Sharing ──────────────────────
+
+export async function getAdminAllStudents(): Promise<AllottedStudentOption[]> {
+  const session = await auth();
+  if (!session?.user?.id || session.user.role !== Role.ADMIN) return [];
+
+  const enrollments = await db.enrollment.findMany({
+    include: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+        },
+      },
+      course: {
+        select: {
+          id: true,
+          title: true,
+          instrument: true,
+        },
+      },
+    },
+    orderBy: { startedAt: "desc" },
+  });
+
+  const studentsMap = new Map<string, AllottedStudentOption>();
+
+  for (const enr of enrollments) {
+    if (enr.student) {
+      studentsMap.set(enr.student.id, {
+        id: enr.student.id,
+        name: enr.student.name || "Enrolled Student",
+        email: enr.student.email,
+        image: enr.student.image,
+        courseTitle: enr.course.title,
+        courseId: enr.course.id,
+        instrument: enr.course.instrument,
+      });
+    }
+  }
+
+  const allStudents = await db.user.findMany({
+    where: { role: Role.STUDENT },
+    select: { id: true, name: true, email: true, image: true },
+    take: 100,
+  });
+
+  for (const st of allStudents) {
+    if (!studentsMap.has(st.id)) {
+      studentsMap.set(st.id, {
+        id: st.id,
+        name: st.name || "Student",
+        email: st.email,
+        image: st.image,
+        courseTitle: "Student Account",
+        courseId: null,
+        instrument: null,
+      });
+    }
+  }
+
+  return Array.from(studentsMap.values());
 }

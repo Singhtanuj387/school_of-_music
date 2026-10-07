@@ -1,9 +1,15 @@
 "use client";
 
-import { useActionState, useState, useTransition, useEffect } from "react";
+import { useActionState, useState, useTransition, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { loginAction, sendPhoneOtpAction, verifyOtpAndLoginAction } from "@/actions/auth";
 import { SplitHeading } from "@/components/ui/SplitHeading";
+import {
+  CountryCodeSelector,
+  SUPPORTED_COUNTRIES,
+  CountryOption,
+} from "@/components/ui/CountryCodeSelector";
 import {
   KeyRound,
   Smartphone,
@@ -11,8 +17,6 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowRight,
-  ShieldCheck,
-  RefreshCw,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -24,13 +28,16 @@ export default function LoginPage() {
   });
 
   // OTP state
+  const [selectedCountry, setSelectedCountry] = useState<CountryOption>(SUPPORTED_COUNTRIES[0]); // India (+91)
   const [otpPhone, setOtpPhone] = useState("");
-  const [otpCode, setOtpCode] = useState("");
+  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
   const [otpSent, setOtpSent] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [otpBanner, setOtpBanner] = useState<{ message: string; previewCode?: string } | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [isSendingOtp, startSendOtpTransition] = useTransition();
+
+  const digitRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // OTP form submission
   const [otpLoginState, otpLoginFormAction, isOtpLoginPending] = useActionState(
@@ -47,17 +54,91 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
+  // Autofocus first OTP box when OTP section opens downward
+  useEffect(() => {
+    if (otpSent) {
+      setTimeout(() => {
+        digitRefs.current[0]?.focus();
+      }, 100);
+    }
+  }, [otpSent]);
+
+  // Calculate formatted full number for API & display
+  const getFullPhoneNumber = () => {
+    const rawInput = otpPhone.trim();
+    if (rawInput.startsWith("+")) {
+      return rawInput;
+    }
+    const cleanDigits = rawInput.replace(/\D/g, "");
+    return `${selectedCountry.dialCode}${cleanDigits}`;
+  };
+
+  const handleDigitChange = (index: number, val: string) => {
+    const digit = val.replace(/\D/g, "").slice(-1);
+    const nextDigits = [...otpDigits];
+    nextDigits[index] = digit;
+    setOtpDigits(nextDigits);
+
+    if (digit && index < 5) {
+      digitRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleDigitKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace") {
+      if (!otpDigits[index] && index > 0) {
+        e.preventDefault();
+        const nextDigits = [...otpDigits];
+        nextDigits[index - 1] = "";
+        setOtpDigits(nextDigits);
+        digitRefs.current[index - 1]?.focus();
+      } else {
+        const nextDigits = [...otpDigits];
+        nextDigits[index] = "";
+        setOtpDigits(nextDigits);
+      }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      digitRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      digitRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pasted) {
+      const nextDigits = ["", "", "", "", "", ""];
+      for (let i = 0; i < 6; i++) {
+        nextDigits[i] = pasted[i] || "";
+      }
+      setOtpDigits(nextDigits);
+      const focusIdx = Math.min(pasted.length, 5);
+      digitRefs.current[focusIdx]?.focus();
+    }
+  };
+
   const handleSendOtp = () => {
     setOtpError(null);
     setOtpBanner(null);
 
-    if (!otpPhone.trim()) {
+    const cleanDigits = otpPhone.replace(/\D/g, "");
+    if (!cleanDigits) {
       setOtpError("Please enter your mobile phone number.");
       return;
     }
 
+    if (cleanDigits.length < 6) {
+      setOtpError("Please enter a valid phone number.");
+      return;
+    }
+
+    const fullNumber = getFullPhoneNumber();
+
     startSendOtpTransition(async () => {
-      const res = await sendPhoneOtpAction(otpPhone, "LOGIN");
+      const res = await sendPhoneOtpAction(fullNumber, "LOGIN");
       if (!res.success) {
         setOtpError(res.error || "Failed to dispatch verification code.");
       } else {
@@ -72,7 +153,13 @@ export default function LoginPage() {
   };
 
   const handleAutoFillCode = (code: string) => {
-    setOtpCode(code);
+    const digits = code.replace(/\D/g, "").slice(0, 6).split("");
+    const nextDigits = ["", "", "", "", "", ""];
+    digits.forEach((d, i) => {
+      nextDigits[i] = d;
+    });
+    setOtpDigits(nextDigits);
+    digitRefs.current[5]?.focus();
   };
 
   return (
@@ -81,22 +168,17 @@ export default function LoginPage() {
         {/* Decorative Top Accent Bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
 
-        {/* Header */}
-        <div className="space-y-2 text-center">
-          <div className="mx-auto flex h-13 w-13 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-cta text-white shadow-md shadow-primary/25">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-6 w-6"
-            >
-              <path d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" fill="white" />
-              <circle cx="18" cy="16" r="3" fill="white" />
-            </svg>
+        {/* Header: Official Gandharva School of Music Logo */}
+        <div className="space-y-3 text-center">
+          <div className="mx-auto flex items-center justify-center py-2 px-5 rounded-2xl bg-heading shadow-md shadow-heading/20 border border-white/10 w-fit transition-transform hover:scale-[1.02]">
+            <Image
+              src="/cropped-Add-a-subheading-5-png-scaled.webp"
+              alt="Gandharva School of Music"
+              width={160}
+              height={44}
+              className="h-8 sm:h-9 w-auto object-contain"
+              priority
+            />
           </div>
           <SplitHeading
             as="h1"
@@ -218,7 +300,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isPwdPending}
-                className="btn-tactile flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                className="btn-tactile flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
               >
                 {isPwdPending ? (
                   <>
@@ -238,130 +320,227 @@ export default function LoginPage() {
 
         {/* ─── TAB 2: OTP LOGIN ─────────────────────────────────────────── */}
         {loginMode === "OTP" && (
-          <div className="space-y-5 animate-fade-in">
-            {/* Error alerts */}
-            {(otpError || otpLoginState?.error) && (
+          <div className="space-y-4 animate-fade-in">
+            {/* Global Error Alerts */}
+            {otpError && (
               <div
                 role="alert"
-                className="flex items-start gap-2.5 rounded-xl border border-error/30 bg-error-muted/40 p-3.5 text-xs text-error font-medium"
+                className="flex items-start gap-2.5 rounded-xl border border-error/30 bg-error-muted/40 p-3.5 text-xs text-error font-medium animate-fade-in"
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
-                <span>{otpError || otpLoginState?.error}</span>
+                <span>{otpError}</span>
               </div>
             )}
 
-            {/* Dev mode OTP preview banner */}
-            {otpBanner && (
-              <div className="rounded-xl border border-accent/40 bg-accent-subtle/50 p-3 space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5 text-accent-dark font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-accent-dark" />
-                  <span>{otpBanner.message}</span>
-                </div>
-                {otpBanner.previewCode && (
-                  <div className="flex items-center justify-between pt-1 border-t border-accent/20">
-                    <span className="text-[11px] text-body">
-                      [Dev Test Code]: <strong className="font-mono text-heading">{otpBanner.previewCode}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleAutoFillCode(otpBanner.previewCode!)}
-                      className="px-2 py-0.5 rounded-md bg-white border border-accent/40 text-[10px] font-bold text-accent-dark hover:bg-neutral-50 transition-colors cursor-pointer"
-                    >
-                      Auto-fill OTP
-                    </button>
-                  </div>
-                )}
+            {otpLoginState?.error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2.5 rounded-xl border border-error/30 bg-error-muted/40 p-3.5 text-xs text-error font-medium animate-fade-in"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
+                <span>{otpLoginState.error}</span>
               </div>
             )}
 
-            <form action={otpLoginFormAction} className="space-y-4">
-              {/* Phone Input with Send OTP button */}
-              <div>
+            {/* Mobile Phone Number Input Container */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
                 <label
                   htmlFor="phone"
-                  className="block text-xs font-bold uppercase tracking-wider text-heading mb-1.5"
+                  className="block text-xs font-bold uppercase tracking-wider text-heading"
                 >
                   Mobile Phone Number
                 </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      id="phone"
-                      name="phone"
-                      type="tel"
-                      value={otpPhone}
-                      onChange={(e) => setOtpPhone(e.target.value)}
-                      placeholder="+91 98765 43210"
-                      required
-                      className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 text-sm text-heading placeholder-body/40 shadow-xs transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
-                    />
-                  </div>
+                {otpSent && (
                   <button
                     type="button"
-                    disabled={isSendingOtp || resendCooldown > 0 || !otpPhone.trim()}
-                    onClick={handleSendOtp}
-                    className="px-4 py-2.5 rounded-xl bg-bg-alt hover:bg-neutral-100 border border-border-default text-heading text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    onClick={() => {
+                      setOtpSent(false);
+                      setOtpDigits(["", "", "", "", "", ""]);
+                      setOtpError(null);
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
                   >
-                    {isSendingOtp ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                    ) : resendCooldown > 0 ? (
-                      <span>Resend in {resendCooldown}s</span>
-                    ) : (
-                      <span>{otpSent ? "Resend OTP" : "Send OTP"}</span>
-                    )}
+                    Change number
                   </button>
-                </div>
-                <p className="mt-1 text-[11px] text-body-muted">
-                  Includes international country code (default: +91 for India).
-                </p>
-              </div>
-
-              {/* 6-Digit OTP Code Input */}
-              <div>
-                <label
-                  htmlFor="code"
-                  className="block text-xs font-bold uppercase tracking-wider text-heading mb-1.5"
-                >
-                  6-Digit Verification Code
-                </label>
-                <input
-                  id="code"
-                  name="code"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Enter 6-digit OTP"
-                  required
-                  className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 text-center text-lg tracking-[0.4em] font-mono text-heading placeholder:tracking-normal placeholder:font-sans placeholder-body/40 shadow-xs transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
-                />
-                {otpLoginState?.fieldErrors?.code && (
-                  <p className="mt-1.5 text-xs font-medium text-error flex items-center gap-1">
-                    <span>•</span>
-                    {otpLoginState.fieldErrors.code[0]}
-                  </p>
                 )}
               </div>
 
+              {/* Country Code Selector + Phone Input Container (Matching Attached Screenshot) */}
+              <div className="flex items-center rounded-xl border border-surface-muted/90 bg-white shadow-xs transition-all focus-within:border-cta focus-within:ring-4 focus-within:ring-cta/15">
+                <CountryCodeSelector
+                  selectedCountry={selectedCountry}
+                  onSelect={(country) => {
+                    setSelectedCountry(country);
+                    setOtpError(null);
+                  }}
+                />
+                <div className="h-6 w-px bg-border-default/80 shrink-0" />
+                <input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  inputMode="tel"
+                  value={otpPhone}
+                  onChange={(e) => {
+                    setOtpPhone(e.target.value);
+                    setOtpError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !otpSent) {
+                      e.preventDefault();
+                      handleSendOtp();
+                    }
+                  }}
+                  placeholder="Enter a phone number"
+                  required
+                  className="block flex-1 border-0 bg-transparent px-3.5 py-2.5 text-sm text-heading placeholder-body/40 focus:outline-none focus:ring-0"
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-body-muted">
+                Includes country code: <strong className="font-mono text-heading">{selectedCountry.dialCode}</strong> ({selectedCountry.name})
+              </p>
+            </div>
+
+            {/* State A: Before OTP is sent -> "Get OTP" Button */}
+            {!otpSent && (
               <button
-                type="submit"
-                disabled={isOtpLoginPending || otpCode.length !== 6}
-                className="btn-tactile flex w-full items-center justify-center gap-2 rounded-xl bg-cta py-3 text-sm font-bold text-white shadow-md shadow-cta/20 transition-all hover:bg-cta-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+                type="button"
+                disabled={isSendingOtp || !otpPhone.trim()}
+                onClick={handleSendOtp}
+                className="btn-tactile w-full py-3 px-6 rounded-xl font-bold text-sm bg-amber-400 hover:bg-amber-500 active:scale-[0.98] text-amber-950 shadow-md shadow-amber-400/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isOtpLoginPending ? (
+                {isSendingOtp ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin text-white" />
-                    <span>Verifying code & logging in...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-950" />
+                    <span>Sending OTP code...</span>
                   </>
                 ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4 text-accent" />
-                    <span>Verify & Sign In</span>
-                  </>
+                  <span>Get OTP</span>
                 )}
               </button>
-            </form>
+            )}
+
+            {/* State B: After OTP is sent -> Opens DOWNWARD inline matching the user's screenshot */}
+            {otpSent && (
+              <div className="space-y-4 pt-1 animate-fade-in">
+                {/* Dev mode OTP preview banner */}
+                {otpBanner && (
+                  <div className="rounded-xl border border-accent/40 bg-accent-subtle/50 p-2.5 space-y-1 text-xs">
+                    <div className="flex items-center gap-1.5 text-accent-dark font-bold text-[11px]">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-accent-dark" />
+                      <span>{otpBanner.message}</span>
+                    </div>
+                    {otpBanner.previewCode && (
+                      <div className="flex items-center justify-between pt-1 border-t border-accent/20">
+                        <span className="text-[10px] text-body">
+                          [Dev Test Code]: <strong className="font-mono text-heading">{otpBanner.previewCode}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleAutoFillCode(otpBanner.previewCode!)}
+                          className="px-2 py-0.5 rounded-md bg-white border border-accent/40 text-[10px] font-bold text-accent-dark hover:bg-neutral-50 transition-colors cursor-pointer"
+                        >
+                          Auto-fill
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Verification Form */}
+                <form action={otpLoginFormAction} className="space-y-4">
+                  <input type="hidden" name="phone" value={getFullPhoneNumber()} />
+                  <input type="hidden" name="code" value={otpDigits.join("")} />
+
+                  <div>
+                    {/* Header Label: OTP */}
+                    <label className="block text-sm font-bold text-heading mb-2">
+                      OTP
+                    </label>
+
+                    {/* 6 Individual Digit Input Boxes (Matching screenshot) */}
+                    <div
+                      className="otp-digit-grid grid grid-cols-6 gap-2 sm:gap-2.5 w-full"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+                        gap: "8px",
+                        width: "100%",
+                      }}
+                    >
+                      {otpDigits.map((digit, index) => (
+                        <input
+                          key={index}
+                          ref={(el) => {
+                            digitRefs.current[index] = el;
+                          }}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={1}
+                          value={digit}
+                          onChange={(e) => handleDigitChange(index, e.target.value)}
+                          onKeyDown={(e) => handleDigitKeyDown(index, e)}
+                          onPaste={handlePaste}
+                          className="otp-digit-input h-12 sm:h-14 w-full rounded-lg sm:rounded-xl border border-gray-300 bg-white text-center text-xl sm:text-2xl font-mono font-bold text-heading shadow-xs transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                          style={{
+                            height: "52px",
+                            textAlign: "center",
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    {otpLoginState?.fieldErrors?.code && (
+                      <p className="mt-1.5 text-xs font-medium text-error">
+                        {otpLoginState.fieldErrors.code[0]}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Did not receive OTP? Resend OTP (27s) */}
+                  <div className="flex items-center gap-1.5 text-xs sm:text-sm">
+                    <span className="font-semibold text-heading">
+                      Did not receive OTP?
+                    </span>
+                    {resendCooldown > 0 ? (
+                      <span className="text-body-muted flex items-center gap-1">
+                        <span className="text-blue-500 font-medium">Resend OTP</span>
+                        <span className="text-body-muted font-normal">
+                          ({resendCooldown}s)
+                        </span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={isSendingOtp}
+                        className="text-blue-600 font-semibold hover:underline cursor-pointer transition-colors"
+                      >
+                        {isSendingOtp ? "Sending..." : "Resend OTP"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Golden / Amber "Login" Button matching user's reference image */}
+                  <button
+                    type="submit"
+                    disabled={isOtpLoginPending || otpDigits.join("").length !== 6}
+                    className="btn-tactile w-full py-3 sm:py-3.5 px-6 rounded-xl font-bold text-base bg-[#FFB800] hover:bg-[#F59E0B] active:scale-[0.98] text-[#1E1A4D] shadow-md shadow-amber-400/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isOtpLoginPending ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin text-[#1E1A4D]" />
+                        <span>Logging in...</span>
+                      </>
+                    ) : (
+                      <span>Login</span>
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         )}
 

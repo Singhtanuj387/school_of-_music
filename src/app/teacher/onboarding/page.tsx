@@ -7,16 +7,21 @@ import { TeacherOnboardingClient } from "./TeacherOnboardingClient";
 export default async function TeacherOnboardingPage() {
   const user = await requireRole(Role.TEACHER);
 
-  const dbUser = await db.user.findUnique({
-    where: { id: user.id },
-    include: {
-      teacherProfile: {
-        include: {
-          availabilityRules: true,
+  let dbUser = null;
+  try {
+    dbUser = await db.user.findUnique({
+      where: { id: user.id },
+      include: {
+        teacherProfile: {
+          include: {
+            availabilityRules: true,
+          },
         },
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.warn("Transient DB query error in TeacherOnboardingPage:", err);
+  }
 
   const profile = dbUser?.teacherProfile;
   const isEmailVerified = !!dbUser?.emailVerified;

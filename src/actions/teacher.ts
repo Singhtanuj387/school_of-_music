@@ -145,11 +145,8 @@ export async function updateTeacherProfileAction(
     });
 
     logger.info({ userId: user.id }, "Teacher profile updated");
-    revalidatePath("/teacher/dashboard");
     revalidatePath("/teacher/dashboard/profile");
     revalidatePath("/teacher/onboarding");
-    revalidatePath("/teacher/availability");
-    revalidatePath("/teachers");
 
     return {
       success: true,

@@ -271,3 +271,57 @@ body {
 .custom-font-2 {
   font-family: var(--font-vidaloka), serif;
 }
+
+/* 6-Digit OTP inline horizontal grid layout */
+.otp-digit-grid {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+@media (min-width: 640px) {
+  .otp-digit-grid {
+    gap: 10px !important;
+  }
+}
+
+.otp-digit-input {
+  width: 100% !important;
+  height: 52px !important;
+  text-align: center !important;
+}
+
+/* ─── Sub-Section Smooth Scrollbars ────────────────────────────────────────── */
+
+/* Sidebar sub-section scrollbar (Dark Theme) */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+/* Main content sub-section scrollbar (Light Theme) */
+.main-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.main-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.main-scroll::-webkit-scrollbar-thumb {
+  background: #D4C4E6;
+  border-radius: 9999px;
+}
+.main-scroll::-webkit-scrollbar-thumb:hover {
+  background: #A98EC6;
+}
+
+
