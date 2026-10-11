@@ -30,7 +30,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 ## Features
 
 - **Accredited Syllabus**: Trinity College London, ABRSM, and Gandharva Mahavidyalaya exam preparation.
-- **Gandharva Design System**: Vidaloka serif typography, saffron orange (`#FF7703`), royal purple (`#9506EE`), and midnight-violet studio surfaces.
+- **Gandharva Design System**: DM Sans modern typography, saffron orange (`#FF7703`), royal purple (`#9506EE`), and midnight-violet studio surfaces.
 - **Studio-Grade Classroom**: LiveKit WebRTC room with stereo audio, echo cancellation toggle, metronome, shared whiteboard, and screen sharing.
 - **Teacher Availability Engine**: Dynamic weekly hours, holiday exceptions, and automated conflict-free slot booking.
 - **Calendar & Email Integration**: Automated iCalendar (`.ics`) invites and email notifications.

@@ -23,8 +23,8 @@ export default async function StudentDashboardPage() {
   const user = await requireRole(Role.STUDENT);
   const studentTimezone = user.timezone || "UTC";
 
-  // Fetch trial status, active enrollment, lessons, pending trial request, and user profile in parallel
-  const [trialStatus, activeEnrollment, dbLessons, pendingTrialRequest, dbUser] = await Promise.all([
+  // Fetch trial status, active enrollment, lessons, pending trial request, user profile, and converted trial lead in parallel
+  const [trialStatus, activeEnrollment, dbLessons, pendingTrialRequest, dbUser, convertedTrialLead] = await Promise.all([
     db.studentTrialStatus.findUnique({
       where: { studentId: user.id },
     }),
@@ -70,6 +70,13 @@ export default async function StudentDashboardPage() {
     db.user.findUnique({
       where: { id: user.id },
       select: { image: true, name: true },
+    }),
+    db.trialRequest.findFirst({
+      where: {
+        studentId: user.id,
+        isConverted: true,
+      },
+      select: { id: true },
     }),
   ]);
 
@@ -132,6 +139,7 @@ export default async function StudentDashboardPage() {
                 notes: pendingTrialRequest.studentNotes,
               }
             : null,
+          isConverted: Boolean(convertedTrialLead),
         }}
       />
 

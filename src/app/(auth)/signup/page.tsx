@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { signupAction, sendPhoneOtpAction, verifyPhoneOtpForSignupAction } from "@/actions/auth";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 import {
@@ -20,7 +21,6 @@ import {
   X,
   Check,
   Clock,
-  Sparkles,
   Award,
 } from "lucide-react";
 import { INSTRUMENTS } from "@/types";
@@ -158,67 +158,85 @@ export default function SignupPage() {
 
   if (state?.success) {
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-gradient-to-b from-bg via-bg-alt/25 to-bg px-4 pt-16 sm:pt-20 pb-16">
-        <div className="relative w-full max-w-md space-y-6 overflow-hidden rounded-3xl border border-surface-muted/80 bg-white p-8 sm:p-10 text-center shadow-xl shadow-primary/5 backdrop-blur-sm">
-          {/* Decorative Top Accent Bar */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
-
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 shadow-sm border border-emerald-200">
-            <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-          </div>
-
-          <SplitHeading
-            as="h2"
-            firstClause={selectedRole === "TEACHER" ? "Application" : "Check Your"}
-            accentClause={selectedRole === "TEACHER" ? "Submitted" : "Inbox"}
-            align="center"
-            size="md"
+      <div className="relative min-h-[calc(100vh-4rem)] w-full overflow-hidden flex items-center">
+        {/* Background Stage Image */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/auth-bg.png"
+            alt="Gandharva School of Music"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-[24%_center] sm:object-[28%_center] lg:object-left"
           />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/60 lg:bg-gradient-to-r lg:from-black/20 lg:via-black/45 lg:to-black/85" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(168,85,247,0.18),transparent_70%)]" />
+        </div>
 
-          <p className="text-sm text-body leading-relaxed">
-            {selectedRole === "TEACHER" ? (
-              <>
-                Your mobile phone has been verified! A verification link was also sent to{" "}
-                <span className="font-bold text-heading">
-                  {state.data?.email}
-                </span>
-                . Your faculty application is now awaiting administrative review by the Academic Board.
-                You can sign in now to set up your pedagogical bio, instrument disciplines, and weekly schedule while awaiting approval.
-              </>
-            ) : (
-              <>
-                Your mobile number has been verified! We also sent an email verification link to{" "}
-                <span className="font-bold text-heading">
-                  {state.data?.email}
-                </span>
-                . Please verify your email to activate full lesson booking and trial scheduling.
-              </>
-            )}
-          </p>
+        <div className="relative z-10 w-full min-h-[calc(100vh-4rem)] flex items-center justify-center lg:justify-end py-10 sm:py-14 px-4 sm:px-8 lg:px-14 xl:px-20 max-w-[1560px] mx-auto">
+          <div className="w-full max-w-md lg:max-w-[480px]">
+            <div className="relative space-y-6 overflow-hidden rounded-3xl border border-white/80 bg-white/95 p-8 sm:p-10 text-center shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+              {/* Decorative Top Accent Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
 
-          {/* Development mode preview link */}
-          {state.previewUrl && (
-            <div className="rounded-xl border border-accent/40 bg-accent-subtle/50 p-4 text-left">
-              <p className="text-xs font-bold text-accent-dark uppercase tracking-wider">
-                [Dev Mode] Verification Link:
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 shadow-sm border border-emerald-200">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+              </div>
+
+              <SplitHeading
+                as="h2"
+                firstClause={selectedRole === "TEACHER" ? "Application" : "Check Your"}
+                accentClause={selectedRole === "TEACHER" ? "Submitted" : "Inbox"}
+                align="center"
+                size="md"
+              />
+
+              <p className="text-sm text-body leading-relaxed">
+                {selectedRole === "TEACHER" ? (
+                  <>
+                    Your mobile phone has been verified! A verification link was also sent to{" "}
+                    <span className="font-bold text-heading">
+                      {state.data?.email}
+                    </span>
+                    . Your faculty application is now awaiting administrative review by the Academic Board.
+                    You can sign in now to set up your pedagogical bio, instrument disciplines, and weekly schedule while awaiting approval.
+                  </>
+                ) : (
+                  <>
+                    Your mobile number has been verified! We also sent an email verification link to{" "}
+                    <span className="font-bold text-heading">
+                      {state.data?.email}
+                    </span>
+                    . Please verify your email to activate full lesson booking and trial scheduling.
+                  </>
+                )}
               </p>
-              <a
-                href={state.previewUrl}
-                className="mt-1.5 block break-all text-xs text-accent-dark underline hover:text-accent font-mono"
-              >
-                {state.previewUrl}
-              </a>
-            </div>
-          )}
 
-          <div className="pt-2">
-            <Link
-              href="/login"
-              className="btn-tactile inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-primary-light cursor-pointer"
-            >
-              <span>Proceed to Sign In</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+              {/* Development mode preview link */}
+              {state.previewUrl && (
+                <div className="rounded-xl border border-accent/40 bg-accent-subtle/50 p-4 text-left">
+                  <p className="text-xs font-bold text-accent-dark uppercase tracking-wider">
+                    [Dev Mode] Verification Link:
+                  </p>
+                  <a
+                    href={state.previewUrl}
+                    className="mt-1.5 block break-all text-xs text-accent-dark underline hover:text-accent font-mono"
+                  >
+                    {state.previewUrl}
+                  </a>
+                </div>
+              )}
+
+              <div className="pt-2">
+                <Link
+                  href="/login"
+                  className="btn-tactile inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-primary-light cursor-pointer"
+                >
+                  <span>Proceed to Sign In</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -226,10 +244,28 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-gradient-to-b from-bg via-bg-alt/25 to-bg px-4 pt-16 sm:pt-20 pb-16">
-      <div className={`relative w-full ${selectedRole === "TEACHER" ? "max-w-xl" : "max-w-lg"} transition-all duration-200 space-y-7 overflow-hidden rounded-3xl border border-surface-muted/80 bg-white p-6 sm:p-10 shadow-xl shadow-primary/5 backdrop-blur-sm`}>
-        {/* Decorative Top Accent Bar */}
-        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
+    <div className="relative min-h-[calc(100vh-4rem)] w-full overflow-hidden flex items-center">
+      {/* Background Stage Image */}
+      <div className="absolute inset-0 z-0">
+        <Image
+          src="/auth-bg.png"
+          alt="Gandharva School of Music"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[24%_center] sm:object-[28%_center] lg:object-left"
+        />
+        {/* Cinematic Vignette & Gradient Overlays: Subtle on the left to highlight the artist, deep & smooth on the right for form clarity */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/60 lg:bg-gradient-to-r lg:from-black/20 lg:via-black/45 lg:to-black/85" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(168,85,247,0.18),transparent_70%)]" />
+      </div>
+
+      <div className="relative z-10 w-full min-h-[calc(100vh-4rem)] flex items-center justify-center lg:justify-end py-10 sm:py-14 px-4 sm:px-8 lg:px-14 xl:px-20 max-w-[1560px] mx-auto">
+        {/* Right Column: Shifted Form Card */}
+        <div className={`w-full ${selectedRole === "TEACHER" ? "max-w-xl lg:max-w-[560px]" : "max-w-md lg:max-w-[480px]"} transition-all duration-200`}>
+          <div className={`relative space-y-7 overflow-hidden rounded-3xl border border-white/80 bg-white/95 p-6 sm:p-10 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] backdrop-blur-xl`}>
+            {/* Decorative Top Accent Bar */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
 
         {/* Header */}
         <div className="space-y-2 text-center">
@@ -865,6 +901,8 @@ export default function SignupPage() {
             Sign in
           </Link>
         </p>
+          </div>
+        </div>
       </div>
     </div>
   );

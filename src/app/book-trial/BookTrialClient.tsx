@@ -15,6 +15,12 @@ import {
   Smartphone,
   ShieldCheck,
   AlertCircle,
+  Search,
+  Check,
+  Music,
+  Mic,
+  X,
+  Sparkles,
 } from "lucide-react";
 import { createTrialRequestAction } from "@/actions/trial";
 import { sendPhoneOtpAction, verifyPhoneOtpForSignupAction } from "@/actions/auth";
@@ -34,30 +40,357 @@ export interface BookTrialClientProps {
     phoneVerified?: boolean;
     timezone: string;
   } | null;
+  isConvertedStudent?: boolean;
 }
 
-const CATEGORIES = {
-  Instruments: [
-    "Piano",
-    "Acoustic Guitar",
-    "Electric Guitar",
-    "Electronic Keyboard",
-    "Flute",
-    "Violin",
-    "Ukulele",
-    "Tabla",
-  ],
-  Singing: [
-    "Western Vocals",
-    "Hindustani Classical Vocals (North India)",
-    "Carnatic Classical Vocals (South India)",
-    "Bollywood & Light Vocals (North India)",
-    "Malayalam Film Music",
-    "Tamil Film Music",
-    "Telugu Film Music",
-    "Kannada Film Music",
-  ],
-};
+export interface CatalogItem {
+  id: string;
+  name: string;
+  category: "Instruments" | "Singing";
+  subtitle: string;
+  tags?: string[];
+  iconType:
+    | "piano"
+    | "acousticGuitar"
+    | "electricGuitar"
+    | "electronicKeyboard"
+    | "flute"
+    | "violin"
+    | "ukulele"
+    | "tabla"
+    | "westernVocals"
+    | "hindustani"
+    | "carnatic"
+    | "bollywood"
+    | "regionalFilm";
+  iconBoxBg?: string;
+  defaultIconBg?: string;
+  iconColor?: string;
+}
+
+export const CATALOG_ITEMS: CatalogItem[] = [
+  // ─── INSTRUMENTS ──────────────────────────────────────
+  {
+    id: "Piano",
+    name: "Piano",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    tags: ["1-on-1"],
+    iconType: "piano",
+  },
+  {
+    id: "Acoustic Guitar",
+    name: "Acoustic Guitar",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    iconType: "acousticGuitar",
+  },
+  {
+    id: "Electric Guitar",
+    name: "Electric Guitar",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    iconType: "electricGuitar",
+  },
+  {
+    id: "Electronic Keyboard",
+    name: "Electronic Keyboard",
+    category: "Instruments",
+    subtitle: "1-on-1",
+    tags: ["Live"],
+    iconType: "electronicKeyboard",
+  },
+  {
+    id: "Flute",
+    name: "Flute",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    tags: ["1-on-1"],
+    iconType: "flute",
+  },
+  {
+    id: "Violin",
+    name: "Violin",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    tags: ["Live"],
+    iconType: "violin",
+  },
+  {
+    id: "Ukulele",
+    name: "Ukulele",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    tags: ["Live"],
+    iconType: "ukulele",
+  },
+  {
+    id: "Tabla",
+    name: "Tabla",
+    category: "Instruments",
+    subtitle: "Beginner friendly",
+    tags: ["Live"],
+    iconType: "tabla",
+  },
+
+  // ─── SINGING ──────────────────────────────────────────
+  {
+    id: "Western Vocals",
+    name: "Western Vocals",
+    category: "Singing",
+    subtitle: "Beginner friendly",
+    iconType: "westernVocals",
+    iconBoxBg: "bg-rose-50 text-rose-500",
+  },
+  {
+    id: "Hindustani Classical Vocals (North India)",
+    name: "Hindustani Classical Vocals",
+    category: "Singing",
+    subtitle: "North Indian tradition",
+    iconType: "hindustani",
+    iconBoxBg: "bg-purple-100/70 text-purple-700",
+  },
+  {
+    id: "Carnatic Classical Vocals (South India)",
+    name: "Carnatic Classical",
+    category: "Singing",
+    subtitle: "South India",
+    iconType: "carnatic",
+    iconBoxBg: "bg-orange-100/70 text-[#FF7803]",
+  },
+  {
+    id: "Bollywood & Light Vocals (North India)",
+    name: "Bollywood & Light Vocals",
+    category: "Singing",
+    subtitle: "North India",
+    iconType: "bollywood",
+    iconBoxBg: "bg-purple-100/70 text-purple-700",
+  },
+  {
+    id: "Malayalam Film Music",
+    name: "Malayalam Film Music",
+    category: "Singing",
+    subtitle: "North Indian tradition",
+    iconType: "regionalFilm",
+    iconBoxBg: "bg-rose-50 text-rose-500",
+  },
+  {
+    id: "Tamil Film Music",
+    name: "Tamil Film Music",
+    category: "Singing",
+    subtitle: "North Indian tradition",
+    iconType: "regionalFilm",
+    iconBoxBg: "bg-orange-50 text-[#FF7803]",
+  },
+  {
+    id: "Telugu Film Music",
+    name: "Telugu Film Music",
+    category: "Singing",
+    subtitle: "North Indian tradition",
+    iconType: "regionalFilm",
+    iconBoxBg: "bg-orange-50 text-[#FF7803]",
+  },
+  {
+    id: "Kannada Film Music",
+    name: "Kannada Film Music",
+    category: "Singing",
+    subtitle: "North Indian tradition",
+    iconType: "regionalFilm",
+    iconBoxBg: "bg-orange-50 text-[#FF7803]",
+  },
+];
+
+function CategoryIcon({
+  type,
+  isSelected,
+}: {
+  type: CatalogItem["iconType"];
+  isSelected: boolean;
+}) {
+  switch (type) {
+    case "piano":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <rect x="3" y="4" width="18" height="16" rx="2.5" />
+          <path d="M7 4v8M12 4v8M17 4v8" />
+          <rect x="5.5" y="4" width="3" height="7.5" rx="0.5" fill="currentColor" />
+          <rect x="10.5" y="4" width="3" height="7.5" rx="0.5" fill="currentColor" />
+          <rect x="15.5" y="4" width="3" height="7.5" rx="0.5" fill="currentColor" />
+          <path d="M3 13.5h18" />
+        </svg>
+      );
+    case "acousticGuitar":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <path d="M14.5 9.5l4.5-4.5a1.4 1.4 0 0 1 2 2l-4.5 4.5" />
+          <circle cx="9.5" cy="14.5" r="4.5" />
+          <circle cx="9.5" cy="14.5" r="1.5" fill="currentColor" fillOpacity="0.4" />
+          <path d="M12 12l5.5-5.5" />
+        </svg>
+      );
+    case "electricGuitar":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <path d="M16 8l4-4M18 4l2 2" />
+          <path d="M15 9l-3 3c-.5.5-.5 1.5 0 2l.5.5c-2 2-4.5 3.5-6.5 2.5s-.5-4.5 1.5-6.5l.5.5c.5.5 1.5.5 2 0l3-3" />
+          <circle cx="9" cy="15" r="1.2" fill="currentColor" />
+        </svg>
+      );
+    case "electronicKeyboard":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <circle cx="5.5" cy="9.5" r="1" fill="currentColor" />
+          <circle cx="8.5" cy="9.5" r="1" fill="currentColor" />
+          <path d="M12 6v6M15 6v6M18 6v6M2 13h20" />
+        </svg>
+      );
+    case "flute":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <path d="M4 20L20 4" />
+          <circle cx="8.5" cy="15.5" r="1" fill="currentColor" />
+          <circle cx="11.5" cy="12.5" r="1" fill="currentColor" />
+          <circle cx="14.5" cy="9.5" r="1" fill="currentColor" />
+          <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
+        </svg>
+      );
+    case "violin":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <path d="M15 5l4-4M17 1l2 2" />
+          <path d="M14 6l-2 2c-.5.5-.5 1.2 0 1.7.8.8.8 2 0 2.8-.5.5-.5 1.2 0 1.7l1.5 1.5c-2 2-4.5 3-6.5 2s-1-4.5 1-6.5l1.5 1.5c.5.5 1.2.5 1.7 0 .8-.8 2-.8 2.8 0 .5.5 1.2.5 1.7 0l2-2" />
+          <circle cx="9" cy="15" r="1.2" fill="currentColor" />
+        </svg>
+      );
+    case "ukulele":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <path d="M15 9l5-5M18 3l3 3" />
+          <circle cx="9" cy="15" r="4.5" />
+          <circle cx="9" cy="15" r="1.5" fill="currentColor" fillOpacity="0.4" />
+          <path d="M12 12l4-4" />
+        </svg>
+      );
+    case "tabla":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <ellipse cx="8" cy="8" rx="4.5" ry="2.5" />
+          <path d="M3.5 8v6c0 2 2 3.5 4.5 3.5s4.5-1.5 4.5-3.5V8" />
+          <circle cx="8" cy="8" r="1.5" fill="currentColor" fillOpacity="0.4" />
+          <ellipse cx="17" cy="11" rx="4" ry="2.2" />
+          <path d="M13 11v5c0 1.8 1.8 3 4 3s4-1.2 4-3v-5" />
+          <circle cx="17" cy="11" r="1.2" fill="currentColor" fillOpacity="0.4" />
+        </svg>
+      );
+    case "westernVocals":
+      return <Mic className="w-5 h-5 stroke-[2]" />;
+    case "hindustani":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <rect x="2" y="7" width="20" height="11" rx="2" />
+          <path d="M5 10v5M8 10v5M11 10v5M14 10v5M17 10v5" />
+          <rect x="5" y="10" width="2" height="3" fill="currentColor" />
+          <rect x="11" y="10" width="2" height="3" fill="currentColor" />
+          <path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" />
+        </svg>
+      );
+    case "carnatic":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <circle cx="7" cy="16" r="4.5" />
+          <circle cx="7" cy="16" r="1.5" fill="currentColor" fillOpacity="0.3" />
+          <path d="M10.5 13.5L19 5" />
+          <circle cx="19" cy="5" r="2.5" />
+          <path d="M18 3l3 3" />
+        </svg>
+      );
+    case "bollywood":
+    case "regionalFilm":
+    default:
+      return <Music className="w-5 h-5 stroke-[2]" />;
+  }
+}
 
 const MORNING_SLOTS = [
   "9:00 AM",
@@ -86,13 +419,92 @@ const AGE_GROUPS = [
   { id: "18+", label: "Adults", range: "18+ years", desc: "Flexible pacing, hobbyist to advanced classical mastery" },
 ];
 
-export function BookTrialClient({ currentUser }: BookTrialClientProps) {
+export function BookTrialClient({ currentUser, isConvertedStudent }: BookTrialClientProps) {
+  // If student is already converted or has active enrollments, free trials are restricted
+  if (isConvertedStudent) {
+    return (
+      <div className="mx-auto max-w-xl px-4 sm:px-6 pt-4 sm:pt-8 animate-fadeIn">
+        <div className="relative overflow-hidden rounded-3xl border border-surface-muted/90 bg-white/95 p-8 sm:p-10 shadow-xl shadow-primary/5 backdrop-blur-md">
+          {/* Top Apple-style accent gradient line */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
+
+          <div className="text-center space-y-5">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+              <Sparkles className="w-8 h-8 text-primary" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                <span>Enrolled Student Account</span>
+              </div>
+              <h2 className="font-serif text-2xl sm:text-3xl font-extrabold text-heading tracking-tight">
+                Welcome back, {currentUser?.name || "Student"}!
+              </h2>
+            </div>
+
+            <p className="text-sm sm:text-base text-body leading-relaxed max-w-md mx-auto">
+              Complimentary free trials are exclusively reserved for new prospective students joining Gandharva School of Music.
+            </p>
+
+            <div className="p-4 sm:p-5 rounded-2xl bg-bg-alt/50 border border-surface-muted/80 text-left text-xs sm:text-sm text-body space-y-2.5">
+              <p className="font-bold text-heading flex items-center gap-2">
+                <Music className="w-4 h-4 text-cta shrink-0" />
+                <span>Want to learn an additional instrument or discipline?</span>
+              </p>
+              <p className="text-body leading-relaxed">
+                As an enrolled student, you can explore our complete accredited curriculum and request course admission directly from your student portal without needing a trial.
+              </p>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                href="/student/dashboard/courses"
+                className="btn-tactile w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-cta hover:bg-cta-hover text-white font-bold text-sm shadow-md shadow-cta/25 transition-all"
+              >
+                <span>Browse Course Catalog</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                href="/student/dashboard"
+                className="btn-tactile w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-surface-muted/90 bg-white hover:bg-bg-alt/30 text-heading font-semibold text-sm transition-all shadow-xs"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Wizard step: 1 = Category, 2 = Date/Time, 3 = Details & Age Group, 4 = Success
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Step 1: Category & Instrument selection
   const [selectedCategory, setSelectedCategory] = useState<"Instruments" | "Singing">("Singing");
   const [selectedInstrument, setSelectedInstrument] = useState<string>("Bollywood & Light Vocals (North India)");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTab, setFilterTab] = useState<"All" | "Instruments" | "Singing">("All");
+
+  // Filtered catalog items based on tab and live search
+  const filteredItems = CATALOG_ITEMS.filter((item) => {
+    const matchesFilter = filterTab === "All" || item.category === filterTab;
+    if (!matchesFilter) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.subtitle.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      (item.tags && item.tags.some((t) => t.toLowerCase().includes(q)))
+    );
+  });
+
+  const instrumentsList = filteredItems.filter((i) => i.category === "Instruments");
+  const singingList = filteredItems.filter((i) => i.category === "Singing");
+
+  const selectedItemObj = CATALOG_ITEMS.find((item) => item.id === selectedInstrument);
+  const selectedDisplayName = selectedItemObj?.name || selectedInstrument || "Select an instrument or style";
 
   // Step 2: Date & Time slot
   const [dates] = useState(() => {
@@ -352,71 +764,115 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
   const labelClass = "block text-xs font-bold uppercase tracking-wider text-heading mb-1.5";
 
   return (
-    <div className="max-w-2xl mx-auto px-4">
-      {/* Academy Brand Header */}
-      <div className="text-center space-y-3 mb-8">
-        <div className="flex justify-center">
-          <Link href="/" className="inline-block transition-opacity hover:opacity-90">
-            <Image
-              src="/cropped-Add-a-subheading-5-png-scaled.webp"
-              alt="Gandharva School of Music"
-              width={160}
-              height={50}
-              className="h-10 sm:h-12 w-auto object-contain"
-              priority
-            />
-          </Link>
-        </div>
-        <SplitHeading
-          as="h1"
-          firstClause="Book Your Free"
-          accentClause="Trial Lesson"
-          align="center"
-          size="lg"
-        />
-        <p className="text-xs sm:text-sm text-body max-w-md mx-auto">
-          Experience 1-to-1 live guidance with our master faculty. Admin will allocate the best mentor for your age group.
-        </p>
-      </div>
-
-      {/* Wizard Progress Indicator */}
+    <div
+      className={`mx-auto px-4 sm:px-6 transition-all duration-300 ${
+        step === 1 ? "max-w-[1180px]" : "max-w-2xl"
+      }`}
+    >
+      {/* Wizard Progress Indicator (Apple-grade Stepper matching user screenshot) */}
       {step < 4 && (
-        <div className="flex items-center justify-between max-w-sm mx-auto mb-8 px-2">
-          {steps.map((s, i) => (
-            <div key={s.num} className="flex items-center">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    step > s.num
-                      ? "bg-gradient-to-br from-primary to-cta text-white shadow-md shadow-primary/25"
-                      : step === s.num
-                        ? "bg-gradient-to-br from-primary to-cta text-white shadow-md shadow-primary/25"
-                        : "bg-surface-muted/60 text-body/50"
-                  }`}
-                >
-                  {step > s.num ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : (
-                    s.num
-                  )}
-                </div>
-                <span
-                  className={`text-xs font-semibold hidden sm:inline ${
-                    step === s.num ? "text-heading" : "text-body/50"
-                  }`}
-                >
-                  {s.label}
-                </span>
-              </div>
-              {i < steps.length - 1 && (
-                <div
-                  className={`h-0.5 w-8 sm:w-12 mx-2 sm:mx-3 rounded-full transition-colors ${
-                    step > s.num ? "bg-cta" : "bg-surface-muted/60"
-                  }`}
-                />
-              )}
+        <div className="flex items-center justify-center max-w-lg mx-auto mb-8 px-4">
+          <div className="flex items-center w-full justify-between">
+            {/* Step 1: Category */}
+            <div className="flex flex-col items-center">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                  step === 1
+                    ? "bg-[#3C096C] text-white ring-4 ring-[#3C096C]/15"
+                    : step > 1
+                    ? "bg-[#3C096C] text-white"
+                    : "bg-[#F3E8FF] text-[#6B21A8]"
+                }`}
+              >
+                {step > 1 ? <Check className="w-4 h-4 stroke-[2.5]" /> : "1"}
+              </button>
+              <span
+                className={`text-xs mt-1.5 transition-colors ${
+                  step === 1
+                    ? "text-[#1E1A4D] font-bold"
+                    : "text-gray-400 font-medium"
+                }`}
+              >
+                Category
+              </span>
             </div>
-          ))}
+
+            {/* Gradient Connector Line 1 -> 2 */}
+            <div className="flex-1 mx-3 sm:mx-5 -mt-5">
+              <div
+                className={`h-[2px] w-full rounded-full transition-all ${
+                  step >= 2
+                    ? "bg-gradient-to-r from-[#3C096C] to-[#FF7803]"
+                    : "bg-gradient-to-r from-[#3C096C] via-[#FF7803] to-[#E9D5FF]"
+                }`}
+              />
+            </div>
+
+            {/* Step 2: Date & Time */}
+            <div className="flex flex-col items-center">
+              <button
+                type="button"
+                onClick={() => selectedInstrument && setStep(2)}
+                disabled={!selectedInstrument}
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-xs ${
+                  step === 2
+                    ? "bg-[#3C096C] text-white ring-4 ring-[#3C096C]/15"
+                    : step > 2
+                    ? "bg-[#3C096C] text-white cursor-pointer"
+                    : "bg-[#F3E8FF] text-[#6B21A8]"
+                }`}
+              >
+                {step > 2 ? <Check className="w-4 h-4 stroke-[2.5]" /> : "2"}
+              </button>
+              <span
+                className={`text-xs mt-1.5 transition-colors ${
+                  step === 2
+                    ? "text-[#1E1A4D] font-bold"
+                    : "text-gray-400 font-medium"
+                }`}
+              >
+                Date & Time
+              </span>
+            </div>
+
+            {/* Connector Line 2 -> 3 */}
+            <div className="flex-1 mx-3 sm:mx-5 -mt-5">
+              <div
+                className={`h-[2px] w-full rounded-full transition-all ${
+                  step >= 3
+                    ? "bg-gradient-to-r from-[#FF7803] to-[#3C096C]"
+                    : "bg-[#E9D5FF]"
+                }`}
+              />
+            </div>
+
+            {/* Step 3: Your Details */}
+            <div className="flex flex-col items-center">
+              <button
+                type="button"
+                onClick={() => selectedInstrument && selectedSlot && setStep(3)}
+                disabled={!selectedInstrument || !selectedSlot}
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-xs ${
+                  step === 3
+                    ? "bg-[#3C096C] text-white ring-4 ring-[#3C096C]/15"
+                    : "bg-[#F3E8FF] text-[#6B21A8]"
+                }`}
+              >
+                3
+              </button>
+              <span
+                className={`text-xs mt-1.5 transition-colors ${
+                  step === 3
+                    ? "text-[#1E1A4D] font-bold"
+                    : "text-gray-400 font-medium"
+                }`}
+              >
+                Your Details
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -431,95 +887,351 @@ export function BookTrialClient({ currentUser }: BookTrialClientProps) {
         </div>
       )}
 
-      {/* ============ STEP 1: CHOOSE CATEGORY ============ */}
+      {/* ============ STEP 1: WHAT WOULD YOU LIKE TO LEARN? (APPLE-DESIGN REDESIGN) ============ */}
       {step === 1 && (
-        <div className="relative overflow-hidden rounded-2xl bg-white border border-surface-muted/80 shadow-xl shadow-primary/5 backdrop-blur-sm">
-          {/* Top accent bar */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
+        <div className="relative overflow-hidden rounded-3xl bg-white border border-slate-200/80 shadow-[0_20px_50px_-15px_rgba(0,0,0,0.06)]">
+          {/* Top accent gradient border */}
+          <div className="h-[3px] w-full bg-gradient-to-r from-primary via-[#9810FA] to-accent" />
 
-          <div className="p-6 sm:p-8 space-y-6 pt-8">
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-heading tracking-tight">
-                Choose your category
-              </h2>
-              <p className="text-xs text-body mt-1">
-                Select your musical instrument discipline or vocal tradition to get started:
-              </p>
+          <div className="p-6 sm:p-8 lg:p-10 space-y-6">
+            {/* Header: Title + Subtitle on Left, Search Bar on Right */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1E1A4D] tracking-tight">
+                  What would you like to learn?
+                </h2>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                  Choose an instrument or singing style to get started.
+                </p>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search instruments or styles"
+                  className="w-full pl-10 pr-8 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white placeholder-gray-400 text-heading focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 shadow-2xs transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-5">
-              {/* Instruments */}
-              <div className="space-y-2">
-                <h3 className="text-sm font-bold text-heading flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cta inline-block" />
-                  Instruments
+            {/* Filter Pills */}
+            <div className="inline-flex items-center gap-1 p-1 rounded-full border border-slate-200/90 bg-white shadow-2xs">
+              {(["All", "Instruments", "Singing"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setFilterTab(tab)}
+                  className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                    filterTab === tab
+                      ? "bg-[#3C096C] text-white shadow-xs"
+                      : "text-gray-600 hover:text-black"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Catalog Grid Area */}
+            {filteredItems.length === 0 ? (
+              <div className="text-center py-16 px-4 space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 mx-auto flex items-center justify-center">
+                  <Search className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-heading">
+                  No courses found matching &ldquo;{searchQuery}&rdquo;
                 </h3>
-                <div className="rounded-xl overflow-hidden divide-y divide-surface-muted/60">
-                  {CATEGORIES.Instruments.map((item) => {
-                    const isSelected = selectedInstrument === item;
+                <p className="text-xs text-body-muted max-w-sm mx-auto">
+                  Try searching for another instrument (e.g. Guitar, Piano) or vocal style.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setFilterTab("All");
+                  }}
+                  className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/15 transition-colors cursor-pointer"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            ) : filterTab === "All" ? (
+              /* Two Column Layout (Instruments on Left, Singing on Right) */
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 pt-1">
+                {/* ─── INSTRUMENTS COLUMN ─── */}
+                {instrumentsList.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#481282]" />
+                      <h3 className="font-bold text-sm text-[#1E1A4D]">Instruments</h3>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {instrumentsList.map((item) => {
+                        const isSelected = selectedInstrument === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCategory(item.category);
+                              setSelectedInstrument(item.id);
+                            }}
+                            className={`relative p-3.5 rounded-2xl border text-left flex flex-col justify-between min-h-[148px] transition-all cursor-pointer active:scale-[0.97] ${
+                              isSelected
+                                ? "border-2 border-[#581C87] bg-white ring-4 ring-[#581C87]/10 shadow-[0_8px_20px_-4px_rgba(88,28,135,0.22)]"
+                                : "border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-xs"
+                            }`}
+                          >
+                            {/* Selected Check Badge */}
+                            {isSelected && (
+                              <div className="absolute top-2.5 right-2.5 w-4.5 h-4.5 rounded-full bg-[#3C096C] text-white flex items-center justify-center shadow-xs">
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              </div>
+                            )}
+
+                            {/* Top: Icon Box */}
+                            <div
+                              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-all ${
+                                isSelected
+                                  ? "bg-purple-100 text-purple-700"
+                                  : "bg-[#F3E8FF] text-[#481282]"
+                              }`}
+                            >
+                              <CategoryIcon type={item.iconType} isSelected={isSelected} />
+                            </div>
+
+                            {/* Middle & Bottom: Details */}
+                            <div className="mt-2.5">
+                              <h4 className="font-bold text-xs sm:text-[13px] text-[#1E1A4D] leading-snug">
+                                {item.name}
+                              </h4>
+                              <p className="text-[11px] text-gray-500 font-normal mt-0.5 line-clamp-1">
+                                {item.subtitle}
+                              </p>
+
+                              {/* Tags */}
+                              {item.tags && item.tags.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1 mt-2">
+                                  {item.tags.map((t) => (
+                                    <span
+                                      key={t}
+                                      className="text-[9px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 leading-none"
+                                    >
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── SINGING COLUMN ─── */}
+                {singingList.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF7703]" />
+                      <h3 className="font-bold text-sm text-[#1E1A4D]">Singing</h3>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {singingList.map((item) => {
+                        const isSelected = selectedInstrument === item.id;
+                        const isBollywood = item.id.includes("Bollywood");
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCategory(item.category);
+                              setSelectedInstrument(item.id);
+                            }}
+                            className={`relative p-3.5 rounded-2xl border text-left flex flex-col justify-between min-h-[148px] transition-all cursor-pointer active:scale-[0.97] ${
+                              isSelected
+                                ? "border-2 border-[#581C87] bg-white ring-4 ring-[#581C87]/10 shadow-[0_8px_20px_-4px_rgba(88,28,135,0.22)]"
+                                : "border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-xs"
+                            }`}
+                          >
+                            {/* Selected Check Badge */}
+                            {isSelected && (
+                              <div className="absolute top-2.5 right-2.5 w-4.5 h-4.5 rounded-full bg-[#3C096C] text-white flex items-center justify-center shadow-xs">
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              </div>
+                            )}
+
+                            {/* Top: Icon Box */}
+                            <div
+                              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-all ${
+                                isSelected && isBollywood
+                                  ? "bg-gradient-to-br from-[#7C3AED] to-[#A855F7] text-white shadow-md"
+                                  : isSelected
+                                  ? "bg-purple-100 text-purple-700"
+                                  : item.defaultIconBg || "bg-[#F3E8FF] text-[#481282]"
+                              }`}
+                            >
+                              <CategoryIcon type={item.iconType} isSelected={isSelected} />
+                            </div>
+
+                            {/* Middle & Bottom: Details */}
+                            <div className="mt-2.5">
+                              <h4 className="font-bold text-xs sm:text-[13px] text-[#1E1A4D] leading-snug">
+                                {item.name}
+                              </h4>
+                              <p className="text-[11px] text-gray-500 font-normal mt-0.5 line-clamp-1">
+                                {item.subtitle}
+                              </p>
+
+                              {/* Tags */}
+                              {item.tags && item.tags.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1 mt-2">
+                                  {item.tags.map((t) => (
+                                    <span
+                                      key={t}
+                                      className="text-[9px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 leading-none"
+                                    >
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Single Selected Category View (Instruments or Singing) */
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      filterTab === "Instruments" ? "bg-[#481282]" : "bg-[#FF7703]"
+                    }`}
+                  />
+                  <h3 className="font-bold text-sm text-[#1E1A4D]">
+                    {filterTab} ({filteredItems.length})
+                  </h3>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3.5">
+                  {filteredItems.map((item) => {
+                    const isSelected = selectedInstrument === item.id;
+                    const isBollywood = item.id.includes("Bollywood");
+
                     return (
                       <button
-                        key={item}
+                        key={item.id}
                         type="button"
                         onClick={() => {
-                          setSelectedCategory("Instruments");
-                          setSelectedInstrument(item);
+                          setSelectedCategory(item.category);
+                          setSelectedInstrument(item.id);
                         }}
-                        className={`w-full text-left px-4 py-3 text-sm font-medium transition-all flex items-center justify-between ${
+                        className={`relative p-3.5 rounded-2xl border text-left flex flex-col justify-between min-h-[148px] transition-all cursor-pointer active:scale-[0.97] ${
                           isSelected
-                            ? "bg-gradient-to-r from-primary/10 to-cta/10 text-primary font-semibold"
-                            : "bg-bg-alt/20 text-heading hover:bg-bg-alt/40"
+                            ? "border-2 border-[#581C87] bg-white ring-4 ring-[#581C87]/10 shadow-[0_8px_20px_-4px_rgba(88,28,135,0.22)]"
+                            : "border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-xs"
                         }`}
                       >
-                        <span>{item}</span>
-                        {isSelected && <CheckCircle2 className="w-4 h-4 text-cta" />}
+                        {/* Selected Check Badge */}
+                        {isSelected && (
+                          <div className="absolute top-2.5 right-2.5 w-4.5 h-4.5 rounded-full bg-[#3C096C] text-white flex items-center justify-center shadow-xs">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </div>
+                        )}
+
+                        <div
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-all ${
+                            isSelected && isBollywood
+                              ? "bg-gradient-to-br from-[#7C3AED] to-[#A855F7] text-white shadow-md"
+                              : isSelected
+                              ? "bg-purple-100 text-purple-700"
+                              : item.defaultIconBg || "bg-[#F3E8FF] text-[#481282]"
+                          }`}
+                        >
+                          <CategoryIcon type={item.iconType} isSelected={isSelected} />
+                        </div>
+
+                        <div className="mt-2.5">
+                          <h4 className="font-bold text-xs sm:text-[13px] text-[#1E1A4D] leading-snug">
+                            {item.name}
+                          </h4>
+                          <p className="text-[11px] text-gray-500 font-normal mt-0.5 line-clamp-1">
+                            {item.subtitle}
+                          </p>
+
+                          {item.tags && item.tags.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 mt-2">
+                              {item.tags.map((t) => (
+                                <span
+                                  key={t}
+                                  className="text-[9px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 leading-none"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
                 </div>
               </div>
+            )}
 
-              {/* Singing */}
-              <div className="space-y-2">
-                <h3 className="text-sm font-bold text-heading flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block" />
-                  Singing
-                </h3>
-                <div className="rounded-xl overflow-hidden divide-y divide-surface-muted/60">
-                  {CATEGORIES.Singing.map((item) => {
-                    const isSelected = selectedInstrument === item;
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCategory("Singing");
-                          setSelectedInstrument(item);
-                        }}
-                        className={`w-full text-left px-4 py-3 text-sm font-medium transition-all flex items-center justify-between ${
-                          isSelected
-                            ? "bg-gradient-to-r from-primary/10 to-cta/10 text-primary font-semibold"
-                            : "bg-bg-alt/20 text-heading hover:bg-bg-alt/40"
-                        }`}
-                      >
-                        <span>{item}</span>
-                        {isSelected && <CheckCircle2 className="w-4 h-4 text-cta" />}
-                      </button>
-                    );
-                  })}
+            {/* Footer Row (Matching Screenshot) */}
+            <div className="border-t border-slate-100 pt-5 mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              {/* Selected Badge */}
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-purple-100/90 text-purple-700 flex items-center justify-center shrink-0">
+                  <Music className="w-3.5 h-3.5" />
                 </div>
+                <span className="text-xs sm:text-sm text-gray-600 font-medium">
+                  Selected:{" "}
+                  <strong className="text-[#1E1A4D] font-bold">
+                    {selectedDisplayName}
+                  </strong>
+                </span>
               </div>
-            </div>
 
-            <div className="pt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="btn-tactile flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-primary-light"
-              >
-                <span>Next: Pick Date & Time</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3 self-end sm:self-auto">
+                <button
+                  type="button"
+                  disabled
+                  className="text-xs sm:text-sm font-semibold text-gray-400 px-3 py-2 cursor-not-allowed opacity-60"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  disabled={!selectedInstrument}
+                  className="btn-tactile inline-flex items-center gap-2 rounded-full bg-[#3C096C] hover:bg-[#2D0752] active:scale-[0.98] text-white px-6 py-2.5 text-xs sm:text-sm font-bold shadow-md shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <span>Next: Pick Date & Time</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

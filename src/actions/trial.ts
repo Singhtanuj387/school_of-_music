@@ -3,7 +3,7 @@
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { hashPassword } from "@/lib/password";
 import { db } from "@/lib/db";
-import { TrialRequestStatus, Role, TrialStatus, NotificationType } from "@prisma/client";
+import { TrialRequestStatus, Role, TrialStatus, NotificationType, EnrollmentStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
@@ -85,6 +85,31 @@ export async function createTrialRequestAction(input: CreateTrialRequestInput) {
 
     if (currentUser) {
       studentUserId = currentUser.id;
+
+      // Strict Business Rule: Converted students or students with active course enrollments cannot book free trials
+      const [convertedTrialRecord, activeEnrollmentRecord] = await Promise.all([
+        db.trialRequest.findFirst({
+          where: {
+            studentId: currentUser.id,
+            isConverted: true,
+          },
+        }),
+        db.enrollment.findFirst({
+          where: {
+            studentId: currentUser.id,
+            status: EnrollmentStatus.ACTIVE,
+          },
+        }),
+      ]);
+
+      if (convertedTrialRecord || activeEnrollmentRecord) {
+        return {
+          success: false,
+          error:
+            "You are already an enrolled Gandharva student. Complimentary free trials are strictly reserved for new prospective students. Please explore our Course Catalog to continue your musical education.",
+        };
+      }
+
       // If user is already logged in, save phone if provided and not yet set
       if (validated.studentPhone?.trim()) {
         const norm = normalizePhoneNumber(validated.studentPhone);
@@ -124,6 +149,39 @@ export async function createTrialRequestAction(input: CreateTrialRequestInput) {
         return {
           success: false,
           error: "Please enter a valid mobile number with country code (e.g. +91 98765 43210).",
+        };
+      }
+
+      // Strict check: Check if phone number or email belongs to an already converted or enrolled student
+      const existingConvertedUser = await db.user.findFirst({
+        where: {
+          OR: [
+            { phone: normalizedPhone },
+            { email: validated.studentEmail.toLowerCase().trim() },
+          ],
+        },
+        select: {
+          id: true,
+          trialRequestsAsStudent: {
+            where: { isConverted: true },
+            select: { id: true },
+          },
+          enrollments: {
+            where: { status: EnrollmentStatus.ACTIVE },
+            select: { id: true },
+          },
+        },
+      });
+
+      if (
+        existingConvertedUser &&
+        (existingConvertedUser.trialRequestsAsStudent.length > 0 ||
+          existingConvertedUser.enrollments.length > 0)
+      ) {
+        return {
+          success: false,
+          error:
+            "An account associated with this email or phone number is already an enrolled Gandharva student. Complimentary free trials are strictly reserved for new prospective students. Please sign in to explore courses or manage your active enrollments.",
         };
       }
 
@@ -202,6 +260,30 @@ export async function createTrialRequestAction(input: CreateTrialRequestInput) {
         });
         studentUserId = newUser.id;
       }
+    }
+
+    // Strict Business Rule: Enrolled/converted students cannot book free trials
+    const [finalConvertedCheck, finalEnrollmentCheck] = await Promise.all([
+      db.trialRequest.findFirst({
+        where: {
+          studentId: studentUserId,
+          isConverted: true,
+        },
+      }),
+      db.enrollment.findFirst({
+        where: {
+          studentId: studentUserId,
+          status: EnrollmentStatus.ACTIVE,
+        },
+      }),
+    ]);
+
+    if (finalConvertedCheck || finalEnrollmentCheck) {
+      return {
+        success: false,
+        error:
+          "You are already an enrolled Gandharva student. Complimentary free trials are strictly reserved for new prospective students. Please explore our Course Catalog to continue your musical education.",
+      };
     }
 
     // Check or initialize free trial status

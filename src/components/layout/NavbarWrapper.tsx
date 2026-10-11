@@ -30,15 +30,29 @@ export function NavbarWrapper({
   }
 
 
+  const isDashboard = Boolean(
+    pathname &&
+      (pathname.startsWith("/admin") ||
+        pathname.startsWith("/teacher") ||
+        pathname.startsWith("/student") ||
+        pathname.startsWith("/dashboard"))
+  );
+
   // Otherwise (authenticated, or on /login, /signup, /teachers, /courses, etc.),
   // render the platform navbar which is sticky with fixed height and never submerges content!
   return (
     <nav className="sticky top-0 z-50 border-0 bg-primary shadow-md backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        {/* Brand: Gandharva School of Music */}
+      <div
+        className={`flex h-16 items-center justify-between ${
+          isDashboard
+            ? "w-full px-4 sm:px-6 md:px-8"
+            : "mx-auto max-w-6xl px-4 sm:px-6"
+        }`}
+      >
+        {/* Brand: Gandharva School of Music (sent to far left) */}
         <Link
           href="/"
-          className="flex items-center transition-opacity hover:opacity-95"
+          className="flex items-center transition-opacity hover:opacity-95 shrink-0"
           aria-label="Gandharva School of Music"
         >
           <Image
@@ -51,20 +65,23 @@ export function NavbarWrapper({
           />
         </Link>
 
-        {/* Navigation items */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          <Link
-            href="/teachers"
-            className="hidden xs:inline-block text-xs sm:text-sm font-medium text-white/90 transition-colors hover:text-white"
-          >
-            Browse Teachers
-          </Link>
+        {/* Right-hand items: notification bell, dashboard logo/button, signout button (sent to far right) */}
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          {!isDashboard && (
+            <Link
+              href="/teachers"
+              className="hidden xs:inline-block text-xs sm:text-sm font-medium text-white/90 transition-colors hover:text-white"
+            >
+              Browse Teachers
+            </Link>
+          )}
 
           {user ? (
-            <div className="flex items-center gap-1.5 sm:gap-3">
-              {/* Notification Bell in top right corner */}
+            <div className="flex items-center gap-2 sm:gap-3.5">
+              {/* 1. Notification Bell */}
               <NotificationBell userRole={user.role} />
 
+              {/* 2. Dashboard logo / button */}
               <Link
                 href={
                   user.role === "ADMIN"
@@ -73,7 +90,7 @@ export function NavbarWrapper({
                     ? "/teacher/dashboard"
                     : "/student/dashboard"
                 }
-                className="flex items-center gap-2 rounded-xl bg-white/15 pl-2 pr-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold text-white transition-all hover:bg-white/25 btn-tactile whitespace-nowrap"
+                className="flex items-center gap-2 rounded-xl bg-white/15 pl-2 pr-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold text-white transition-all hover:bg-white/25 btn-tactile whitespace-nowrap active:scale-95"
               >
                 {user.image ? (
                   <div className="relative w-5 h-5 sm:w-6 sm:h-6 rounded-full overflow-hidden border border-white/40 shrink-0">
@@ -93,10 +110,11 @@ export function NavbarWrapper({
                 <span>Dashboard</span>
               </Link>
 
+              {/* 3. Signout button */}
               <form action={signOutAction}>
                 <button
                   type="submit"
-                  className="rounded-lg px-2 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm text-white/70 transition-colors hover:text-white btn-tactile whitespace-nowrap"
+                  className="rounded-lg px-2.5 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm text-white/80 transition-all hover:text-white hover:bg-white/10 btn-tactile whitespace-nowrap active:scale-95 cursor-pointer"
                 >
                   Sign Out
                 </button>

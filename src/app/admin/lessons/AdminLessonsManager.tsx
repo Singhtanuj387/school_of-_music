@@ -12,21 +12,28 @@ import {
   XCircle,
   ExternalLink,
   Loader2,
+  ArrowUpDown,
+  Sparkles,
 } from "lucide-react";
 
 export interface AdminLessonItem {
   id: string;
   trackingCode: string;
   startsAt: string;
+  createdAt: string;
   formattedTime: string;
+  formattedCreatedDate?: string;
   durationMinutes: number;
   instrument: string;
+  courseTitle?: string | null;
   status: LessonStatus;
   lessonSource: LessonSource;
   teacherName: string;
   studentName: string;
   studentEmail: string;
 }
+
+export type LessonSortOrder = "LATEST_FIRST" | "DATE_DESC" | "DATE_ASC";
 
 export function AdminLessonsManager({
   initialLessons,
@@ -36,6 +43,7 @@ export function AdminLessonsManager({
   const [lessons, setLessons] = useState<AdminLessonItem[]>(initialLessons);
   const [statusFilter, setStatusFilter] = useState<"ALL" | LessonStatus>("ALL");
   const [sourceFilter, setSourceFilter] = useState<"ALL" | LessonSource>("ALL");
+  const [sortOrder, setSortOrder] = useState<LessonSortOrder>("LATEST_FIRST");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [isPending, startTransition] = useTransition();
@@ -59,17 +67,31 @@ export function AdminLessonsManager({
     });
   };
 
-  const filteredLessons = lessons.filter((l) => {
-    const matchesStatus = statusFilter === "ALL" || l.status === statusFilter;
-    const matchesSource = sourceFilter === "ALL" || l.lessonSource === sourceFilter;
-    const matchesSearch =
-      l.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.teacherName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.instrument.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.trackingCode.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredLessons = lessons
+    .filter((l) => {
+      const matchesStatus = statusFilter === "ALL" || l.status === statusFilter;
+      const matchesSource = sourceFilter === "ALL" || l.lessonSource === sourceFilter;
+      const matchesSearch =
+        l.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        l.teacherName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        l.instrument.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (l.courseTitle && l.courseTitle.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        l.trackingCode.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesStatus && matchesSource && matchesSearch;
-  });
+      return matchesStatus && matchesSource && matchesSearch;
+    })
+    .sort((a, b) => {
+      if (sortOrder === "LATEST_FIRST") {
+        // Latest class first (created / scheduled date descending)
+        const diffCreated = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        if (diffCreated !== 0) return diffCreated;
+        return new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime();
+      } else if (sortOrder === "DATE_DESC") {
+        return new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime();
+      } else {
+        return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+      }
+    });
 
   return (
     <div className="space-y-6">
@@ -160,6 +182,51 @@ export function AdminLessonsManager({
               Course Sessions
             </button>
           </div>
+
+          {/* Sort Order Selector */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-white border border-primary/10 shadow-xs">
+            <span className="text-[10px] uppercase font-bold text-body/50 px-2 flex items-center gap-1 font-mono select-none">
+              <ArrowUpDown className="w-3 h-3 text-body/60" />
+              Order:
+            </span>
+            <button
+              type="button"
+              onClick={() => setSortOrder("LATEST_FIRST")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 flex items-center gap-1 ${
+                sortOrder === "LATEST_FIRST"
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-body hover:text-heading hover:bg-bg-alt/30"
+              }`}
+              title="Show newest scheduled / created class first"
+            >
+              <Sparkles className="w-3 h-3" />
+              Latest Class First
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder("DATE_DESC")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 ${
+                sortOrder === "DATE_DESC"
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-body hover:text-heading hover:bg-bg-alt/30"
+              }`}
+              title="Order by scheduled date (furthest future first)"
+            >
+              Class Date (Desc)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder("DATE_ASC")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 ${
+                sortOrder === "DATE_ASC"
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-body hover:text-heading hover:bg-bg-alt/30"
+              }`}
+              title="Order by scheduled date (upcoming closest first)"
+            >
+              Upcoming First
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -169,7 +236,7 @@ export function AdminLessonsManager({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search student, teacher, instrument..."
+            placeholder="Search student, teacher, instrument, course..."
             className="w-full rounded-xl bg-white border border-primary/15 pl-9 pr-3 py-2 text-xs text-heading placeholder:text-body/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-xs"
           />
         </div>
@@ -217,13 +284,32 @@ export function AdminLessonsManager({
 
                     <td className="py-3.5 px-4">
                       {l.lessonSource === "TRIAL" ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-accent/15 text-accent-dark border border-accent/25">
-                          Free Trial
-                        </span>
+                        <div className="space-y-0.5">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-accent/15 text-accent-dark border border-accent/25">
+                            Free Trial
+                          </span>
+                          {l.formattedCreatedDate && (
+                            <p className="text-[10px] text-body/50 font-mono">
+                              Booked {l.formattedCreatedDate}
+                            </p>
+                          )}
+                        </div>
                       ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-cta/10 text-cta border border-cta/25">
-                          Course Session
-                        </span>
+                        <div className="space-y-0.5">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-cta/10 text-cta border border-cta/25">
+                            Course Session
+                          </span>
+                          {l.courseTitle && (
+                            <p className="text-[11px] font-semibold text-heading truncate max-w-[170px]" title={l.courseTitle}>
+                              {l.courseTitle}
+                            </p>
+                          )}
+                          {l.formattedCreatedDate && (
+                            <p className="text-[10px] text-body/50 font-mono">
+                              Allotted {l.formattedCreatedDate}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </td>
 

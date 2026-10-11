@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { DM_Sans, Vidaloka } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import "./globals.css";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-dm-sans",
-  display: "swap",
-});
-
-const vidaloka = Vidaloka({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-vidaloka",
   display: "swap",
 });
 
@@ -55,7 +48,7 @@ export default async function RootLayout({
       lang="en"
       data-scroll-behavior="smooth"
       suppressHydrationWarning
-      className={`${dmSans.variable} ${vidaloka.variable}`}
+      className={dmSans.variable}
     >
       <head>
         <meta name="darkreader-lock" />

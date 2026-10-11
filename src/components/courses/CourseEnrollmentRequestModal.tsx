@@ -36,6 +36,7 @@ export interface CourseEnrollmentRequestModalProps {
     createdAt: string;
   } | null;
   isAuthenticated?: boolean;
+  isConvertedStudent?: boolean;
 }
 
 export function CourseEnrollmentRequestModal({
@@ -48,10 +49,11 @@ export function CourseEnrollmentRequestModal({
   isAlreadyEnrolled = false,
   pendingRequest = null,
   isAuthenticated = true,
+  isConvertedStudent = true,
 }: CourseEnrollmentRequestModalProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<CoursePaymentPlan>(CoursePaymentPlan.EMI_3_MONTHS);
+  const [selectedPlan, setSelectedPlan] = useState<CoursePaymentPlan>(CoursePaymentPlan.FULL_PAYMENT);
   const [preferredSchedule, setPreferredSchedule] = useState("");
   const [studentNotes, setStudentNotes] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -90,13 +92,6 @@ export function CourseEnrollmentRequestModal({
 
   // If student has a pending request
   if (pendingRequest && pendingRequest.status === "PENDING") {
-    const planName =
-      pendingRequest.paymentPlan === "EMI_3_MONTHS"
-        ? "3-Month EMI Plan"
-        : pendingRequest.paymentPlan === "EMI_6_MONTHS"
-        ? "6-Month EMI Plan"
-        : "Full Upfront Payment";
-
     return (
       <div className="p-5 rounded-2xl bg-primary-subtle border border-primary/20 text-heading space-y-4 shadow-xs">
         <div className="flex items-start gap-3">
@@ -113,7 +108,7 @@ export function CourseEnrollmentRequestModal({
               </span>
             </div>
             <p className="text-xs text-body leading-relaxed">
-              Your admission request for <span className="font-bold text-heading">{courseTitle}</span> with <span className="font-semibold text-primary">{planName}</span> is currently being reviewed by academy administration.
+              Your admission request for <span className="font-bold text-heading">{courseTitle}</span> is currently being reviewed by academy administration for mentor assignment and timetable allotment.
             </p>
             <p className="text-[11px] text-body-muted">
               Submitted on: {new Date(pendingRequest.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}
@@ -159,7 +154,7 @@ export function CourseEnrollmentRequestModal({
               Ready to Begin Your Masterclass?
             </h4>
             <p className="text-xs text-body">
-              Sign in to your student account to submit an admission request with zero-interest EMI options.
+              Sign in to your student account to submit an admission request.
             </p>
           </div>
           <Link
@@ -168,6 +163,46 @@ export function CourseEnrollmentRequestModal({
           >
             <span>Sign In to Request Course</span>
             <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Signed in but NOT a converted trial student: must complete trial first
+  if (isAuthenticated && !isConvertedStudent) {
+    return (
+      <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white to-purple-50/30 border border-amber-200/90 text-heading space-y-3.5 shadow-xs">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-amber-100/90 border border-amber-300 text-amber-900 flex items-center justify-center shrink-0 mt-0.5">
+            <GraduationCap className="w-5 h-5 text-amber-700" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wider">
+                Prerequisite Required
+              </span>
+              <span className="text-xs text-body-muted font-medium">Trial Class & Guru Evaluation</span>
+            </div>
+            <h4 className="font-serif font-bold text-base text-heading">
+              Complete Your Free 1-on-1 Trial Class First
+            </h4>
+            <p className="text-xs text-body leading-relaxed">
+              Course admission and mentor allotment are exclusively open to students who have completed and converted their initial trial evaluation. Our certified gurus evaluate your current foundation and musical aptitude before formal course enrollment.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2.5 border-t border-amber-100">
+          <span className="text-xs text-body-muted">
+            Already attended your trial session? Reach out to academy support to complete your conversion.
+          </span>
+          <Link
+            href="/book-trial"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white font-bold text-xs transition-all shadow-xs btn-tactile whitespace-nowrap shrink-0"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Book Free 1-on-1 Trial Class</span>
           </Link>
         </div>
       </div>
@@ -216,7 +251,7 @@ export function CourseEnrollmentRequestModal({
             Request Course Admission & Mentor Allotment
           </h4>
           <p className="text-xs text-body leading-relaxed max-w-xl">
-            Submit your admission request with full fee or easy monthly EMI. Academy administration will verify your schedule, assign your faculty mentor, and activate your private classes.
+            Submit your admission request. Academy administration will verify your schedule, assign your faculty mentor, and activate your private classes in your dashboard.
           </p>
         </div>
 
@@ -281,16 +316,14 @@ export function CourseEnrollmentRequestModal({
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* 1. Select Payment & EMI Plan */}
+                {/* 1. Tuition Structure & Per-Session Breakdown */}
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-heading uppercase tracking-wider">
-                    Step 1: Choose Tuition & EMI Plan
+                    Step 1: Academy Tuition & Fee Structure
                   </label>
                   <CourseEmiBreakdown
                     priceMinorUnits={priceMinorUnits}
-                    interactive
-                    selectedPlan={selectedPlan}
-                    onSelectPlan={setSelectedPlan}
+                    sessionCount={sessionCount}
                   />
                 </div>
 

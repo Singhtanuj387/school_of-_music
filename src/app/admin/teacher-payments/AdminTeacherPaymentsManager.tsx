@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useMemo, useEffect } from "react";
+import Link from "next/link";
 import {
   CreditCard,
   Search,
@@ -26,7 +27,17 @@ import {
   ShieldAlert,
   Info,
   Sliders,
+  Calendar,
+  RotateCcw,
+  ChevronRight,
 } from "lucide-react";
+import {
+  startOfWeek,
+  endOfWeek,
+  subWeeks,
+  format,
+  isWithinInterval,
+} from "date-fns";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 import { markLessonPayoutAction } from "@/actions/admin";
 import { updateTeacherPaymentDetailsAction } from "@/actions/teacher";
@@ -60,7 +71,7 @@ export interface AdminSessionPayoutItem {
   payoutAmountRupees: number;
 }
 
-export function AdminPaymentsManager({
+export function AdminTeacherPaymentsManager({
   initialSessions,
 }: {
   initialSessions: AdminSessionPayoutItem[];
@@ -69,6 +80,7 @@ export function AdminPaymentsManager({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "UNPAID" | "PAID">("ALL");
   const [teacherFilter, setTeacherFilter] = useState<string>("ALL");
+  const [selectedWeekKey, setSelectedWeekKey] = useState<string>("ALL");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Selected session for Pay Teacher modal
@@ -158,16 +170,21 @@ export function AdminPaymentsManager({
     document.body.removeChild(link);
   };
 
+  // Completed sessions base list
+  const completedSessions = useMemo(() => {
+    return sessions.filter((s) => s.lessonStatus === "COMPLETED");
+  }, [sessions]);
+
   // Unique list of teachers for dropdown filter
   const uniqueTeachers = useMemo(() => {
     const map = new Map<string, string>();
-    sessions.forEach((s) => {
+    completedSessions.forEach((s) => {
       if (!map.has(s.teacherId)) {
         map.set(s.teacherId, s.teacherName);
       }
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [sessions]);
+  }, [completedSessions]);
 
   // Copy helper
   const copyToClipboard = (text: string, id: string) => {
@@ -324,10 +341,132 @@ export function AdminPaymentsManager({
     });
   };
 
-  // Filtered rows
+  // Reference timestamp
+  const now = useMemo(() => new Date(), []);
+
+  // Preset week intervals (Monday to Sunday)
+  const thisWeekInterval = useMemo(
+    () => ({
+      start: startOfWeek(now, { weekStartsOn: 1 }),
+      end: endOfWeek(now, { weekStartsOn: 1 }),
+      label: `Current Week (${format(startOfWeek(now, { weekStartsOn: 1 }), "MMM d")}–${format(endOfWeek(now, { weekStartsOn: 1 }), "MMM d")})`,
+    }),
+    [now],
+  );
+
+  const lastWeekInterval = useMemo(
+    () => ({
+      start: startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 }),
+      end: endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 }),
+      label: `Last Week (${format(startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 }), "MMM d")}–${format(endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 }), "MMM d")})`,
+    }),
+    [now],
+  );
+
+  const twoWeeksAgoInterval = useMemo(
+    () => ({
+      start: startOfWeek(subWeeks(now, 2), { weekStartsOn: 1 }),
+      end: endOfWeek(subWeeks(now, 2), { weekStartsOn: 1 }),
+      label: `2 Wks Ago (${format(startOfWeek(subWeeks(now, 2), { weekStartsOn: 1 }), "MMM d")}–${format(endOfWeek(subWeeks(now, 2), { weekStartsOn: 1 }), "MMM d")})`,
+    }),
+    [now],
+  );
+
+  // Dynamic calendar weeks discovered from completed sessions
+  const historicalWeeks = useMemo(() => {
+    const map = new Map<
+      string,
+      { start: Date; end: Date; count: number; unpaidCount: number; pendingAmount: number }
+    >();
+
+    completedSessions.forEach((s) => {
+      const sDate = new Date(s.startsAt);
+      const wStart = startOfWeek(sDate, { weekStartsOn: 1 });
+      const wEnd = endOfWeek(sDate, { weekStartsOn: 1 });
+      const key = format(wStart, "yyyy-MM-dd");
+
+      const existing = map.get(key) || {
+        start: wStart,
+        end: wEnd,
+        count: 0,
+        unpaidCount: 0,
+        pendingAmount: 0,
+      };
+
+      existing.count += 1;
+      if (s.payoutStatus === "UNPAID") {
+        existing.unpaidCount += 1;
+        existing.pendingAmount += s.payoutRateRupees;
+      }
+      map.set(key, existing);
+    });
+
+    return Array.from(map.entries())
+      .sort((a, b) => b[1].start.getTime() - a[1].start.getTime())
+      .map(([key, data]) => ({
+        id: `week_${key}`,
+        key,
+        start: data.start,
+        end: data.end,
+        label: `${format(data.start, "MMM d")} – ${format(data.end, "MMM d, yyyy")}`,
+        count: data.count,
+        unpaidCount: data.unpaidCount,
+        pendingAmount: data.pendingAmount,
+      }));
+  }, [completedSessions]);
+
+  // Session counts for preset pills
+  const thisWeekCount = useMemo(() => {
+    return completedSessions.filter((s) =>
+      isWithinInterval(new Date(s.startsAt), thisWeekInterval),
+    ).length;
+  }, [completedSessions, thisWeekInterval]);
+
+  const lastWeekCount = useMemo(() => {
+    return completedSessions.filter((s) =>
+      isWithinInterval(new Date(s.startsAt), lastWeekInterval),
+    ).length;
+  }, [completedSessions, lastWeekInterval]);
+
+  const twoWeeksAgoCount = useMemo(() => {
+    return completedSessions.filter((s) =>
+      isWithinInterval(new Date(s.startsAt), twoWeeksAgoInterval),
+    ).length;
+  }, [completedSessions, twoWeeksAgoInterval]);
+
+  // Active week interval
+  const activeWeekInterval = useMemo(() => {
+    if (selectedWeekKey === "THIS_WEEK") return thisWeekInterval;
+    if (selectedWeekKey === "LAST_WEEK") return lastWeekInterval;
+    if (selectedWeekKey === "2_WEEKS_AGO") return twoWeeksAgoInterval;
+    if (selectedWeekKey.startsWith("week_")) {
+      const found = historicalWeeks.find((hw) => hw.id === selectedWeekKey);
+      if (found) {
+        return { start: found.start, end: found.end, label: found.label };
+      }
+    }
+    return null;
+  }, [
+    selectedWeekKey,
+    thisWeekInterval,
+    lastWeekInterval,
+    twoWeeksAgoInterval,
+    historicalWeeks,
+  ]);
+
+  // Sessions filtered by week
+  const weekFilteredSessions = useMemo(() => {
+    if (!activeWeekInterval) return completedSessions;
+    return completedSessions.filter((s) => {
+      const sDate = new Date(s.startsAt);
+      return isWithinInterval(sDate, activeWeekInterval);
+    });
+  }, [completedSessions, activeWeekInterval]);
+
+  // Filtered rows (strictly completed sessions only, filtered by week, status, teacher, and search)
   const filteredSessions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return sessions.filter((s) => {
+    return weekFilteredSessions.filter((s) => {
       // Status filter
       if (statusFilter !== "ALL" && s.payoutStatus !== statusFilter) {
         return false;
@@ -347,50 +486,234 @@ export function AdminPaymentsManager({
       }
       return true;
     });
-  }, [sessions, searchQuery, statusFilter, teacherFilter]);
+  }, [weekFilteredSessions, searchQuery, statusFilter, teacherFilter]);
 
-  // Aggregate metrics
+  // Aggregate metrics (dynamically reflect the active week)
   const totalPaidOut = useMemo(() => {
-    return sessions
+    return weekFilteredSessions
       .filter((s) => s.payoutStatus === "PAID")
       .reduce((sum, s) => sum + s.payoutAmountRupees, 0);
-  }, [sessions]);
+  }, [weekFilteredSessions]);
 
   const totalPendingPayout = useMemo(() => {
-    return sessions
-      .filter((s) => s.payoutStatus === "UNPAID" && s.lessonStatus !== "CANCELLED")
+    return weekFilteredSessions
+      .filter((s) => s.payoutStatus === "UNPAID")
       .reduce((sum, s) => sum + s.payoutRateRupees, 0);
-  }, [sessions]);
+  }, [weekFilteredSessions]);
 
-  const paidCount = sessions.filter((s) => s.payoutStatus === "PAID").length;
-  const unpaidCount = sessions.filter(
-    (s) => s.payoutStatus === "UNPAID" && s.lessonStatus !== "CANCELLED",
+  const paidCount = weekFilteredSessions.filter((s) => s.payoutStatus === "PAID").length;
+  const unpaidCount = weekFilteredSessions.filter(
+    (s) => s.payoutStatus === "UNPAID",
   ).length;
+
+  const activeWeekTeachersCount = useMemo(() => {
+    const map = new Set<string>();
+    weekFilteredSessions.forEach((s) => map.add(s.teacherId));
+    return map.size;
+  }, [weekFilteredSessions]);
+
+  // CSV Export for filtered sessions
+  const handleExportCSV = () => {
+    const headers = [
+      "Session ID",
+      "Date & Time",
+      "Instructor Name",
+      "Instructor Email",
+      "Instructor UPI ID",
+      "Student Name",
+      "Student Email",
+      "Course Title",
+      "Lesson Status",
+      "Fee Rate (INR)",
+      "Payout Status",
+      "Disbursed Date",
+      "Bank Transaction UTR",
+      "Payout Notes",
+    ];
+
+    const rows = filteredSessions.map((s) => [
+      s.trackingCode,
+      `"${s.dateFormatted}"`,
+      `"${s.teacherName.replace(/"/g, '""')}"`,
+      s.teacherEmail,
+      s.teacherUpiId || "N/A",
+      `"${s.studentName.replace(/"/g, '""')}"`,
+      s.studentEmail,
+      `"${s.courseTitle.replace(/"/g, '""')}"`,
+      s.lessonStatus,
+      s.payoutAmountRupees || s.payoutRateRupees,
+      s.payoutStatus,
+      s.payoutPaidAtFormatted || "N/A",
+      s.payoutTransactionId || "N/A",
+      `"${(s.payoutNotes || "").replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `faculty_payouts_${selectedWeekKey.toLowerCase()}_${format(now, "yyyyMMdd")}.csv`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-sans">
-          Institutional Administration
-        </span>
-        <SplitHeading
-          firstClause="Faculty Payment"
-          accentClause="Management"
-          as="h1"
-          size="lg"
-        />
-        <p className="text-xs text-body mt-1 max-w-3xl">
-          Disburse teacher session remuneration via verified UPI ID. Confirm payments with bank UTR transaction references to immediately update faculty ledgers.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-sans">
+            Institutional Administration
+          </span>
+          <SplitHeading
+            firstClause="Teacher"
+            accentClause="Payments"
+            as="h1"
+            size="lg"
+          />
+          <p className="text-xs text-body mt-1 max-w-3xl">
+            Disburse teacher session remuneration for completed sessions via verified UPI ID. Confirm payments with bank UTR transaction references to immediately update faculty ledgers.
+          </p>
+        </div>
+
+        <Link
+          href="/admin/payments"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-border-default bg-white hover:bg-surface-raised text-heading text-xs font-semibold shadow-2xs transition-all active:scale-95 shrink-0 self-start sm:self-auto"
+        >
+          <CreditCard className="w-3.5 h-3.5 text-accent" />
+          <span>Overall Revenue</span>
+          <ChevronRight className="w-3 h-3 text-body/40" />
+        </Link>
+      </div>
+
+      {/* Week-Wise Filter Bar */}
+      <div className="rounded-2xl border border-border-default bg-white/90 backdrop-blur-md p-3.5 shadow-xs space-y-2.5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          {/* Week Selection Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+            <div className="flex items-center gap-1.5 text-xs text-body mr-1 shrink-0 font-semibold">
+              <Calendar className="w-3.5 h-3.5 text-accent" />
+              <span>Payout Week:</span>
+            </div>
+
+            {[
+              { id: "ALL", label: `All Weeks (${completedSessions.length})` },
+              {
+                id: "THIS_WEEK",
+                label: `Current Week (${thisWeekCount})`,
+              },
+              {
+                id: "LAST_WEEK",
+                label: `Last Week (${lastWeekCount})`,
+              },
+              {
+                id: "2_WEEKS_AGO",
+                label: `2 Wks Ago (${twoWeeksAgoCount})`,
+              },
+            ].map((tab) => {
+              const active = selectedWeekKey === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedWeekKey(tab.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                    active
+                      ? "bg-[#3C096C] text-white shadow-xs"
+                      : "bg-neutral-100 hover:bg-neutral-200/80 text-body hover:text-heading"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Historical / Specific Weeks Dropdown & Export */}
+          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+            {historicalWeeks.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-body hidden sm:inline">
+                  Specific Week:
+                </span>
+                <select
+                  value={selectedWeekKey}
+                  onChange={(e) => setSelectedWeekKey(e.target.value)}
+                  className="text-xs bg-neutral-50 hover:bg-neutral-100 border border-border-default rounded-xl px-3 py-1.5 font-medium text-heading focus:outline-none focus:ring-2 focus:ring-[#3C096C]/20 transition-all max-w-[260px] truncate"
+                >
+                  <option value="ALL">All Completed Weeks</option>
+                  {historicalWeeks.map((hw) => (
+                    <option key={hw.id} value={hw.id}>
+                      {hw.label} ({hw.count} {hw.count === 1 ? "session" : "sessions"})
+                    </option>
+                  ))}
+                </select>
+
+                {selectedWeekKey !== "ALL" && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWeekKey("ALL")}
+                    className="p-1.5 rounded-lg text-body hover:text-heading hover:bg-neutral-100 transition-all active:scale-95"
+                    title="Clear week filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={filteredSessions.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-default bg-white hover:bg-surface-raised text-heading text-xs font-semibold shadow-2xs transition-all active:scale-95 disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5 text-body" />
+              <span>Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Active Filter Scope Summary Badge */}
+        {selectedWeekKey !== "ALL" && (
+          <div className="flex items-center justify-between text-[11px] text-body pt-1.5 border-t border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+              <span>
+                Reconciling payout for{" "}
+                <strong className="text-heading font-semibold">
+                  {activeWeekInterval?.label || selectedWeekKey}
+                </strong>{" "}
+                · <strong className="text-emerald-700 font-semibold">{weekFilteredSessions.length}</strong> completed sessions
+                {unpaidCount > 0 && (
+                  <>
+                    {" "}· <span className="text-amber-700 font-semibold">₹{totalPendingPayout.toLocaleString("en-IN")} pending ({unpaidCount} unpaid)</span>
+                  </>
+                )}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedWeekKey("ALL")}
+              className="text-[11px] font-semibold text-accent hover:underline active:scale-95 inline-flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" /> Show all weeks
+            </button>
+          </div>
+        )}
       </div>
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Paid Out */}
+        {/* Card 1: Total Paid */}
         <div className="rounded-2xl border border-border-default bg-white p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-body">
-            <span className="text-xs font-semibold">Total Disbursed (Paid)</span>
+            <span className="text-xs font-semibold">Total Paid</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             </div>
@@ -399,14 +722,15 @@ export function AdminPaymentsManager({
             ₹{totalPaidOut.toLocaleString("en-IN")}
           </p>
           <p className="text-[11px] text-body">
-            {paidCount} session{paidCount === 1 ? "" : "s"} settled with faculty
+            {paidCount} completed session{paidCount === 1 ? "" : "s"} paid{" "}
+            {selectedWeekKey !== "ALL" && "(in week)"}
           </p>
         </div>
 
         {/* Card 2: Pending Payout */}
         <div className="rounded-2xl border border-border-default bg-white p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-body">
-            <span className="text-xs font-semibold">Pending Remuneration</span>
+            <span className="text-xs font-semibold">Pending Payout</span>
             <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
               <Clock className="w-4 h-4 text-amber-600" />
             </div>
@@ -415,22 +739,27 @@ export function AdminPaymentsManager({
             ₹{totalPendingPayout.toLocaleString("en-IN")}
           </p>
           <p className="text-[11px] text-body">
-            {unpaidCount} session{unpaidCount === 1 ? "" : "s"} awaiting disbursement
+            {unpaidCount} completed session{unpaidCount === 1 ? "" : "s"} awaiting payout{" "}
+            {selectedWeekKey !== "ALL" && "(in week)"}
           </p>
         </div>
 
-        {/* Card 3: Total Sessions */}
+        {/* Card 3: Total Completed Sessions */}
         <div className="rounded-2xl border border-border-default bg-white p-5 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-body">
-            <span className="text-xs font-semibold">Total Sessions</span>
+            <span className="text-xs font-semibold">Completed Sessions</span>
             <div className="w-8 h-8 rounded-xl bg-primary-subtle flex items-center justify-center">
               <FileSpreadsheet className="w-4 h-4 text-primary" />
             </div>
           </div>
           <p className="font-serif text-2xl md:text-3xl font-bold text-primary font-numeric">
-            {sessions.length}
+            {weekFilteredSessions.length}
           </p>
-          <p className="text-[11px] text-body">All-time tracked 1:1 and trial sessions</p>
+          <p className="text-[11px] text-body">
+            {selectedWeekKey === "ALL"
+              ? "Concluded sessions eligible for remuneration"
+              : "Concluded sessions in selected week"}
+          </p>
         </div>
 
         {/* Card 4: Active Faculty Count */}
@@ -442,9 +771,13 @@ export function AdminPaymentsManager({
             </div>
           </div>
           <p className="font-serif text-2xl md:text-3xl font-bold text-heading font-numeric">
-            {uniqueTeachers.length}
+            {activeWeekTeachersCount}
           </p>
-          <p className="text-[11px] text-body">Active instructors with session bookings</p>
+          <p className="text-[11px] text-body">
+            {selectedWeekKey === "ALL"
+              ? "Active instructors with completed sessions"
+              : "Instructors with sessions in selected week"}
+          </p>
         </div>
       </div>
 
@@ -456,7 +789,7 @@ export function AdminPaymentsManager({
               Faculty Session Payouts Ledger
             </h2>
             <p className="text-xs text-body">
-              Search by Session ID or filter by instructor to disburse session fees and view payment coordinates.
+              Search by Session ID or filter by instructor to disburse fees for completed sessions and view payment coordinates.
             </p>
           </div>
 
@@ -492,7 +825,7 @@ export function AdminPaymentsManager({
                     : "text-body hover:text-heading"
                 }`}
               >
-                All ({sessions.length})
+                All Completed ({weekFilteredSessions.length})
               </button>
               <button
                 type="button"
@@ -558,9 +891,24 @@ export function AdminPaymentsManager({
               {filteredSessions.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-body text-xs">
-                    {searchQuery
-                      ? `No sessions found matching "${searchQuery}".`
-                      : "No sessions recorded in this filter view."}
+                    <div className="max-w-xs mx-auto space-y-2">
+                      <p className="font-semibold text-heading">
+                        {searchQuery
+                          ? `No sessions found matching "${searchQuery}".`
+                          : selectedWeekKey !== "ALL"
+                          ? `No completed sessions recorded for ${activeWeekInterval?.label || "selected week"}.`
+                          : "No sessions recorded in this filter view."}
+                      </p>
+                      {selectedWeekKey !== "ALL" && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedWeekKey("ALL")}
+                          className="text-xs font-semibold text-accent hover:underline inline-flex items-center gap-1 active:scale-95"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Reset week filter
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (

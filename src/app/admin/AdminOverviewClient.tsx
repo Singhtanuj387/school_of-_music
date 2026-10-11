@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   ChevronRight,
   AlertCircle,
+  Music,
 } from "lucide-react";
 
 export interface ScheduleItem {
@@ -687,6 +688,17 @@ export function AdminOverviewClient({
           </div>
 
           <div className="space-y-2 pt-1">
+            <Link
+              href="/admin/courses"
+              className="p-2.5 rounded-xl bg-purple-50/50 hover:bg-purple-100/70 border border-purple-100 text-heading text-xs font-semibold flex items-center justify-between transition-all group active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-2.5">
+                <Music className="w-4 h-4 text-[#3C096C]" />
+                <span>Course Catalog (16 Disciplines)</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-body/40 group-hover:text-heading" />
+            </Link>
+
             <Link
               href="/admin/trials"
               className="p-2.5 rounded-xl bg-purple-50/50 hover:bg-purple-100/70 border border-purple-100 text-heading text-xs font-semibold flex items-center justify-between transition-all group active:scale-[0.98]"

@@ -80,10 +80,10 @@
 /* ─── Tailwind v4 theme extension ──────────────────────────────────────────── */
 
 @theme inline {
-  /* Fonts: Vidaloka for artistic headings, DM Sans for body & UI */
+  /* Fonts: DM Sans for all headings, body & UI */
   --font-sans: var(--font-dm-sans);
-  --font-display: var(--font-vidaloka);
-  --font-serif: var(--font-vidaloka);
+  --font-display: var(--font-dm-sans);
+  --font-serif: var(--font-dm-sans);
   --font-mono: var(--font-geist-mono);
 
   /* Core Palette Tokens */
@@ -182,24 +182,33 @@ body {
   color: var(--color-heading);
 }
 
-/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+/* ─── Scrollbar: Sleek Translucent Apple-Style Standards ──────────────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 9, 108, 0.2) transparent;
+}
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-alt);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-default);
-  border-radius: var(--radius-full);
+  background: rgba(60, 9, 108, 0.2);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-strong);
+  background: rgba(60, 9, 108, 0.4);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ─── Reduced motion ──────────────────────────────────────────────────────── */
@@ -267,9 +276,9 @@ body {
   animation: pulse-ring 2s ease-out infinite;
 }
 
-/* Authentic Vidaloka font class from live gandharvaschoolofmusic.com */
+/* DM Sans font class */
 .custom-font-2 {
-  font-family: var(--font-vidaloka), serif;
+  font-family: var(--font-dm-sans), sans-serif;
 }
 
 /* 6-Digit OTP inline horizontal grid layout */
@@ -317,11 +326,54 @@ body {
   background: transparent;
 }
 .main-scroll::-webkit-scrollbar-thumb {
-  background: #D4C4E6;
+  background: rgba(60, 9, 108, 0.2);
   border-radius: 9999px;
 }
 .main-scroll::-webkit-scrollbar-thumb:hover {
-  background: #A98EC6;
+  background: rgba(60, 9, 108, 0.4);
+}
+
+/* Custom Slim Scrollbar (Apple Design Standard) */
+.custom-scrollbar,
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 9, 108, 0.2) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar,
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(60, 9, 108, 0.2);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(60, 9, 108, 0.42);
+}
+
+/* Hidden Scrollbar Utility */
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 

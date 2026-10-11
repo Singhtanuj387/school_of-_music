@@ -9,6 +9,8 @@ import {
   rescheduleEnrollmentLessonAction,
   deleteOrCancelEnrollmentLessonAction,
   reassignEnrollmentTeacherAction,
+  adminApproveAndAllotCourseAction,
+  adminRecordEnrollmentPaymentAction,
 } from "@/actions/admin";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -41,7 +43,20 @@ import {
   Sparkles,
   Layers,
   CalendarClock,
+  Receipt,
+  ArrowUpRight,
 } from "lucide-react";
+import {
+  SearchableStudentSelector,
+  SearchableFacultySelector,
+  SearchableCourseSelector,
+} from "./EnrollmentSelectors";
+import {
+  WeeklySchedulePicker,
+  AutoScheduleAllotModal,
+  getNextWeekdayDate,
+  generateWeeklySlotsList,
+} from "./AutoScheduleModal";
 
 export interface ScheduledLessonData {
   id: string;
@@ -52,6 +67,18 @@ export interface ScheduledLessonData {
   teacherId?: string | null;
   teacherName: string;
   payoutRupees: number;
+}
+
+export interface EnrollmentPaymentItem {
+  id: string;
+  amountMinorUnits: number;
+  currency: string;
+  gateway: string;
+  gatewayPaymentId: string | null;
+  gatewayOrderId: string | null;
+  status: PaymentStatus;
+  notes?: string | null;
+  createdAt: string;
 }
 
 export interface EnrollmentRecord {
@@ -87,6 +114,7 @@ export interface EnrollmentRecord {
     status: PaymentStatus;
     gatewayPaymentId: string | null;
   } | null;
+  payments?: EnrollmentPaymentItem[];
 }
 
 export interface CourseCatalogOption {
@@ -130,12 +158,33 @@ export interface TrialLeadOption {
   allottedTeacherId?: string | null;
 }
 
+export interface AdminCourseEnrollmentRequestItem {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  courseId: string;
+  courseTitle: string;
+  courseSlug: string;
+  courseDiscipline: string;
+  courseInstrument: string;
+  courseLevel: string;
+  courseSessionCount: number;
+  coursePriceMinorUnits: number;
+  paymentPlan: string;
+  status: string;
+  studentNotes?: string | null;
+  preferredSchedule?: string | null;
+  createdAt: string;
+}
+
 interface AdminEnrollmentsManagerProps {
   initialEnrollments: EnrollmentRecord[];
   courses: CourseCatalogOption[];
   teachers: FacultyOption[];
   students: StudentOption[];
   trialLeads: TrialLeadOption[];
+  initialCourseRequests?: AdminCourseEnrollmentRequestItem[];
 }
 
 export function AdminEnrollmentsManager({
@@ -144,28 +193,70 @@ export function AdminEnrollmentsManager({
   teachers,
   students,
   trialLeads,
+  initialCourseRequests = [],
 }: AdminEnrollmentsManagerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const paramEnrollmentId = searchParams.get("enrollmentId");
+  const paramStudentId = searchParams.get("studentId");
   const paramTrialId = searchParams.get("trialId");
 
   const [enrollments, setEnrollments] = useState<EnrollmentRecord[]>(initialEnrollments);
+  const [courseRequests, setCourseRequests] = useState<AdminCourseEnrollmentRequestItem[]>(initialCourseRequests);
   const [viewMode, setViewMode] = useState<"PLANNER" | "ROSTER">("PLANNER");
 
-  // Selected Enrollment / Student context
-  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string>(
-    paramEnrollmentId || initialEnrollments[0]?.id || ""
-  );
+  // Selected Student Context (URL parameter has top priority, then pending course requests)
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(() => {
+    if (paramStudentId && students.some((s) => s.id === paramStudentId)) {
+      return paramStudentId;
+    }
+    if (paramEnrollmentId) {
+      const match = initialEnrollments.find((e) => e.id === paramEnrollmentId);
+      if (match) return match.studentId;
+    }
+    // High Priority: If any student has a pending course admission request, default to them so admin immediately sees it!
+    const pendingReq = initialCourseRequests.find((r) => r.status === "PENDING");
+    if (pendingReq && students.some((s) => s.id === pendingReq.studentId)) {
+      return pendingReq.studentId;
+    }
+    return students[0]?.id || "";
+  });
+
+  // Global pending course admission requests across converted students
+  const allPendingCourseRequests = useMemo(() => {
+    return courseRequests.filter((r) => r.status === "PENDING");
+  }, [courseRequests]);
+
+  // Filter student-scoped enrollments
+  const studentEnrollments = useMemo(() => {
+    return enrollments.filter((e) => e.studentId === selectedStudentId);
+  }, [enrollments, selectedStudentId]);
+
+  // Filter student-scoped course requests
+  const studentCourseRequests = useMemo(() => {
+    return courseRequests.filter((r) => r.studentId === selectedStudentId);
+  }, [courseRequests, selectedStudentId]);
+
+  const pendingRequests = useMemo(() => {
+    return studentCourseRequests.filter((r) => r.status === "PENDING");
+  }, [studentCourseRequests]);
+
+  // Selected Enrollment ID (scoped to the selected student)
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string>(() => {
+    if (paramEnrollmentId) return paramEnrollmentId;
+    return "";
+  });
 
   const activeEnrollment = useMemo(() => {
-    return enrollments.find((e) => e.id === selectedEnrollmentId) || enrollments[0] || null;
-  }, [enrollments, selectedEnrollmentId]);
+    if (!selectedStudentId) return null;
+    if (selectedEnrollmentId) {
+      const found = studentEnrollments.find((e) => e.id === selectedEnrollmentId);
+      if (found) return found;
+    }
+    return studentEnrollments[0] || null;
+  }, [studentEnrollments, selectedEnrollmentId, selectedStudentId]);
 
   // Form State: 1 · Student & Course
-  const [selectedStudentId, setSelectedStudentId] = useState<string>(
-    activeEnrollment?.studentId || students[0]?.id || ""
-  );
   const [selectedCourseId, setSelectedCourseId] = useState<string>(
     activeEnrollment?.courseId || courses[0]?.id || ""
   );
@@ -197,6 +288,7 @@ export function AdminEnrollmentsManager({
   );
   const [frequencyLabel, setFrequencyLabel] = useState<string>("2 classes / week");
   const [expectedDurationWeeks, setExpectedDurationWeeks] = useState<number>(12);
+  const [sessionSortOrder, setSessionSortOrder] = useState<"LATEST_FIRST" | "CHRONOLOGICAL">("LATEST_FIRST");
 
   // Form State: 4 · Fees, payments & notes
   const [feeRupees, setFeeRupees] = useState<number>(
@@ -209,7 +301,7 @@ export function AdminEnrollmentsManager({
   const [paidRupees, setPaidRupees] = useState<number>(
     activeEnrollment?.payment
       ? Math.round(activeEnrollment.payment.amountMinorUnits / 100)
-      : 8000
+      : 0
   );
   const [paymentStatus, setPaymentStatus] = useState<string>("Partially paid");
   const [enrollmentStatus, setEnrollmentStatus] = useState<EnrollmentStatus>(
@@ -220,8 +312,50 @@ export function AdminEnrollmentsManager({
   );
   const [adminNotes, setAdminNotes] = useState<string>(
     activeEnrollment?.adminNotes ||
-      "Parent requested Tuesday/Thursday cadence. Share starter riyaz kit after enrollment activation."
+      "1-on-1 private lessons. Share starter riyaz kit after enrollment activation."
   );
+
+  // Approval & Manual Allotment Interactive Form State
+  const [allotFeeRupees, setAllotFeeRupees] = useState<number>(() => {
+    if (pendingRequests.length > 0) {
+      return Math.round(pendingRequests[0].coursePriceMinorUnits / 100);
+    }
+    return courses[0] ? Math.round(courses[0].priceMinorUnits / 100) : 24000;
+  });
+  const [allotPaidRupees, setAllotPaidRupees] = useState<number>(0);
+  const [allotTeacherId, setAllotTeacherId] = useState<string>(teachers[0]?.id || "");
+  const [allotSessions, setAllotSessions] = useState<number>(() => {
+    if (pendingRequests.length > 0) {
+      return pendingRequests[0].courseSessionCount;
+    }
+    return courses[0]?.sessionCount || 24;
+  });
+  const [allotNotes, setAllotNotes] = useState<string>("");
+  const [isManualAddOpen, setIsManualAddOpen] = useState<boolean>(false);
+  const [manualCourseId, setManualCourseId] = useState<string>(courses[0]?.id || "");
+
+  // Sync allotment fields when pending request or manual course changes
+  useEffect(() => {
+    if (pendingRequests.length > 0) {
+      const topReq = pendingRequests[0];
+      setAllotFeeRupees(Math.round(topReq.coursePriceMinorUnits / 100));
+      setAllotSessions(topReq.courseSessionCount);
+      setAllotPaidRupees(0);
+    } else if (manualCourseId) {
+      const crs = courses.find((c) => c.id === manualCourseId);
+      if (crs) {
+        setAllotFeeRupees(Math.round(crs.priceMinorUnits / 100));
+        setAllotSessions(crs.sessionCount);
+      }
+    }
+  }, [selectedStudentId, pendingRequests.length, manualCourseId]);
+
+  const handleStudentChange = (newStudentId: string) => {
+    setSelectedStudentId(newStudentId);
+    const matchingEnrs = enrollments.filter((e) => e.studentId === newStudentId);
+    setSelectedEnrollmentId(matchingEnrs[0]?.id || "");
+    setIsManualAddOpen(false);
+  };
 
   // Inline lesson scheduling & management
   const [scheduleMode, setScheduleMode] = useState<"SINGLE" | "BULK">("SINGLE");
@@ -259,10 +393,52 @@ export function AdminEnrollmentsManager({
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  // Subsequent installment recording state
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+  const [installmentAmount, setInstallmentAmount] = useState<number>(0);
+  const [installmentMethod, setInstallmentMethod] = useState<string>("UPI");
+  const [installmentRefCode, setInstallmentRefCode] = useState<string>("");
+  const [installmentNotes, setInstallmentNotes] = useState<string>("");
+  const [copiedReceiptId, setCopiedReceiptId] = useState<string | null>(null);
+
+  // Installment automatic weekly scheduling state
+  const [installmentDay, setInstallmentDay] = useState<number>(3); // Default Wednesday
+  const [installmentTime, setInstallmentTime] = useState<string>("17:00"); // Default 5:00 PM
+  const [installmentStartDate, setInstallmentStartDate] = useState<string>(() => {
+    const nextD = getNextWeekdayDate(3, "17:00");
+    const y = nextD.getFullYear();
+    const m = String(nextD.getMonth() + 1).padStart(2, "0");
+    const d = String(nextD.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  });
+  const [installmentDuration, setInstallmentDuration] = useState<number>(60);
+  const [isAutoScheduleInstallment, setIsAutoScheduleInstallment] = useState<boolean>(true);
+
+  // Allotment automatic weekly schedule modal state
+  interface PendingAllotScheduleContext {
+    type: "MANUAL_ALLOT" | "APPROVE_REQUEST";
+    request?: AdminCourseEnrollmentRequestItem;
+    courseTitle: string;
+    studentName: string;
+    studentId: string;
+    courseId: string;
+    teacherId?: string | null;
+    feeRupees: number;
+    paidRupees: number;
+    perSessionRate: number;
+    adminNotes?: string;
+  }
+  const [pendingAllotSchedule, setPendingAllotSchedule] = useState<PendingAllotScheduleContext | null>(null);
+
+  const copyReceipt = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedReceiptId(code);
+    setTimeout(() => setCopiedReceiptId(null), 2000);
+  };
+
   // Sync state when activeEnrollment changes
   useEffect(() => {
     if (activeEnrollment) {
-      setSelectedStudentId(activeEnrollment.studentId);
       setSelectedCourseId(activeEnrollment.courseId);
       if (activeEnrollment.teacherId) {
         setSelectedTeacherId(activeEnrollment.teacherId);
@@ -272,8 +448,16 @@ export function AdminEnrollmentsManager({
         Math.max(0, activeEnrollment.sessionsTotal - activeEnrollment.sessionsRemaining)
       );
       setFeeRupees(Math.round(activeEnrollment.coursePriceMinorUnits / 100));
-      if (activeEnrollment.payment) {
+      const totalPaidMinor = (activeEnrollment.payments || []).reduce(
+        (sum, p) => sum + p.amountMinorUnits,
+        0
+      );
+      if (totalPaidMinor > 0) {
+        setPaidRupees(Math.round(totalPaidMinor / 100));
+      } else if (activeEnrollment.payment) {
         setPaidRupees(Math.round(activeEnrollment.payment.amountMinorUnits / 100));
+      } else {
+        setPaidRupees(0);
       }
       setEnrollmentStatus(activeEnrollment.status);
       if (activeEnrollment.adminNotes) {
@@ -282,10 +466,136 @@ export function AdminEnrollmentsManager({
     }
   }, [activeEnrollment]);
 
-  // All courses enrolled by the selected student (for the Course Selection Switcher button!)
-  const studentEnrollments = useMemo(() => {
-    return enrollments.filter((e) => e.studentId === selectedStudentId);
-  }, [enrollments, selectedStudentId]);
+  // Derived list of all recorded payment tranches
+  const allRecordedPayments = useMemo(() => {
+    if (!activeEnrollment) return [];
+    if (activeEnrollment.payments && activeEnrollment.payments.length > 0) {
+      return activeEnrollment.payments;
+    }
+    if (activeEnrollment.payment) {
+      return [
+        {
+          id: activeEnrollment.payment.id,
+          amountMinorUnits: activeEnrollment.payment.amountMinorUnits,
+          currency: "INR",
+          gateway: "manual",
+          gatewayPaymentId: activeEnrollment.payment.gatewayPaymentId || `RCPT-INIT-${activeEnrollment.id.slice(-4)}`,
+          gatewayOrderId: null,
+          status: activeEnrollment.payment.status,
+          notes: "Initial admission payment tranche",
+          createdAt: activeEnrollment.startedAt,
+        },
+      ];
+    }
+    return [];
+  }, [activeEnrollment]);
+
+  // Record 2nd, 3rd, or subsequent payment installment
+  const handleRecordInstallment = () => {
+    if (!activeEnrollment) return;
+    if (installmentAmount <= 0) {
+      showToast("Please enter an installment payment amount greater than ₹0.", "error");
+      return;
+    }
+
+    // Calculate per-session charge and session count to schedule
+    const perSessionRate =
+      activeEnrollment.sessionsTotal > 0
+        ? Math.round(
+            (activeEnrollment.coursePriceMinorUnits / 100) / activeEnrollment.sessionsTotal
+          )
+        : 500;
+    const sessionCount = perSessionRate > 0 ? Math.floor(installmentAmount / perSessionRate) : 0;
+
+    let slotsToSchedule: Array<{ startsAt: string; durationMinutes: number }> | undefined = undefined;
+    if (isAutoScheduleInstallment && sessionCount > 0) {
+      const [hours, minutes] = installmentTime.split(":").map(Number);
+      let firstDate: Date;
+      if (installmentStartDate) {
+        const [y, m, d] = installmentStartDate.split("-").map(Number);
+        firstDate = new Date(y, m - 1, d, hours || 17, minutes || 0, 0, 0);
+      } else {
+        firstDate = getNextWeekdayDate(installmentDay, installmentTime);
+      }
+      slotsToSchedule = generateWeeklySlotsList(firstDate, sessionCount, installmentDuration).map((s) => ({
+        startsAt: s.startsAt,
+        durationMinutes: s.durationMinutes,
+      }));
+    }
+
+    startTransition(async () => {
+      const res = await adminRecordEnrollmentPaymentAction({
+        enrollmentId: activeEnrollment.id,
+        amountRupees: installmentAmount,
+        paymentMethod: installmentMethod,
+        referenceCode: installmentRefCode.trim() || undefined,
+        notes: installmentNotes.trim() || undefined,
+        slots: slotsToSchedule,
+      });
+
+      if (res.success && res.data) {
+        const newPaymentItem: EnrollmentPaymentItem = {
+          id: res.data.paymentId,
+          amountMinorUnits: Math.round(installmentAmount * 100),
+          currency: "INR",
+          gateway: installmentMethod,
+          gatewayPaymentId: res.data.receiptCode,
+          gatewayOrderId: null,
+          status: PaymentStatus.PAID,
+          notes: installmentNotes.trim() || `Installment payment tranche for ${activeEnrollment.courseTitle}`,
+          createdAt: new Date().toISOString(),
+        };
+
+        const scheduledLessons: ScheduledLessonData[] = (res.data.newLessons || []).map((l: any) => ({
+          id: l.id,
+          trackingCode: l.trackingCode || `GS-LSN-${l.id.slice(-6).toUpperCase()}`,
+          startsAt: l.startsAt,
+          durationMinutes: l.durationMinutes || 60,
+          status: l.status || "SCHEDULED",
+          teacherId: l.teacherId || null,
+          teacherName: l.teacherName || "Faculty Mentor",
+          payoutRupees: 800,
+        }));
+
+        setEnrollments((prev) =>
+          prev.map((item) =>
+            item.id === activeEnrollment.id
+              ? {
+                  ...item,
+                  payments: [...(item.payments || []), newPaymentItem],
+                  payment: newPaymentItem,
+                  lessons: [...(item.lessons || []), ...scheduledLessons],
+                }
+              : item
+          )
+        );
+
+        const newPaidTotal = res.data.totalPaidRupees;
+        setPaidRupees(newPaidTotal);
+        if (newPaidTotal >= feeRupees) {
+          setPaymentStatus("Fully paid");
+        } else {
+          setPaymentStatus("Partially paid");
+        }
+
+        const scheduledSuffix =
+          res.data.scheduledCount && res.data.scheduledCount > 0
+            ? ` & ${res.data.scheduledCount} weekly sessions scheduled!`
+            : "!";
+
+        showToast(
+          `Payment of ₹${installmentAmount.toLocaleString("en-IN")} recorded${scheduledSuffix} Receipt: ${res.data.receiptCode}`,
+          "success"
+        );
+        setIsRecordingPayment(false);
+        setInstallmentRefCode("");
+        setInstallmentNotes("");
+        router.refresh();
+      } else {
+        showToast(res.error || "Failed to record payment installment.", "error");
+      }
+    });
+  };
 
   const currentStudent = useMemo(() => {
     return (
@@ -339,41 +649,28 @@ export function AdminEnrollmentsManager({
     const base = new Date(startDate);
     if (isNaN(base.getTime())) return list;
 
+    const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const formatPreview = (d: Date) =>
+      `${DAY_NAMES[d.getDay()]}, ${String(d.getDate()).padStart(2, "0")} ${MONTH_NAMES[d.getMonth()]}`;
+
     let cur = new Date(base);
     let count = 0;
     while (count < 4 && count < totalSessions) {
       const day = cur.getDay(); // 0 = Sun, 2 = Tue, 4 = Thu
       if (recurringCadence === "TUE_THU") {
         if (day === 2 || day === 4) {
-          list.push(
-            cur.toLocaleDateString("en-GB", {
-              day: "2-digit",
-              month: "short",
-              weekday: "short",
-            })
-          );
+          list.push(formatPreview(cur));
           count++;
         }
       } else if (recurringCadence === "MON_WED_FRI") {
         if (day === 1 || day === 3 || day === 5) {
-          list.push(
-            cur.toLocaleDateString("en-GB", {
-              day: "2-digit",
-              month: "short",
-              weekday: "short",
-            })
-          );
+          list.push(formatPreview(cur));
           count++;
         }
       } else {
         // Weekly on same day
-        list.push(
-          cur.toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            weekday: "short",
-          })
-        );
+        list.push(formatPreview(cur));
         count++;
         cur.setDate(cur.getDate() + 7);
         continue;
@@ -389,6 +686,200 @@ export function AdminEnrollmentsManager({
     year: "numeric",
     timeZone: "Asia/Kolkata",
   }).format(new Date());
+
+  // ─── 0. HELPER: EXECUTE APPROVE OR ALLOT (WITH OPTIONAL SCHEDULED SLOTS) ───
+  const executeApproveOrAllot = (
+    ctx: PendingAllotScheduleContext,
+    slots?: Array<{ startsAt: string; durationMinutes: number }>
+  ) => {
+    startTransition(async () => {
+      const res = await adminApproveAndAllotCourseAction({
+        requestId: ctx.request?.id || null,
+        studentId: ctx.studentId,
+        courseId: ctx.courseId,
+        teacherId: ctx.teacherId || null,
+        sessionsRemaining: allotSessions > 0 ? allotSessions : (ctx.request?.courseSessionCount || 24),
+        feeRupees: ctx.feeRupees,
+        paidRupees: ctx.paidRupees,
+        paymentPlan: ctx.request?.paymentPlan as any,
+        adminNotes: ctx.adminNotes,
+        slots,
+      });
+
+      if (res.success && res.data) {
+        const scheduledLessonsCount = res.data.scheduledCount || 0;
+        const msgSuffix =
+          scheduledLessonsCount > 0 ? ` & ${scheduledLessonsCount} weekly sessions scheduled!` : "!";
+        showToast(
+          `Success! ${ctx.courseTitle} approved and allotted to ${ctx.studentName}${msgSuffix}`,
+          "success"
+        );
+
+        if (ctx.request) {
+          setCourseRequests((prev) =>
+            prev.map((r) => (r.id === ctx.request!.id ? { ...r, status: "APPROVED" } : r))
+          );
+        }
+
+        const teacherObj = teachers.find((t) => t.id === ctx.teacherId);
+        const initialReceipt = `RCPT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const initialPaymentItem: EnrollmentPaymentItem = {
+          id: `pmt_${res.data.enrollmentId}`,
+          amountMinorUnits: Math.round(ctx.paidRupees * 100),
+          currency: "INR",
+          gateway: "UPI",
+          gatewayPaymentId: initialReceipt,
+          gatewayOrderId: null,
+          status: PaymentStatus.PAID,
+          notes: "Initial admission payment tranche",
+          createdAt: new Date().toISOString(),
+        };
+
+        const scheduledLessons: ScheduledLessonData[] = (res.data.newLessons || []).map((l: any) => ({
+          id: l.id,
+          trackingCode: l.trackingCode || `GS-LSN-${l.id.slice(-6).toUpperCase()}`,
+          startsAt: l.startsAt,
+          durationMinutes: l.durationMinutes || 60,
+          status: l.status || "SCHEDULED",
+          teacherId: l.teacherId || null,
+          teacherName: l.teacherName || "Faculty Mentor",
+          payoutRupees: 800,
+        }));
+
+        const newEnr: EnrollmentRecord = {
+          id: res.data.enrollmentId,
+          studentId: ctx.studentId,
+          studentName: ctx.studentName,
+          studentEmail: currentStudent?.email || "",
+          studentPhone: currentStudent?.phone,
+          studentTimezone: currentStudent?.timezone || "Asia/Kolkata",
+          studentGuardianName: currentStudent?.guardianName,
+          studentAge: currentStudent?.age,
+          studentCountry: currentStudent?.country,
+          courseId: ctx.courseId,
+          courseTitle: ctx.courseTitle,
+          courseInstrument:
+            ctx.request?.courseInstrument ||
+            courses.find((c) => c.id === ctx.courseId)?.instrument ||
+            "General",
+          courseLevel:
+            ctx.request?.courseLevel ||
+            courses.find((c) => c.id === ctx.courseId)?.level ||
+            "BEGINNER",
+          courseSessionCount:
+            ctx.request?.courseSessionCount ||
+            courses.find((c) => c.id === ctx.courseId)?.sessionCount ||
+            24,
+          coursePriceMinorUnits: Math.round(ctx.feeRupees * 100),
+          courseDurationWeeks: 12,
+          teacherId: teacherObj?.id || null,
+          teacherName: teacherObj?.name || null,
+          teacherPayoutRupees: teacherObj?.payoutRupees || 800,
+          sessionsRemaining: allotSessions > 0 ? allotSessions : (ctx.request?.courseSessionCount || 24),
+          sessionsTotal:
+            ctx.request?.courseSessionCount ||
+            courses.find((c) => c.id === ctx.courseId)?.sessionCount ||
+            24,
+          status: EnrollmentStatus.ACTIVE,
+          startedAt: new Date().toISOString(),
+          adminNotes: ctx.adminNotes,
+          lessons: scheduledLessons,
+          payment: ctx.paidRupees > 0 ? initialPaymentItem : null,
+          payments: ctx.paidRupees > 0 ? [initialPaymentItem] : [],
+        };
+
+        setEnrollments((prev) => [newEnr, ...prev]);
+        setSelectedEnrollmentId(res.data.enrollmentId);
+        setIsManualAddOpen(false);
+        setPendingAllotSchedule(null);
+        router.refresh();
+      } else {
+        showToast(res.error || "Failed to allot course.", "error");
+      }
+    });
+  };
+
+  // ─── 0. APPROVE STUDENT COURSE REQUEST & ALLOT ─────────────────────
+  const handleApproveRequest = (req: AdminCourseEnrollmentRequestItem) => {
+    if (!currentStudent) return;
+    const fee = allotFeeRupees > 0 ? allotFeeRupees : Math.round(req.coursePriceMinorUnits / 100);
+    const paid = allotPaidRupees;
+    const perRate =
+      req.courseSessionCount > 0
+        ? Math.round((req.coursePriceMinorUnits / 100) / req.courseSessionCount)
+        : 500;
+
+    const ctx: PendingAllotScheduleContext = {
+      type: "APPROVE_REQUEST",
+      request: req,
+      courseTitle: req.courseTitle,
+      studentName: req.studentName,
+      studentId: req.studentId,
+      courseId: req.courseId,
+      teacherId: allotTeacherId || null,
+      feeRupees: fee,
+      paidRupees: paid,
+      perSessionRate: perRate,
+      adminNotes: allotNotes.trim() || undefined,
+    };
+
+    // If student has paid an amount, ask for schedule timing and day of week
+    if (paid > 0) {
+      setPendingAllotSchedule(ctx);
+    } else {
+      executeApproveOrAllot(ctx, undefined);
+    }
+  };
+
+  // ─── 0.B MANUAL ALLOTMENT OF CATALOG COURSE TO STUDENT ───────────────
+  const handleManualAllotCourse = () => {
+    if (!currentStudent || !manualCourseId) return;
+    const crs = courses.find((c) => c.id === manualCourseId);
+    if (!crs) return;
+
+    const fee = allotFeeRupees > 0 ? allotFeeRupees : Math.round(crs.priceMinorUnits / 100);
+    const paid = allotPaidRupees;
+    const perRate =
+      allotSessions > 0
+        ? Math.round(fee / allotSessions)
+        : crs.sessionCount > 0
+        ? Math.round((crs.priceMinorUnits / 100) / crs.sessionCount)
+        : 500;
+
+    const ctx: PendingAllotScheduleContext = {
+      type: "MANUAL_ALLOT",
+      courseTitle: crs.title,
+      studentName: currentStudent.name,
+      studentId: currentStudent.id,
+      courseId: crs.id,
+      teacherId: allotTeacherId || null,
+      feeRupees: fee,
+      paidRupees: paid,
+      perSessionRate: perRate,
+      adminNotes: allotNotes.trim() || undefined,
+    };
+
+    // If student has paid an amount, ask for schedule timing and day of week
+    if (paid > 0) {
+      setPendingAllotSchedule(ctx);
+    } else {
+      executeApproveOrAllot(ctx, undefined);
+    }
+  };
+
+  // ─── HELPER: FOCUS AND ALLOT INCOMING COURSE REQUEST ─────────────────
+  const handleSelectRequestToAllot = (req: AdminCourseEnrollmentRequestItem) => {
+    setSelectedStudentId(req.studentId);
+    setViewMode("PLANNER");
+    setAllotFeeRupees(Math.round(req.coursePriceMinorUnits / 100));
+    setAllotPaidRupees(0);
+    setTimeout(() => {
+      const el = document.getElementById(`pending-course-request-${req.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+  };
 
   // ─── 1. SAVE COMPREHENSIVE ENROLLMENT PLAN ────────────────────────────
   const handleSaveEnrollment = (isDraft: boolean = false) => {
@@ -652,7 +1143,7 @@ export function AdminEnrollmentsManager({
           {/* IST Timezone Pill */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-neutral-200/90 text-[11px] font-medium shadow-2xs">
             <Globe className="w-3.5 h-3.5 text-primary/70" />
-            <span>IST · {formattedIstDate}</span>
+            <span suppressHydrationWarning>IST · {formattedIstDate}</span>
           </div>
         </div>
       </div>
@@ -775,7 +1266,34 @@ export function AdminEnrollmentsManager({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 font-numeric">
-                {enrollments.map((enr) => (
+                {enrollments.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-4 text-center">
+                      <div className="max-w-md mx-auto space-y-3">
+                        <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-200 text-[#3C096C] flex items-center justify-center mx-auto shadow-2xs">
+                          <GraduationCap className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-heading">
+                            No Converted Trial Student Enrollments
+                          </h4>
+                          <p className="text-xs text-body/70 mt-1 leading-relaxed">
+                            Only students converted by admin through the Trial Bookings CRM portal appear in this section.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/admin/trials")}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2D0752] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        >
+                          <span>Open Trial Bookings CRM</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  enrollments.map((enr) => (
                   <tr key={enr.id} className="hover:bg-neutral-50/50 transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="font-bold text-heading">{enr.studentName}</div>
@@ -821,7 +1339,7 @@ export function AdminEnrollmentsManager({
                       </button>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
@@ -831,107 +1349,487 @@ export function AdminEnrollmentsManager({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* ─── LEFT COLUMN: 4 NUMBERED SECTIONS (8 COLS / ~66%) ───────── */}
           <div className="lg:col-span-8 space-y-5">
-            {/* ─── SECTION 1: STUDENT & COURSE ─────────────────────────── */}
+            {/* ─── SECTION 1: STUDENT & COURSE ENROLLMENT ───────────────── */}
             <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
-              <div>
-                <h2 className="font-serif text-lg font-bold text-heading">
-                  1 · Student & course
-                </h2>
-                <p className="text-xs text-body/60 mt-0.5">
-                  Search existing records or continue from trial context
-                </p>
-              </div>
-
-              {/* Student selector and course catalog dropdowns */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-heading block mb-1">
-                    Student
-                  </label>
-                  <select
-                    value={selectedStudentId}
-                    onChange={(e) => setSelectedStudentId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
-                  >
-                    {students.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} · STU-{s.id.slice(-4)}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-body/50 mt-1">
-                    {linkedTrialId ? `Created from trial lead TRL-${linkedTrialId.slice(-6)}` : "Verified student account"}
+              {/* Header with Title on Left & Compact Request Pill + Actions on Right */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-1 border-b border-neutral-100/80">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-serif text-lg font-bold text-heading">
+                      1 · Student & course enrollment
+                    </h2>
+                    {allPendingCourseRequests.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-[#3C096C] border border-purple-200/80 font-numeric shrink-0">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        <span>{allPendingCourseRequests.length} {allPendingCourseRequests.length === 1 ? "Request" : "Requests"}</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-body/60 mt-0.5">
+                    Review student admission requests, confirm tuition ledger, and allot accredited faculty
                   </p>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-heading block mb-1">
-                    Controlled course catalog
-                  </label>
-                  <select
-                    value={selectedCourseId}
-                    onChange={(e) => {
-                      setSelectedCourseId(e.target.value);
-                      const crs = courses.find((c) => c.id === e.target.value);
-                      if (crs) {
-                        setTotalSessions(crs.sessionCount);
-                        setFeeRupees(Math.round(crs.priceMinorUnits / 100));
-                      }
-                    }}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading font-medium focus:outline-none focus:border-[#3C096C]"
+                {/* Right Side: Compact Request Pill & Manual Allotment Toggle */}
+                <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto shrink-0">
+                  {allPendingCourseRequests.map((req) => {
+                    const isSelected = selectedStudentId === req.studentId;
+                    const feeFormatted = `₹${Math.round(req.coursePriceMinorUnits / 100).toLocaleString("en-IN")}`;
+                    const perClass = Math.round(
+                      req.coursePriceMinorUnits / (req.courseSessionCount > 0 ? req.courseSessionCount : 24) / 100
+                    );
+
+                    return (
+                      <button
+                        key={req.id}
+                        type="button"
+                        onClick={() => handleSelectRequestToAllot(req)}
+                        title={`Requested: ${req.courseTitle} (₹${perClass}/session)`}
+                        className={`group inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs transition-all shadow-2xs active:scale-[0.98] cursor-pointer ${
+                          isSelected
+                            ? "bg-purple-50/90 border-[#3C096C] ring-2 ring-[#3C096C]/15"
+                            : "bg-white hover:bg-neutral-50 border-purple-200/80 hover:border-[#3C096C]/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#3C096C] animate-pulse shrink-0" />
+                          <span className="font-bold text-heading text-xs truncate max-w-[100px] sm:max-w-[130px]">
+                            {req.studentName}
+                          </span>
+                          <span className="text-[10px] font-bold font-numeric text-[#3C096C] bg-purple-100/70 px-1.5 py-0.2 rounded shrink-0">
+                            {feeFormatted}
+                          </span>
+                        </div>
+
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-tight transition-all shrink-0 ${
+                            isSelected
+                              ? "bg-[#3C096C] text-white shadow-2xs"
+                              : "bg-purple-100 text-[#3C096C] group-hover:bg-[#3C096C] group-hover:text-white"
+                          }`}
+                        >
+                          {isSelected ? "Reviewing" : "Review"}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  {/* Quick Add / Manual Allotment Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsManualAddOpen(!isManualAddOpen)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer ${
+                      isManualAddOpen
+                        ? "bg-purple-100 text-[#3C096C] border border-purple-300"
+                        : "bg-white hover:bg-neutral-50 text-[#3C096C] border border-purple-200"
+                    }`}
                   >
-                    {courses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title} · {c.level}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-body/50 mt-1">
-                    Course CRSE-{currentCourse?.id.slice(-6)} · {currentCourse?.sessionCount || 24} sessions
-                  </p>
+                    <Plus className="w-3.5 h-3.5 text-[#3C096C]" />
+                    <span>{isManualAddOpen ? "Hide" : "Allot Manually"}</span>
+                  </button>
                 </div>
               </div>
 
-              {/* ─── COURSE SELECTION SWITCHER BUTTON (REQUESTED SPECIFICATION) ─── */}
+              {/* Student Selector Card */}
+              <div className="p-4 rounded-2xl bg-neutral-50/80 border border-neutral-200/90 space-y-2.5 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-heading flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-[#3C096C]" />
+                      <span>Student (Converted &amp; Enrolled Roster)</span>
+                    </label>
+                    <p className="text-[11px] text-body-muted mt-0.5">
+                      Search or select student to review admission requests, allot courses, and manage timetables.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-semibold text-purple-900 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200/70 self-start sm:self-auto font-numeric">
+                    {students.length} Converted Students
+                  </span>
+                </div>
+
+                {students.length > 0 ? (
+                  <SearchableStudentSelector
+                    students={students}
+                    selectedStudentId={selectedStudentId}
+                    onSelectStudent={handleStudentChange}
+                    enrollments={enrollments}
+                    courseRequests={courseRequests}
+                  />
+                ) : (
+                  <div className="p-3.5 rounded-xl bg-purple-50/80 border border-purple-200/80 text-xs text-purple-900 space-y-1.5">
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-[#3C096C]" />
+                      <span>No Converted Trial Students Yet</span>
+                    </div>
+                    <p className="text-[11px] text-purple-700 leading-snug">
+                      Only students converted by admin through the Trial Bookings CRM portal appear in this list.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/admin/trials")}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#3C096C] hover:bg-[#2D0752] text-white text-[11px] font-bold shadow-2xs transition-all cursor-pointer"
+                    >
+                      <span>Go to Trial CRM to Convert Leads</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* ─── ACTIVE ENROLLED COURSES LIST (IF ANY) ─── */}
               {studentEnrollments.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-purple-50/50 border border-purple-100 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-heading flex items-center gap-1.5">
-                      <BookOpen className="w-3.5 h-3.5 text-[#3C096C]" />
-                      <span>Courses bought by {currentStudent?.name}:</span>
-                    </span>
+                <div className="p-4 rounded-xl bg-purple-50/40 border border-purple-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-[#3C096C]" />
+                      <span className="font-semibold text-xs text-heading">
+                        Active Courses Allotted to {currentStudent?.name}:
+                      </span>
+                    </div>
                     <span className="text-[11px] text-body/60">
-                      Click to switch course timetable
+                      Click to switch course timetable below
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {studentEnrollments.map((enr) => {
                       const isThisActive = enr.id === activeEnrollment?.id;
+                      const paidAmount = enr.payment ? Math.round(enr.payment.amountMinorUnits / 100) : 0;
+                      const totalFee = Math.round(enr.coursePriceMinorUnits / 100);
+                      const dueAmount = Math.max(0, totalFee - paidAmount);
+
                       return (
-                        <button
+                        <div
                           key={enr.id}
-                          type="button"
                           onClick={() => setSelectedEnrollmentId(enr.id)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                          className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-2.5 ${
                             isThisActive
-                              ? "bg-[#3C096C] text-white shadow-xs"
-                              : "bg-white hover:bg-neutral-100 text-heading border border-purple-200"
+                              ? "bg-white border-[#3C096C] shadow-xs ring-1 ring-[#3C096C]/20"
+                              : "bg-white/70 hover:bg-white border-neutral-200 hover:border-purple-200"
                           }`}
                         >
-                          <span>{enr.courseTitle}</span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-numeric ${
-                              isThisActive
-                                ? "bg-white/20 text-white"
-                                : "bg-purple-100 text-[#3C096C]"
-                            }`}
-                          >
-                            {enr.lessons.length} sessions
-                          </span>
-                        </button>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-xs text-heading line-clamp-1">
+                                {enr.courseTitle}
+                              </div>
+                              <div className="text-[11px] text-body/60 mt-0.5">
+                                {enr.courseInstrument} · {enr.courseLevel} · {enr.courseSessionCount} sessions
+                              </div>
+                            </div>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                                isThisActive
+                                  ? "bg-[#3C096C] text-white"
+                                  : "bg-purple-100 text-[#3C096C]"
+                              }`}
+                            >
+                              {isThisActive ? "Active in Planner" : "Select"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] font-numeric pt-1.5 border-t border-neutral-100">
+                            <span className="text-body/70">
+                              Mentor: <strong className="text-heading font-medium">{enr.teacherName || "Unassigned"}</strong>
+                            </span>
+                            <div className="flex items-center gap-1.5 font-bold">
+                              {dueAmount === 0 ? (
+                                <span className="text-emerald-700">✓ Fully Paid</span>
+                              ) : (
+                                <span className="text-amber-800">Paid: ₹{paidAmount.toLocaleString("en-IN")} · Due: ₹{dueAmount.toLocaleString("en-IN")}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* ─── PENDING COURSE REQUEST REVIEW & APPROVAL ─── */}
+              {pendingRequests.length > 0 && (
+                <div className="space-y-4">
+                  {pendingRequests.map((req) => {
+                    const reqFeeRupees = allotFeeRupees > 0 ? allotFeeRupees : Math.round(req.coursePriceMinorUnits / 100);
+                    const remainingCalc = Math.max(0, reqFeeRupees - allotPaidRupees);
+
+                    return (
+                      <div
+                        key={req.id}
+                        id={`pending-course-request-${req.id}`}
+                        className="p-5 rounded-2xl bg-gradient-to-br from-purple-50/70 via-purple-50/30 to-white border-2 border-purple-300 shadow-xs space-y-4"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-100 pb-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-[#3C096C] text-white flex items-center justify-center font-bold text-xs shadow-2xs">
+                              <BookOpen className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-serif text-sm font-bold text-heading">
+                                Course Admission Request from {req.studentName}
+                              </div>
+                              <div className="text-[11px] text-body/70 mt-0.5">
+                                Submitted via student catalog · Awaiting admin fee confirmation & faculty allotment
+                              </div>
+                            </div>
+                          </div>
+
+                          <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold self-start sm:self-auto flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            <span>Action Required: Approve Course</span>
+                          </span>
+                        </div>
+
+                        {/* Course Overview Pills */}
+                        <div className="p-3.5 rounded-xl bg-white border border-purple-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+                          <div>
+                            <div className="font-bold text-sm text-heading">{req.courseTitle}</div>
+                            <div className="text-[11px] text-body/70 mt-0.5">
+                              {req.courseDiscipline} · Focus: {req.courseInstrument} · {req.courseLevel} · {req.courseSessionCount} Sessions
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap font-numeric">
+                            <span className="px-2.5 py-1 rounded-lg bg-neutral-100 text-heading font-semibold text-xs">
+                              Full Course Tuition
+                            </span>
+                            <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-[#3C096C] font-bold text-xs border border-purple-200">
+                              Catalog Fee: ₹{Math.round(req.coursePriceMinorUnits / 100).toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        </div>
+
+                        {req.preferredSchedule && (
+                          <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 text-xs text-body flex items-start gap-2">
+                            <CalendarClock className="w-4 h-4 text-[#3C096C] shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="text-heading font-semibold">Student Schedule Preference: </strong>
+                              <span>{req.preferredSchedule}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {req.studentNotes && (
+                          <div className="p-3 rounded-xl bg-white border border-neutral-200 text-xs text-body">
+                            <strong className="text-heading font-semibold">Note from student: </strong>
+                            {req.studentNotes}
+                          </div>
+                        )}
+
+                        {/* Live Financial Update & Mentor Allotment Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 font-numeric">
+                          {/* 1. Course Fee Input */}
+                          <div>
+                            <label className="text-[11px] font-semibold text-heading block mb-1">
+                              Total Course Fee (₹)
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-body">₹</span>
+                              <input
+                                type="number"
+                                value={allotFeeRupees}
+                                onChange={(e) => setAllotFeeRupees(Number(e.target.value))}
+                                className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                              />
+                            </div>
+                          </div>
+
+                          {/* 2. Amount Paid Input */}
+                          <div>
+                            <label className="text-[11px] font-semibold text-heading block mb-1">
+                              Amount Paid Now (₹)
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700">₹</span>
+                              <input
+                                type="number"
+                                value={allotPaidRupees}
+                                onChange={(e) => setAllotPaidRupees(Number(e.target.value))}
+                                className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-emerald-700 focus:outline-none focus:border-[#3C096C]"
+                              />
+                            </div>
+                          </div>
+
+                          {/* 3. Live Calculated Remaining Amount */}
+                          <div>
+                            <label className="text-[11px] font-semibold text-heading block mb-1">
+                              Remaining Balance (₹)
+                            </label>
+                            <div
+                              className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-between ${
+                                remainingCalc === 0
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                                  : "bg-amber-50 border-amber-200 text-amber-900"
+                              }`}
+                            >
+                              <span>₹{remainingCalc.toLocaleString("en-IN")}</span>
+                              <span className="text-[10px] font-medium">
+                                {remainingCalc === 0 ? "Fully Paid" : "Due"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 4. Assign Faculty Mentor */}
+                          <div>
+                            <SearchableFacultySelector
+                              teachers={teachers}
+                              selectedTeacherId={allotTeacherId}
+                              onSelectTeacher={setAllotTeacherId}
+                              targetInstrument={req.courseInstrument}
+                              label="Assign Faculty Mentor"
+                              compact={true}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Admin Approval Notes & Action Row */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                          <div className="flex-1">
+                            <input
+                              type="text"
+                              value={allotNotes}
+                              onChange={(e) => setAllotNotes(e.target.value)}
+                              placeholder="Admin approval notes or payment receipt details (optional)..."
+                              className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleApproveRequest(req)}
+                            disabled={isPending}
+                            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#3C096C] hover:bg-[#2D0752] text-white text-xs font-bold shadow-xs active:scale-95 disabled:opacity-50 transition-all cursor-pointer shrink-0"
+                          >
+                            {isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-white" />
+                            ) : (
+                              <CheckCircle2 className="w-4 h-4 text-white" />
+                            )}
+                            <span>Approve & Add Course</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ─── MANUAL ALLOTMENT FORM (WHEN TOGGLED OR NO ENROLLMENT & NO REQUEST) ─── */}
+              {(isManualAddOpen || (studentEnrollments.length === 0 && pendingRequests.length === 0)) && (
+                <div className="p-5 rounded-2xl bg-neutral-50/80 border border-neutral-300/80 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-serif text-sm font-bold text-heading">
+                        Allot Course to {currentStudent?.name} Manually
+                      </h3>
+                      <p className="text-[11px] text-body/70 mt-0.5">
+                        Select a course from the curriculum catalog, record initial payment, and assign faculty
+                      </p>
+                    </div>
+                    {studentEnrollments.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsManualAddOpen(false)}
+                        className="text-xs text-body hover:text-heading cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <SearchableCourseSelector
+                      courses={courses}
+                      selectedCourseId={manualCourseId}
+                      onSelectCourse={setManualCourseId}
+                      label="Select Course from Catalog *"
+                    />
+
+                    <SearchableFacultySelector
+                      teachers={teachers}
+                      selectedTeacherId={allotTeacherId}
+                      onSelectTeacher={setAllotTeacherId}
+                      targetInstrument={courses.find((c) => c.id === manualCourseId)?.instrument}
+                      label="Assign Faculty Mentor"
+                    />
+                  </div>
+
+                  {/* Financial Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 font-numeric">
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Total Course Fee (₹)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-body">₹</span>
+                        <input
+                          type="number"
+                          value={allotFeeRupees}
+                          onChange={(e) => setAllotFeeRupees(Number(e.target.value))}
+                          className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Amount Paid (₹)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700">₹</span>
+                        <input
+                          type="number"
+                          value={allotPaidRupees}
+                          onChange={(e) => setAllotPaidRupees(Number(e.target.value))}
+                          className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-emerald-700 focus:outline-none focus:border-[#3C096C]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Remaining Due (₹)
+                      </label>
+                      <div
+                        className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-between ${
+                          Math.max(0, allotFeeRupees - allotPaidRupees) === 0
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                            : "bg-amber-50 border-amber-200 text-amber-900"
+                        }`}
+                      >
+                        <span>₹{Math.max(0, allotFeeRupees - allotPaidRupees).toLocaleString("en-IN")}</span>
+                        <span className="text-[10px] font-medium">
+                          {Math.max(0, allotFeeRupees - allotPaidRupees) === 0 ? "Fully Paid" : "Due"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={allotNotes}
+                        onChange={(e) => setAllotNotes(e.target.value)}
+                        placeholder="Admin allotment notes (e.g., student opted via phone)..."
+                        className="w-full px-3.5 py-2 rounded-xl border border-neutral-300 bg-white text-xs text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleManualAllotCourse}
+                      disabled={isPending}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#3C096C] hover:bg-[#2D0752] text-white text-xs font-bold shadow-xs active:scale-95 disabled:opacity-50 transition-all cursor-pointer shrink-0"
+                    >
+                      {isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      ) : (
+                        <Check className="w-4 h-4 text-white" />
+                      )}
+                      <span>Approve & Allot Course</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -952,22 +1850,38 @@ export function AdminEnrollmentsManager({
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-body/60 font-medium">Trial teacher</div>
+                  <div className="text-[11px] text-body/60 font-medium">Active courses</div>
                   <div className="font-bold text-heading mt-0.5">
-                    {currentTeacher?.name || "Mira Sen"}
+                    {studentEnrollments.length} enrolled
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-body/60 font-medium">Trial outcome</div>
+                  <div className="text-[11px] text-body/60 font-medium">Trial lead status</div>
                   <div className="font-bold text-heading mt-0.5">
-                    Qualified · {formattedIstDate}
+                    Qualified & Converted
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* ─── SECTION 2: SESSION PLAN & 1-ON-1 TIMETABLE ──────────── */}
-            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-5">
+            {!activeEnrollment ? (
+              <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-8 sm:p-12 text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-purple-50 border border-purple-200 text-[#3C096C] flex items-center justify-center mx-auto shadow-2xs">
+                  <BookOpen className="w-7 h-7 text-[#3C096C]" />
+                </div>
+                <div className="space-y-1.5 max-w-lg mx-auto">
+                  <h3 className="font-serif text-lg font-bold text-heading">
+                    Awaiting Course Allotment for {currentStudent?.name || "Student"}
+                  </h3>
+                  <p className="text-xs text-body/70 leading-relaxed">
+                    This student does not currently have an active course allotted. Review the pending course admission request above or use <strong>Allot Course Manually</strong> to allocate a course, update fee & payments, and generate the 1-on-1 timetable.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* ─── SECTION 2: SESSION PLAN & 1-ON-1 TIMETABLE ──────────── */}
+                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="font-serif text-lg font-bold text-heading">
@@ -1027,26 +1941,21 @@ export function AdminEnrollmentsManager({
 
                 {/* Teacher Selection Control & Button */}
                 <div className="flex items-center gap-2.5 flex-wrap self-start md:self-auto">
-                  <div className="relative">
-                    <select
-                      value={selectedTeacherId}
-                      onChange={(e) => {
-                        const newTid = e.target.value;
+                  <div className="w-56 sm:w-64">
+                    <SearchableFacultySelector
+                      teachers={teachers}
+                      selectedTeacherId={selectedTeacherId}
+                      onSelectTeacher={(newTid) => {
                         setSelectedTeacherId(newTid);
                         const tObj = teachers.find((t) => t.id === newTid);
                         if (tObj) {
                           showToast(`Selected ${tObj.name} for this session plan.`, "success");
                         }
                       }}
-                      className="px-3.5 py-2.5 pr-8 rounded-xl border border-purple-300 bg-white text-xs font-bold text-heading shadow-2xs focus:outline-none focus:border-[#3C096C] cursor-pointer appearance-none hover:border-[#3C096C] transition-colors"
-                    >
-                      {teachers.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} · {t.instruments[0] || "Faculty"} (₹{t.payoutRupees})
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-3.5 h-3.5 text-body/60 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      targetInstrument={currentCourse?.instrument}
+                      label=""
+                      compact={true}
+                    />
                   </div>
 
                   <button
@@ -1169,6 +2078,7 @@ export function AdminEnrollmentsManager({
                 {generatedPreviewDates.map((dateStr, idx) => (
                   <div
                     key={idx}
+                    suppressHydrationWarning
                     className="px-3 py-1.5 rounded-xl border border-neutral-200 bg-neutral-50/80 text-heading font-semibold shadow-2xs"
                   >
                     {dateStr}
@@ -1354,9 +2264,37 @@ export function AdminEnrollmentsManager({
                   <h3 className="font-serif text-sm font-bold text-heading">
                     Scheduled 1-on-1 Sessions for {currentCourse?.title}
                   </h3>
-                  <span className="text-[11px] font-numeric text-body/60">
-                    {activeEnrollment?.lessons.length || 0} scheduled classes
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 p-0.5 rounded-lg bg-neutral-100 text-[11px] font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setSessionSortOrder("LATEST_FIRST")}
+                        className={`px-2 py-0.5 rounded-md transition-all active:scale-95 ${
+                          sessionSortOrder === "LATEST_FIRST"
+                            ? "bg-white text-heading shadow-2xs font-bold"
+                            : "text-body/60 hover:text-heading"
+                        }`}
+                        title="Show latest scheduled session first"
+                      >
+                        Latest First
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSessionSortOrder("CHRONOLOGICAL")}
+                        className={`px-2 py-0.5 rounded-md transition-all active:scale-95 ${
+                          sessionSortOrder === "CHRONOLOGICAL"
+                            ? "bg-white text-heading shadow-2xs font-bold"
+                            : "text-body/60 hover:text-heading"
+                        }`}
+                        title="Show earliest session first"
+                      >
+                        Chronological
+                      </button>
+                    </div>
+                    <span className="text-[11px] font-numeric text-body/60">
+                      {activeEnrollment?.lessons.length || 0} scheduled classes
+                    </span>
+                  </div>
                 </div>
 
                 <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white shadow-2xs">
@@ -1381,7 +2319,14 @@ export function AdminEnrollmentsManager({
                             </td>
                           </tr>
                         ) : (
-                          activeEnrollment.lessons.map((lesson, idx) => {
+                          [...(activeEnrollment.lessons || [])]
+                            .sort((a, b) => {
+                              if (sessionSortOrder === "LATEST_FIRST") {
+                                return new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime();
+                              }
+                              return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+                            })
+                            .map((lesson, idx) => {
                             const isRescheduling = reschedulingLessonId === lesson.id;
                             const lDate = new Date(lesson.startsAt);
 
@@ -1462,18 +2407,17 @@ export function AdminEnrollmentsManager({
 
                                  <td className="py-3 px-3.5">
                                   {reassigningLessonId === lesson.id ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <select
-                                        value={reassignTeacherId || lesson.teacherId || selectedTeacherId}
-                                        onChange={(e) => setReassignTeacherId(e.target.value)}
-                                        className="text-[11px] border border-neutral-300 rounded px-1.5 py-1 bg-white font-sans focus:outline-none focus:border-[#3C096C]"
-                                      >
-                                        {teachers.map((t) => (
-                                          <option key={t.id} value={t.id}>
-                                            {t.name} (₹{t.payoutRupees})
-                                          </option>
-                                        ))}
-                                      </select>
+                                    <div className="flex items-center gap-1.5 min-w-[220px]">
+                                      <div className="flex-1">
+                                        <SearchableFacultySelector
+                                          teachers={teachers}
+                                          selectedTeacherId={reassignTeacherId || lesson.teacherId || selectedTeacherId}
+                                          onSelectTeacher={setReassignTeacherId}
+                                          targetInstrument={currentCourse?.instrument}
+                                          label=""
+                                          compact={true}
+                                        />
+                                      </div>
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -1482,14 +2426,14 @@ export function AdminEnrollmentsManager({
                                             reassignTeacherId || selectedTeacherId
                                           )
                                         }
-                                        className="px-2 py-1 rounded bg-[#3C096C] text-white font-bold text-[10px] cursor-pointer"
+                                        className="px-2.5 py-1.5 rounded-lg bg-[#3C096C] text-white font-bold text-[10px] cursor-pointer shadow-2xs hover:bg-[#2D0752]"
                                       >
                                         Save
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setReassigningLessonId(null)}
-                                        className="text-[10px] text-body hover:text-heading cursor-pointer"
+                                        className="text-[10px] text-body hover:text-heading cursor-pointer p-1"
                                       >
                                         Cancel
                                       </button>
@@ -1572,13 +2516,286 @@ export function AdminEnrollmentsManager({
             </div>
 
             {/* ─── SECTION 3: FEES, PAYMENTS & NOTES ───────────────────── */}
-            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
-              <div>
-                <h2 className="font-serif text-lg font-bold text-heading">
-                  3 · Fees, payments & notes
-                </h2>
-                <p className="text-xs text-body/60 mt-0.5">INR-only enrollment ledger</p>
+            <div id="section-3-fees" className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-serif text-lg font-bold text-heading">
+                      3 · Fees, payments &amp; notes
+                    </h2>
+                    <span className="text-[10px] font-bold font-numeric px-2 py-0.5 rounded-full bg-purple-50 text-[#3C096C] border border-purple-200/70">
+                      INR Tuition Ledger
+                    </span>
+                  </div>
+                  <p className="text-xs text-body/60 mt-0.5">
+                    Multi-tranche installment recording, automated payment history &amp; admin ledger
+                  </p>
+                </div>
+
+                {/* Apple-style Record Next Installment CTA */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInstallmentAmount(amountDueRupees > 0 ? amountDueRupees : 5000);
+                    setIsRecordingPayment(!isRecordingPayment);
+                  }}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-[0.98] cursor-pointer ${
+                    isRecordingPayment
+                      ? "bg-purple-100 text-[#3C096C] border border-purple-300"
+                      : "bg-[#3C096C] hover:bg-[#2F0755] text-white"
+                  }`}
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>
+                    {isRecordingPayment
+                      ? "Hide Payment Drawer"
+                      : "+ Record Payment Installment (2nd, 3rd...)"}
+                  </span>
+                </button>
               </div>
+
+              {/* ─── APPLE-DESIGN SUBSEQUENT PAYMENT DRAWER ─── */}
+              {isRecordingPayment && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-purple-50/70 via-purple-50/30 to-white border border-purple-200/90 shadow-2xs space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-[#3C096C] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                        <Receipt className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-serif text-sm font-bold text-heading">
+                          Record Payment Installment (Tranche #{allRecordedPayments.length + 1})
+                        </h4>
+                        <p className="text-[11px] text-body/60 mt-0.2">
+                          Issue real receipt &amp; update enrollment ledger for {currentStudent?.name || "Student"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsRecordingPayment(false)}
+                      className="p-1.5 rounded-lg text-body/60 hover:text-heading hover:bg-neutral-100 transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Balance contextual chips */}
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="text-[11px] text-body/70 font-medium">Quick Amount Presets:</span>
+                    {amountDueRupees > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInstallmentAmount(amountDueRupees)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 text-[11px] font-bold font-numeric transition-all cursor-pointer"
+                      >
+                        Pay Full Due (₹{amountDueRupees.toLocaleString("en-IN")})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setInstallmentAmount(2500)}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-neutral-50 border border-neutral-200 text-heading text-[11px] font-bold font-numeric transition-all cursor-pointer"
+                    >
+                      ₹2,500
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstallmentAmount(5000)}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-neutral-50 border border-neutral-200 text-heading text-[11px] font-bold font-numeric transition-all cursor-pointer"
+                    >
+                      ₹5,000
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstallmentAmount(10000)}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-neutral-50 border border-neutral-200 text-heading text-[11px] font-bold font-numeric transition-all cursor-pointer"
+                    >
+                      ₹10,000
+                    </button>
+                  </div>
+
+                  {/* Form fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 font-numeric">
+                    {/* 1. Amount */}
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Installment Amount (₹) *
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700">₹</span>
+                        <input
+                          type="number"
+                          value={installmentAmount || ""}
+                          onChange={(e) => setInstallmentAmount(Number(e.target.value))}
+                          placeholder="e.g. 5000"
+                          min="1"
+                          className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-emerald-700 focus:outline-none focus:border-[#3C096C]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 2. Payment Method */}
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Payment Method
+                      </label>
+                      <select
+                        value={installmentMethod}
+                        onChange={(e) => setInstallmentMethod(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-semibold text-heading focus:outline-none focus:border-[#3C096C]"
+                      >
+                        <option value="UPI">UPI (GPay / PhonePe / Paytm / BHIM)</option>
+                        <option value="BANK_TRANSFER">Bank Transfer (NEFT / RTGS / IMPS)</option>
+                        <option value="CARD">Credit / Debit Card</option>
+                        <option value="CASH">Cash (Front Desk / Campus)</option>
+                        <option value="CHEQUE">Cheque / Demand Draft</option>
+                      </select>
+                    </div>
+
+                    {/* 3. Reference / Receipt Code */}
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Reference / UTR / Receipt ID
+                      </label>
+                      <input
+                        type="text"
+                        value={installmentRefCode}
+                        onChange={(e) => setInstallmentRefCode(e.target.value)}
+                        placeholder="Auto-generated if blank"
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-medium text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                      />
+                    </div>
+
+                    {/* 4. Notes / Memo */}
+                    <div>
+                      <label className="text-[11px] font-semibold text-heading block mb-1">
+                        Tranche Memo / Description
+                      </label>
+                      <input
+                        type="text"
+                        value={installmentNotes}
+                        onChange={(e) => setInstallmentNotes(e.target.value)}
+                        placeholder={`e.g. Tranche #${allRecordedPayments.length + 1} installment`}
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-medium text-heading placeholder:text-body/40 focus:outline-none focus:border-[#3C096C]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Automated Weekly Session Scheduling (1 session / week) */}
+                  {installmentAmount > 0 && activeEnrollment && (
+                    <div className="pt-3 border-t border-purple-200/70 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CalendarClock className="w-4 h-4 text-[#3C096C]" />
+                          <h5 className="font-semibold text-xs text-heading">
+                            Automated Weekly Session Scheduling (1 Session / Week)
+                          </h5>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-[#3C096C] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isAutoScheduleInstallment}
+                            onChange={(e) => setIsAutoScheduleInstallment(e.target.checked)}
+                            className="w-4 h-4 text-[#3C096C] rounded border-neutral-300 focus:ring-[#3C096C] cursor-pointer"
+                          />
+                          <span>Schedule with this installment</span>
+                        </label>
+                      </div>
+
+                      {isAutoScheduleInstallment && (
+                        <div className="p-3.5 rounded-xl bg-white/80 border border-purple-100">
+                          <WeeklySchedulePicker
+                            selectedDay={installmentDay}
+                            onChangeDay={setInstallmentDay}
+                            selectedTime={installmentTime}
+                            onChangeTime={setInstallmentTime}
+                            startDate={installmentStartDate}
+                            onChangeStartDate={setInstallmentStartDate}
+                            durationMinutes={installmentDuration}
+                            onChangeDuration={setInstallmentDuration}
+                            amountPaid={installmentAmount}
+                            perSessionRate={
+                              activeEnrollment.sessionsTotal > 0
+                                ? Math.round(
+                                    (activeEnrollment.coursePriceMinorUnits / 100) /
+                                      activeEnrollment.sessionsTotal
+                                  )
+                                : 500
+                            }
+                            sessionCount={
+                              activeEnrollment.sessionsTotal > 0
+                                ? Math.max(
+                                    1,
+                                    Math.floor(
+                                      installmentAmount /
+                                        Math.round(
+                                          (activeEnrollment.coursePriceMinorUnits / 100) /
+                                            activeEnrollment.sessionsTotal
+                                        )
+                                    )
+                                  )
+                                : Math.max(1, Math.floor(installmentAmount / 500))
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-purple-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsRecordingPayment(false)}
+                      className="px-3.5 py-1.5 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-body text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRecordInstallment}
+                      disabled={isPending || installmentAmount <= 0}
+                      className="px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-[0.98] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        Confirm &amp; Record Tranche (₹{installmentAmount.toLocaleString("en-IN")})
+                        {isAutoScheduleInstallment &&
+                        installmentAmount > 0 &&
+                        activeEnrollment &&
+                        (activeEnrollment.sessionsTotal > 0
+                          ? Math.floor(
+                              installmentAmount /
+                                Math.round(
+                                  (activeEnrollment.coursePriceMinorUnits / 100) /
+                                    activeEnrollment.sessionsTotal
+                                )
+                            )
+                          : Math.floor(installmentAmount / 500)) > 0
+                          ? ` + Schedule ${
+                              activeEnrollment.sessionsTotal > 0
+                                ? Math.floor(
+                                    installmentAmount /
+                                      Math.round(
+                                        (activeEnrollment.coursePriceMinorUnits / 100) /
+                                          activeEnrollment.sessionsTotal
+                                      )
+                                  )
+                                : Math.floor(installmentAmount / 500)
+                            } Sessions`
+                          : ""}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 3 Ledger Numbers */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-numeric">
@@ -1597,32 +2814,53 @@ export function AdminEnrollmentsManager({
                       className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
                     />
                   </div>
+                  <span className="text-[10px] text-body/50 mt-1 block">
+                    Curriculum total tuition fee
+                  </span>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-heading block mb-1">
-                    Successful payments
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-heading">
+                      Successful payments
+                    </label>
+                    <span className="text-[10px] font-bold text-[#3C096C] bg-purple-50 px-1.5 py-0.2 rounded">
+                      {allRecordedPayments.length} {allRecordedPayments.length === 1 ? "tranche" : "tranches"}
+                    </span>
+                  </div>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-body">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-700">
                       ₹
                     </span>
                     <input
                       type="number"
                       value={paidRupees}
                       onChange={(e) => setPaidRupees(Number(e.target.value))}
-                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-heading focus:outline-none focus:border-[#3C096C]"
+                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-neutral-300 bg-white text-xs font-bold text-emerald-700 focus:outline-none focus:border-[#3C096C]"
                     />
                   </div>
-                  <span className="text-[10px] text-body/50 mt-1 block">
-                    Receipt RCPT-2026-8934
+                  <span className="text-[10px] text-body/50 mt-1 block truncate">
+                    {allRecordedPayments[allRecordedPayments.length - 1]?.gatewayPaymentId
+                      ? `Latest Receipt: ${allRecordedPayments[allRecordedPayments.length - 1]?.gatewayPaymentId}`
+                      : "Initial admission payment"}
                   </span>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-heading block mb-1">
-                    Calculated amount due
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-heading">
+                      Calculated amount due
+                    </label>
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                        amountDueRupees === 0
+                          ? "bg-emerald-50 text-emerald-800"
+                          : "bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {amountDueRupees === 0 ? "Fully Paid" : "Due"}
+                    </span>
+                  </div>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#3C096C]">
                       ₹
@@ -1631,11 +2869,15 @@ export function AdminEnrollmentsManager({
                       type="text"
                       readOnly
                       value={amountDueRupees.toLocaleString("en-IN")}
-                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-purple-200 bg-purple-50/50 text-xs font-bold text-[#3C096C]"
+                      className={`w-full pl-7 pr-3 py-2 rounded-xl border text-xs font-bold ${
+                        amountDueRupees === 0
+                          ? "border-emerald-200 bg-emerald-50/50 text-emerald-800"
+                          : "border-purple-200 bg-purple-50/50 text-[#3C096C]"
+                      }`}
                     />
                   </div>
                   <span className="text-[10px] text-body/50 mt-1 block">
-                    Enrollment fee – successful payments
+                    Enrollment fee – total payments recorded
                   </span>
                 </div>
               </div>
@@ -1699,10 +2941,44 @@ export function AdminEnrollmentsManager({
                 />
               </div>
             </div>
-          </div>
+          </>
+        )}
+      </div>
 
-          {/* ─── RIGHT COLUMN: SUMMARY, CHECKLIST, CTAS (4 COLS / ~33%) ─── */}
-          <div className="lg:col-span-4 space-y-5">
+      {/* ─── RIGHT COLUMN: SUMMARY, CHECKLIST, CTAS (4 COLS / ~33%) ─── */}
+      <div className="lg:col-span-4 space-y-5">
+        {!activeEnrollment ? (
+          <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+            <div>
+              <h3 className="font-serif text-base font-bold text-heading">
+                Enrollment status
+              </h3>
+              <p className="text-xs text-body/60 mt-0.5">Awaiting active course</p>
+            </div>
+
+            <div className="space-y-3 text-xs divide-y divide-neutral-100">
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-body/70">Student</span>
+                <span className="font-bold text-heading">{currentStudent?.name || "Student"}</span>
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-body/70">Course</span>
+                <span className="font-medium text-body/50">None Allotted Yet</span>
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-body/70">Status</span>
+                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-[#3C096C] font-bold text-[11px]">
+                  {pendingRequests.length > 0 ? "Pending Request" : "Awaiting Allotment"}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-purple-50/70 border border-purple-100 text-xs text-purple-900 leading-relaxed">
+              Approve a student course request or use the manual allotment form in Section 1 to allot a course to {currentStudent?.name || "this student"}.
+            </div>
+          </div>
+        ) : (
+          <>
             {/* 1. Enrollment summary card */}
             <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
               <div>
@@ -1772,6 +3048,129 @@ export function AdminEnrollmentsManager({
               </div>
             </div>
 
+            {/* 1.B Payment History & Receipts Ledger */}
+            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+                <div>
+                  <h3 className="font-serif text-base font-bold text-heading flex items-center gap-1.5">
+                    <Receipt className="w-4 h-4 text-[#3C096C]" />
+                    <span>Payment History &amp; Receipts</span>
+                  </h3>
+                  <p className="text-[11px] text-body/60 mt-0.5 font-numeric">
+                    {allRecordedPayments.length} installment {allRecordedPayments.length === 1 ? "tranche" : "tranches"} recorded
+                  </p>
+                </div>
+
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-numeric ${
+                    amountDueRupees === 0
+                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                      : "bg-amber-50 text-amber-800 border border-amber-200"
+                  }`}
+                >
+                  {amountDueRupees === 0 ? "Fully Paid" : "Balance Due"}
+                </span>
+              </div>
+
+              {allRecordedPayments.length > 0 ? (
+                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                  {allRecordedPayments.map((pmt, idx) => {
+                    const pDate = new Date(pmt.createdAt);
+                    const isAdmission = idx === 0 || pmt.notes?.toLowerCase().includes("initial") || pmt.notes?.toLowerCase().includes("admission");
+                    const trancheLabel = isAdmission && idx === 0 ? "1st · Admission" : `${idx + 1}${idx === 1 ? "nd" : idx === 2 ? "rd" : "th"} · Installment`;
+                    const amt = Math.round(pmt.amountMinorUnits / 100);
+                    const rcpt = pmt.gatewayPaymentId || `RCPT-${pmt.id.slice(-6)}`;
+
+                    return (
+                      <div
+                        key={pmt.id || idx}
+                        className="p-3 rounded-xl bg-neutral-50/70 hover:bg-purple-50/30 border border-neutral-200/80 transition-all space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100/80 text-[#3C096C]">
+                              {trancheLabel}
+                            </span>
+                            <span className="text-[10px] text-body/60 font-numeric" suppressHydrationWarning>
+                              {pDate.toLocaleDateString("en-GB", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </span>
+                          </div>
+
+                          <div className="font-bold text-emerald-700 text-xs font-numeric">
+                            ₹{amt.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-200/50">
+                          <div className="flex items-center gap-1.5 font-mono">
+                            <span className="text-body/70 text-[10px]">{rcpt}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyReceipt(rcpt)}
+                              className="p-0.5 text-body/40 hover:text-heading cursor-pointer transition-colors"
+                              title="Copy receipt number"
+                            >
+                              {copiedReceiptId === rcpt ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-neutral-200/70 text-body uppercase">
+                              {pmt.gateway || "UPI"}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>Paid</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {pmt.notes && (
+                          <div className="text-[10px] text-body/60 italic truncate pt-0.5">
+                            {pmt.notes}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100 text-center space-y-1">
+                  <div className="text-xs font-semibold text-heading">No Payments Recorded Yet</div>
+                  <p className="text-[11px] text-body/60">
+                    Recording initial payment in Section 1 or Section 3 will generate Tranche #1.
+                  </p>
+                </div>
+              )}
+
+              {/* Record next installment quick button if balance remaining */}
+              {amountDueRupees > 0 && (
+                <div className="pt-2 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInstallmentAmount(amountDueRupees);
+                      setIsRecordingPayment(true);
+                      const s3 = document.getElementById("section-3-fees");
+                      if (s3) s3.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100/80 border border-purple-200 text-[#3C096C] text-xs font-bold transition-all shadow-2xs active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Record Tranche #{allRecordedPayments.length + 1} (₹{amountDueRupees.toLocaleString("en-IN")} due)</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* 2. Ready to save checklist */}
             <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-3">
               <div>
@@ -1834,9 +3233,35 @@ export function AdminEnrollmentsManager({
                 <span>Save as draft</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
+    </div>
+  )}
+
+      {/* ─── APPLE-DESIGN AUTO-SCHEDULE MODAL FOR ALLOTMENT ─── */}
+      <AutoScheduleAllotModal
+        isOpen={!!pendingAllotSchedule}
+        onClose={() => setPendingAllotSchedule(null)}
+        studentName={pendingAllotSchedule?.studentName || ""}
+        courseTitle={pendingAllotSchedule?.courseTitle || ""}
+        amountPaid={pendingAllotSchedule?.paidRupees || 0}
+        perSessionRate={pendingAllotSchedule?.perSessionRate || 500}
+        assignedTeacherName={
+          teachers.find((t) => t.id === pendingAllotSchedule?.teacherId)?.name
+        }
+        isPending={isPending}
+        onConfirmSchedule={(slots) => {
+          if (pendingAllotSchedule) {
+            executeApproveOrAllot(pendingAllotSchedule, slots);
+          }
+        }}
+        onConfirmWithoutSchedule={() => {
+          if (pendingAllotSchedule) {
+            executeApproveOrAllot(pendingAllotSchedule, undefined);
+          }
+        }}
+      />
     </div>
   );
 }

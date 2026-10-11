@@ -256,6 +256,9 @@ model Course {
   syllabusSummary    String
   priceMinorUnits    Int
   currency           String                    @default("INR")
+  emiPrice3MinorUnits Int?
+  emiPrice6MinorUnits Int?
+  allowEmi           Boolean                   @default(true)
   sessionCount       Int
   durationWeeks      Int
   thumbnailUrl       String?
@@ -321,31 +324,41 @@ model Enrollment {
   adminNotes        String?
   emiStatus         CourseEmiStatus   @default(NOT_APPLICABLE)
   paymentPlan       CoursePaymentPlan @default(FULL_PAYMENT)
+  convertedFromTrial Boolean          @default(false)
+  trialRequestId    String?
   certificate       Certificate?
   course            Course            @relation(fields: [courseId], references: [id])
-  payment           Payment?          @relation(fields: [paymentId], references: [id])
+  payment           Payment?          @relation("PrimaryEnrollmentPayment", fields: [paymentId], references: [id])
+  payments          Payment[]         @relation("EnrollmentPayments")
+  trialRequest      TrialRequest?     @relation(fields: [trialRequestId], references: [id])
   student           User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   lessons           Lesson[]
 
   @@index([studentId])
   @@index([courseId])
   @@index([status])
+  @@index([trialRequestId])
+  @@index([convertedFromTrial])
 }
 
 model Payment {
   id               String        @id @default(cuid())
   studentId        String
+  enrollmentId     String?
   amountMinorUnits Int
   currency         String
   gateway          String
   gatewayOrderId   String        @unique
   gatewayPaymentId String?       @unique
   status           PaymentStatus @default(CREATED)
+  notes            String?
   createdAt        DateTime      @default(now()) @db.Timestamptz(6)
-  enrollment       Enrollment?
+  enrollment       Enrollment?   @relation("EnrollmentPayments", fields: [enrollmentId], references: [id], onDelete: SetNull)
+  primaryEnrollment Enrollment?  @relation("PrimaryEnrollmentPayment")
   student          User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
+  @@index([enrollmentId])
   @@index([status])
 }
 
@@ -449,6 +462,7 @@ model TrialRequest {
   allottedLesson    Lesson?            @relation(fields: [allottedLessonId], references: [id])
   allottedTeacher   User?              @relation("TeacherAllottedTrials", fields: [allottedTeacherId], references: [id])
   student           User               @relation("StudentTrialRequests", fields: [studentId], references: [id], onDelete: Cascade)
+  enrollments       Enrollment[]
 
   @@index([studentId])
   @@index([status])

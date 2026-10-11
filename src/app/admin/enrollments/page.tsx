@@ -8,6 +8,7 @@ import {
   FacultyOption,
   StudentOption,
   TrialLeadOption,
+  AdminCourseEnrollmentRequestItem,
 } from "./AdminEnrollmentsManager";
 import { Suspense } from "react";
 
@@ -24,6 +25,7 @@ export default async function AdminEnrollmentsPage() {
   let dbStudents: any[] = [];
   let dbTrialLeads: any[] = [];
   let dbEnrollments: any[] = [];
+  let dbCourseRequests: any[] = [];
 
   try {
     // 1. Fetch catalog
@@ -55,9 +57,12 @@ export default async function AdminEnrollmentsPage() {
       orderBy: { name: "asc" },
     });
 
-    // 3. Fetch students roster
+    // 3. Fetch students roster - Strictly only students converted via Trial CRM
     dbStudents = await db.user.findMany({
-      where: { role: Role.STUDENT },
+      where: {
+        role: Role.STUDENT,
+        trialRequestsAsStudent: { some: { isConverted: true } },
+      },
       select: {
         id: true,
         name: true,
@@ -72,8 +77,11 @@ export default async function AdminEnrollmentsPage() {
       orderBy: { name: "asc" },
     });
 
-    // 4. Fetch trial leads
+    // 4. Fetch converted trial leads
     dbTrialLeads = await db.trialRequest.findMany({
+      where: {
+        isConverted: true,
+      },
       select: {
         id: true,
         studentId: true,
@@ -85,12 +93,17 @@ export default async function AdminEnrollmentsPage() {
         preferredTimeSlot: true,
         allottedTeacherId: true,
       },
-      orderBy: { createdAt: "desc" },
-      take: 20,
+      orderBy: { convertedAt: "desc" },
+      take: 50,
     });
 
-    // 5. Fetch full relational enrollments with optimized select
+    // 5. Fetch full relational enrollments for converted students
     dbEnrollments = await db.enrollment.findMany({
+      where: {
+        student: {
+          trialRequestsAsStudent: { some: { isConverted: true } },
+        },
+      },
       include: {
         student: {
           select: {
@@ -135,8 +148,53 @@ export default async function AdminEnrollmentsPage() {
             gatewayPaymentId: true,
           },
         },
+        payments: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            amountMinorUnits: true,
+            currency: true,
+            gateway: true,
+            gatewayPaymentId: true,
+            gatewayOrderId: true,
+            status: true,
+            notes: true,
+            createdAt: true,
+          },
+        },
       },
       orderBy: { startedAt: "desc" },
+    });
+
+    // 6. Fetch course admission requests submitted by converted students
+    dbCourseRequests = await db.courseEnrollmentRequest.findMany({
+      where: {
+        student: {
+          trialRequestsAsStudent: { some: { isConverted: true } },
+        },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        course: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            discipline: true,
+            instrument: true,
+            level: true,
+            sessionCount: true,
+            priceMinorUnits: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
     });
   } catch (error) {
     console.error("[AdminEnrollmentsPage] Error querying PostgreSQL:", error);
@@ -190,6 +248,33 @@ export default async function AdminEnrollmentsPage() {
         payoutRupees: (l.teacherId ? teacherMap.get(l.teacherId)?.payoutRupees : null) || assignedFaculty?.payoutRupees || 800,
       })),
       payment: e.payment,
+      payments: (e.payments && e.payments.length > 0)
+        ? e.payments.map((p: any) => ({
+            id: p.id,
+            amountMinorUnits: p.amountMinorUnits,
+            currency: p.currency,
+            gateway: p.gateway,
+            gatewayPaymentId: p.gatewayPaymentId,
+            gatewayOrderId: p.gatewayOrderId,
+            status: p.status,
+            notes: p.notes,
+            createdAt: p.createdAt.toISOString(),
+          }))
+        : e.payment
+        ? [
+            {
+              id: e.payment.id,
+              amountMinorUnits: e.payment.amountMinorUnits,
+              currency: "INR",
+              gateway: "manual",
+              gatewayPaymentId: e.payment.gatewayPaymentId || `RCPT-INIT-${e.id.slice(-4)}`,
+              gatewayOrderId: null,
+              status: e.payment.status,
+              notes: "Initial admission payment tranche",
+              createdAt: e.startedAt.toISOString(),
+            },
+          ]
+        : [],
     };
   });
 
@@ -234,6 +319,26 @@ export default async function AdminEnrollmentsPage() {
     allottedTeacherId: t.allottedTeacherId,
   }));
 
+  const formattedCourseRequests: AdminCourseEnrollmentRequestItem[] = dbCourseRequests.map((r) => ({
+    id: r.id,
+    studentId: r.studentId,
+    studentName: r.student.name || "Student",
+    studentEmail: r.student.email,
+    courseId: r.courseId,
+    courseTitle: r.course.title,
+    courseSlug: r.course.slug,
+    courseDiscipline: r.course.discipline,
+    courseInstrument: r.course.instrument,
+    courseLevel: r.course.level,
+    courseSessionCount: r.course.sessionCount,
+    coursePriceMinorUnits: r.course.priceMinorUnits,
+    paymentPlan: r.paymentPlan,
+    status: r.status,
+    studentNotes: r.studentNotes,
+    preferredSchedule: r.preferredSchedule,
+    createdAt: r.createdAt.toISOString(),
+  }));
+
   return (
     <Suspense fallback={<div className="p-12 text-center text-xs text-body">Loading enrollment planner...</div>}>
       <AdminEnrollmentsManager
@@ -242,6 +347,7 @@ export default async function AdminEnrollmentsPage() {
         teachers={formattedTeachers}
         students={formattedStudents}
         trialLeads={formattedTrialLeads}
+        initialCourseRequests={formattedCourseRequests}
       />
     </Suspense>
   );

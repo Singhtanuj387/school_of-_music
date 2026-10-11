@@ -3,103 +3,145 @@ import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
 import { formatInViewerTimezone } from "@/lib/timezone";
-import { getLessonTrackingId } from "@/lib/lesson-tracking";
 import {
-  AdminPaymentsManager,
-  type AdminSessionPayoutItem,
-} from "./AdminPaymentsManager";
+  OverallPaymentsManager,
+  type FormattedPaymentItem,
+  type CourseOption,
+} from "./OverallPaymentsManager";
 
 export const metadata = {
-  title: "Payment Management | Institutional Administration | Gandharva",
+  title: "Overall Payments & Revenue Intelligence | Gandharva Admin",
   description:
-    "Manage faculty session payouts, disburse remuneration via UPI ID, and track session payment status.",
+    "Institutional financial telemetry, course-wise student payments, time-series revenue trends, and transaction ledger.",
 };
 
-export default async function AdminPaymentsPage() {
+export default async function AdminOverallPaymentsPage() {
   const admin = await requireRole(Role.ADMIN);
   const adminTimezone = admin.timezone || "Asia/Kolkata";
 
-  const lessons = await db.lesson.findMany({
-    include: {
-      teacher: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
+  const [payments, courses] = await Promise.all([
+    db.payment.findMany({
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            image: true,
+          },
+        },
+        enrollment: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                instrument: true,
+                level: true,
+                slug: true,
+              },
+            },
+          },
+        },
+        primaryEnrollment: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                instrument: true,
+                level: true,
+                slug: true,
+              },
+            },
+          },
         },
       },
-      teacherProfile: {
-        select: {
-          payoutPerSession: true,
-          upiId: true,
-        },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.course.findMany({
+      select: {
+        id: true,
+        title: true,
+        instrument: true,
+        level: true,
+        priceMinorUnits: true,
       },
-      student: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      enrollment: {
-        include: {
-          course: true,
-        },
-      },
-    },
-    orderBy: { startsAt: "desc" },
+      orderBy: { title: "asc" },
+    }),
+  ]);
+
+  // Map courses by price for orphan payment matching
+  const courseMapByPrice = new Map<number, (typeof courses)[0]>();
+  courses.forEach((c) => {
+    courseMapByPrice.set(c.priceMinorUnits, c);
   });
 
-  const formattedSessions: AdminSessionPayoutItem[] = lessons.map((l) => {
-    const isPaid = l.payoutStatus === "PAID";
-    const payoutPerSessionMinor =
-      l.teacherProfile?.payoutPerSession || 80000;
-    const rateRupees = payoutPerSessionMinor / 100;
-    const amountRupees = (l.payoutAmountMinor || payoutPerSessionMinor) / 100;
+  const formattedPayments: FormattedPaymentItem[] = payments.map((p) => {
+    const resolvedCourse =
+      p.enrollment?.course ||
+      p.primaryEnrollment?.course ||
+      courseMapByPrice.get(p.amountMinorUnits) || {
+        id: "general-tuition",
+        title: "General Music Tuition & Coaching",
+        instrument: "Vocal & Instrumental",
+        level: "All Levels",
+      };
 
     return {
-      id: l.id,
-      trackingCode: getLessonTrackingId(l),
-      startsAt: l.startsAt.toISOString(),
-      dateFormatted: formatInViewerTimezone(
-        l.startsAt,
+      id: p.id,
+      createdAt: p.createdAt.toISOString(),
+      createdAtFormatted: formatInViewerTimezone(
+        p.createdAt,
         adminTimezone,
         "MMM d, yyyy 'at' h:mm a",
       ),
-      durationMinutes: l.durationMinutes,
-      lessonStatus: l.status,
-      lessonSource: l.lessonSource,
-      courseTitle:
-        l.lessonSource === "TRIAL"
-          ? "Free Trial Lesson"
-          : l.enrollment?.course?.title || "1:1 Private Course Lesson",
-      studentId: l.student.id,
-      studentName: l.student.name || "Student",
-      studentEmail: l.student.email,
-      teacherId: l.teacher.id,
-      teacherName: l.teacher.name || "Faculty Instructor",
-      teacherEmail: l.teacher.email,
-      teacherUpiId: l.teacherProfile?.upiId,
-      payoutRateRupees: rateRupees,
-      payoutStatus: isPaid ? "PAID" : "UNPAID",
-      payoutPaidAtFormatted: l.payoutPaidAt
-        ? formatInViewerTimezone(l.payoutPaidAt, adminTimezone, "MMM d, yyyy")
-        : null,
-      payoutTransactionId: l.payoutTransactionId,
-      payoutNotes: l.payoutNotes,
-      payoutAmountRupees: amountRupees,
+      dateKey: formatInViewerTimezone(p.createdAt, adminTimezone, "yyyy-MM-dd"),
+      amountMinorUnits: p.amountMinorUnits,
+      amountRupees: p.amountMinorUnits / 100,
+      currency: p.currency,
+      gateway: p.gateway,
+      gatewayOrderId: p.gatewayOrderId,
+      gatewayPaymentId: p.gatewayPaymentId,
+      status: p.status,
+      notes: p.notes,
+      student: {
+        id: p.student.id,
+        name: p.student.name || "Student",
+        email: p.student.email,
+        phone: p.student.phone,
+        avatarUrl: p.student.image,
+      },
+      course: {
+        id: resolvedCourse.id,
+        title: resolvedCourse.title,
+        instrument: resolvedCourse.instrument,
+        level: resolvedCourse.level,
+      },
     };
   });
+
+  const courseOptions: CourseOption[] = courses.map((c) => ({
+    id: c.id,
+    title: c.title,
+    instrument: c.instrument,
+    level: c.level,
+    priceMinorUnits: c.priceMinorUnits,
+  }));
 
   return (
     <Suspense
       fallback={
         <div className="p-8 text-center text-xs text-body animate-pulse">
-          Loading institutional payment ledger...
+          Loading institutional revenue telemetry...
         </div>
       }
     >
-      <AdminPaymentsManager initialSessions={formattedSessions} />
+      <OverallPaymentsManager
+        initialPayments={formattedPayments}
+        courses={courseOptions}
+      />
     </Suspense>
   );
 }

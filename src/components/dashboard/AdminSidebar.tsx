@@ -1,16 +1,17 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Sparkles,
+  Music,
   Users,
   GraduationCap,
   BookOpen,
   Calendar,
   CreditCard,
+  Banknote,
   FileText,
   Settings,
   HelpCircle,
@@ -38,6 +39,11 @@ const navItems: NavItem[] = [
     icon: Sparkles,
   },
   {
+    name: "Course Catalog",
+    href: "/admin/courses",
+    icon: Music,
+  },
+  {
     name: "Students",
     href: "/admin/students",
     icon: Users,
@@ -61,6 +67,11 @@ const navItems: NavItem[] = [
     name: "Payments",
     href: "/admin/payments",
     icon: CreditCard,
+  },
+  {
+    name: "Teacher Payments",
+    href: "/admin/teacher-payments",
+    icon: Banknote,
   },
   {
     name: "Resources",
@@ -110,21 +121,7 @@ export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
   return (
     <>
       {/* Desktop Persistent Sidebar with Color #32134F */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-[#32134F] text-white h-full max-h-[calc(100vh-4rem)] p-4 space-y-4 shadow-xl z-40 select-none overflow-hidden">
-        {/* Brand Header with Attached Gandharva Logo */}
-        <div className="px-2 pt-1 pb-2">
-          <Link href="/admin" className="flex items-center group">
-            <Image
-              src="/gandharva-logo-full.png"
-              alt="Gandharva School of Music"
-              width={190}
-              height={48}
-              priority
-              className="h-10 w-auto object-contain group-hover:scale-[1.02] transition-transform"
-            />
-          </Link>
-        </div>
-
+      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-[#32134F] text-white h-full max-h-[calc(100vh-4rem)] p-4 space-y-2 shadow-xl z-40 select-none overflow-hidden">
         {/* Navigation Items List */}
         <nav className="space-y-0.5 flex-1 overflow-y-auto pr-1 text-xs sidebar-scroll">
           {navItems.map((item) => {
@@ -187,15 +184,8 @@ export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
       {/* Mobile Horizontal Navigation Header */}
       <div className="md:hidden bg-[#32134F] text-white sticky top-16 z-40 shadow-md">
         <div className="flex items-center justify-between px-4 py-2.5">
-          <Link href="/admin" className="flex items-center">
-            <Image
-              src="/gandharva-logo-full.png"
-              alt="Gandharva School of Music"
-              width={140}
-              height={36}
-              priority
-              className="h-8 w-auto object-contain"
-            />
+          <Link href="/admin" className="flex items-center text-sm font-serif font-bold text-white tracking-wide">
+            Gandharva
           </Link>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-white/10 text-[#FF9E40]">

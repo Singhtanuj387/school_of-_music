@@ -40,26 +40,61 @@ export default async function AdminStudentsPage() {
           },
         },
         orderBy: { startsAt: "desc" },
-        take: 30,
+        take: 100,
       },
       payments: {
+        include: {
+          enrollment: {
+            include: {
+              course: {
+                select: { title: true },
+              },
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
-        take: 20,
+        take: 100,
       },
       resourcesReceived: {
         include: {
-          resource: true,
+          resource: {
+            include: {
+              teacher: {
+                select: { name: true },
+              },
+            },
+          },
+          course: {
+            select: { title: true },
+          },
         },
         orderBy: { sharedAt: "desc" },
-        take: 20,
+        take: 50,
       },
       trialRequestsAsStudent: {
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 20,
       },
       notifications: {
         orderBy: { createdAt: "desc" },
-        take: 15,
+        take: 50,
+      },
+      conversationsAsStudent: {
+        include: {
+          teacher: {
+            select: { id: true, name: true, email: true },
+          },
+          messages: {
+            include: {
+              sender: {
+                select: { id: true, name: true, role: true },
+              },
+            },
+            orderBy: { createdAt: "asc" },
+            take: 200,
+          },
+        },
+        orderBy: { updatedAt: "desc" },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -144,14 +179,22 @@ export default async function AdminStudentsPage() {
       status: p.status,
       gateway: p.gateway,
       gatewayPaymentId: p.gatewayPaymentId,
+      notes: p.notes,
+      courseTitle: p.enrollment?.course?.title || null,
       createdAt: p.createdAt.toISOString(),
     })),
     resources: s.resourcesReceived.map((r) => ({
       id: r.id,
       title: r.resource.title,
+      description: r.resource.description || null,
       category: r.resource.category,
+      fileName: r.resource.fileName || null,
       fileUrl: r.resource.fileUrl,
+      fileSizeBytes: r.resource.fileSizeBytes,
       sharedAt: r.sharedAt.toISOString(),
+      teacherName: r.resource.teacher?.name || null,
+      courseTitle: r.course?.title || null,
+      teacherNote: r.teacherNote || null,
     })),
     trials: s.trialRequestsAsStudent.map((t) => ({
       id: t.id,
@@ -166,6 +209,29 @@ export default async function AdminStudentsPage() {
       message: n.body,
       type: n.type,
       createdAt: n.createdAt.toISOString(),
+    })),
+    conversations: (s.conversationsAsStudent || []).map((c) => ({
+      id: c.id,
+      teacherId: c.teacherId,
+      teacherName: c.teacher?.name || "Assigned Faculty",
+      teacherEmail: c.teacher?.email || "",
+      instrument: c.instrument,
+      updatedAt: c.updatedAt.toISOString(),
+      messages: c.messages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        senderName:
+          m.sender?.name ||
+          (m.senderId === s.id ? s.name || "Student" : c.teacher?.name || "Faculty"),
+        senderRole:
+          m.sender?.role || (m.senderId === s.id ? "STUDENT" : "TEACHER"),
+        messageType: m.messageType,
+        body: m.body,
+        fileName: m.fileName,
+        fileUrl: m.fileUrl,
+        fileSizeBytes: m.fileSizeBytes,
+        createdAt: m.createdAt.toISOString(),
+      })),
     })),
   }));
 

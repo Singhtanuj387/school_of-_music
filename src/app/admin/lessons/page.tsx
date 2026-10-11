@@ -18,23 +18,41 @@ export default async function AdminLessonsPage() {
     include: {
       teacher: { select: { name: true, email: true } },
       student: { select: { name: true, email: true } },
+      enrollment: {
+        select: {
+          id: true,
+          course: {
+            select: { id: true, title: true, instrument: true },
+          },
+        },
+      },
     },
-    orderBy: { startsAt: "desc" },
+    orderBy: [
+      { createdAt: "desc" },
+      { startsAt: "desc" },
+    ],
   });
 
   const formattedLessons: AdminLessonItem[] = dbLessons.map((l) => ({
     id: l.id,
     trackingCode: getLessonTrackingId(l),
     startsAt: l.startsAt.toISOString(),
+    createdAt: l.createdAt.toISOString(),
     formattedTime: formatInViewerTimezone(
       l.startsAt,
       "UTC",
       "MMM d, yyyy 'at' h:mm a zzz",
     ),
+    formattedCreatedDate: formatInViewerTimezone(
+      l.createdAt,
+      "UTC",
+      "MMM d, yyyy",
+    ),
     durationMinutes: l.durationMinutes,
     instrument: l.instrument,
+    courseTitle: l.enrollment?.course?.title || null,
     status: l.status,
-    lessonSource: l.lessonSource || LessonSource.TRIAL,
+    lessonSource: l.lessonSource || (l.enrollmentId ? LessonSource.ENROLLMENT : LessonSource.TRIAL),
     teacherName: l.teacher?.name || "Teacher",
     studentName: l.student?.name || "Student",
     studentEmail: l.student?.email || "",

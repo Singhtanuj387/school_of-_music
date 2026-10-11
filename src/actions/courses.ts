@@ -33,6 +33,22 @@ export async function submitCourseEnrollmentRequestAction(input: {
       return { success: false, error: "Course not found or is no longer published." };
     }
 
+    // Strict requirement: Only converted trial students can request course admission
+    const convertedTrial = await db.trialRequest.findFirst({
+      where: {
+        studentId: user.id,
+        isConverted: true,
+      },
+    });
+
+    if (!convertedTrial) {
+      return {
+        success: false,
+        error:
+          "Course admission requests are exclusively available for students whose trial has been completed and converted by academy administration. Please book and attend your free trial session first.",
+      };
+    }
+
     // Check if student already has an active enrollment
     const existingEnrollment = await db.enrollment.findFirst({
       where: {
@@ -77,19 +93,14 @@ export async function submitCourseEnrollmentRequestAction(input: {
       },
     });
 
-    const planLabel =
-      input.paymentPlan === CoursePaymentPlan.EMI_3_MONTHS
-        ? "3-Month EMI"
-        : input.paymentPlan === CoursePaymentPlan.EMI_6_MONTHS
-        ? "6-Month EMI"
-        : "Full Upfront";
+    const planLabel = "Full Course Tuition";
 
     // Notify Academy Administrators
     await notifyAdmins({
       type: NotificationType.NEW_COURSE_REQUEST,
       title: "New Course Admission Request",
-      body: `${user.name || user.email} requested admission for "${course.title}" (${planLabel}).`,
-      link: "/admin/student-courses",
+      body: `${user.name || user.email} requested admission for "${course.title}".`,
+      link: `/admin/enrollments?studentId=${user.id}`,
     });
 
     // Notify the Student
@@ -97,7 +108,7 @@ export async function submitCourseEnrollmentRequestAction(input: {
       userId: user.id,
       type: NotificationType.SYSTEM,
       title: "Admission Request Submitted",
-      body: `Your request for "${course.title}" (${planLabel}) has been sent to academy administration. Our director will review and add the course to your dashboard.`,
+      body: `Your request for "${course.title}" has been sent to academy administration. Our director will review and allot your course to your dashboard.`,
       link: "/student/dashboard/courses",
     });
 

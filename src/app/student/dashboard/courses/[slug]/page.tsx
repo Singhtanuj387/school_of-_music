@@ -56,8 +56,8 @@ export default async function StudentCourseDetailPage({
     notFound();
   }
 
-  // Check if student already enrolled or has pending request
-  const [existingEnrollment, pendingRequestRecord] = await Promise.all([
+  // Check if student already enrolled, has pending request, and whether trial was converted
+  const [existingEnrollment, pendingRequestRecord, convertedTrial] = await Promise.all([
     db.enrollment.findFirst({
       where: {
         studentId: user.id,
@@ -72,7 +72,15 @@ export default async function StudentCourseDetailPage({
         status: "PENDING",
       },
     }),
+    db.trialRequest.findFirst({
+      where: {
+        studentId: user.id,
+        isConverted: true,
+      },
+    }),
   ]);
+
+  const isConvertedStudent = Boolean(convertedTrial);
 
   const pendingRequest = pendingRequestRecord
     ? {
@@ -339,8 +347,11 @@ export default async function StudentCourseDetailPage({
             </div>
           </div>
 
-          {/* EMI Breakdown */}
-          <CourseEmiBreakdown priceMinorUnits={course.priceMinorUnits} />
+          {/* Course Tuition Breakdown */}
+          <CourseEmiBreakdown
+            priceMinorUnits={course.priceMinorUnits}
+            sessionCount={course.sessionCount}
+          />
 
           {/* Request Course Admission Modal / Actions */}
           <CourseEnrollmentRequestModal
@@ -353,6 +364,7 @@ export default async function StudentCourseDetailPage({
             isAlreadyEnrolled={!!existingEnrollment}
             pendingRequest={pendingRequest}
             isAuthenticated={true}
+            isConvertedStudent={isConvertedStudent}
           />
         </div>
       </div>

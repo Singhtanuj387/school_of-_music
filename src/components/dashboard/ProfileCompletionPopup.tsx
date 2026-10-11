@@ -125,17 +125,18 @@ export function ProfileCompletionPopup({
     return (
       <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
         <button
+          type="button"
           onClick={handleToggleMinimize}
-          className="group flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/95 dark:bg-[#1E1A4D]/95 backdrop-blur-xl border border-primary/20 shadow-xl shadow-primary/15 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all text-left"
+          className="group flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/98 backdrop-blur-xl border border-slate-200/90 shadow-[0_12px_30px_-5px_rgba(60,9,108,0.18)] hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all text-left cursor-pointer"
           title="Click to view profile completion checklist"
         >
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-cta flex items-center justify-center text-white text-xs font-bold shrink-0">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-cta flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs">
             <Sparkles className="w-3.5 h-3.5" />
           </div>
           <div>
             <div className="text-[11px] font-bold text-heading group-hover:text-primary transition-colors flex items-center gap-1.5">
               <span>Complete Profile</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cta/15 text-cta font-extrabold">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cta/15 text-cta font-extrabold leading-none">
                 {completionPercentage}%
               </span>
             </div>
@@ -151,25 +152,26 @@ export function ProfileCompletionPopup({
   return (
     <aside
       aria-label="Profile setup reminder"
-      className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 sm:bottom-6 z-50 sm:max-w-[22rem] w-auto pointer-events-auto animate-in fade-in slide-in-from-bottom-6 duration-400 ease-out"
+      className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 sm:bottom-6 z-50 sm:max-w-[22.5rem] w-auto pointer-events-auto animate-in fade-in slide-in-from-bottom-6 duration-400 ease-out"
     >
-      <div className="relative overflow-hidden rounded-3xl bg-white/95 dark:bg-[#1E1A4D]/95 backdrop-blur-2xl border border-primary/15 dark:border-white/10 shadow-[0_20px_50px_-10px_rgba(30,26,77,0.28)] p-5 text-heading transition-all">
+      <div className="relative overflow-hidden rounded-3xl bg-white/98 backdrop-blur-2xl border border-slate-200/90 shadow-[0_24px_50px_-12px_rgba(60,9,108,0.18),0_4px_16px_-2px_rgba(0,0,0,0.06)] p-5 sm:p-6 text-heading transition-all">
         {/* Specular Apple Accent Ribbon on top edge */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-cta to-accent" />
+        <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-primary via-cta to-accent" />
 
         {/* Header with Icon, Badge & Controls */}
         <div className="flex items-start justify-between gap-3 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-primary/10 via-cta/10 to-primary/20 border border-primary/20 flex items-center justify-center text-primary shrink-0 shadow-xs">
-              <Sparkles className="w-4 h-4 text-cta" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary/10 via-cta/10 to-accent/10 border border-primary/15 flex items-center justify-center text-primary shrink-0 shadow-2xs">
+              <Sparkles className="w-5 h-5 text-cta" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/15 text-accent-dark border border-accent/25">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-accent-subtle text-accent-dark border border-accent/30 text-[10px] font-extrabold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                   {hasTrialBooking ? "Trial Booked" : "Account Setup"}
                 </span>
               </div>
-              <h3 className="font-serif text-sm font-bold text-heading mt-0.5 leading-tight">
+              <h3 className="text-sm font-bold text-heading mt-1 leading-tight tracking-tight">
                 Complete Your Profile
               </h3>
             </div>
@@ -180,16 +182,16 @@ export function ProfileCompletionPopup({
             <button
               type="button"
               onClick={handleToggleMinimize}
-              className="p-1.5 rounded-xl text-body-muted hover:text-heading hover:bg-neutral-100 dark:hover:bg-white/10 transition-colors"
+              className="w-7 h-7 rounded-xl flex items-center justify-center text-gray-400 hover:text-heading hover:bg-slate-100 transition-colors cursor-pointer"
               title="Minimize to floating badge"
               aria-label="Minimize"
             >
-              <span className="text-xs font-semibold px-0.5">—</span>
+              <span className="text-xs font-semibold px-0.5 leading-none">—</span>
             </button>
             <button
               type="button"
               onClick={handleDismiss}
-              className="p-1.5 rounded-xl text-body-muted hover:text-heading hover:bg-neutral-100 dark:hover:bg-white/10 transition-colors"
+              className="w-7 h-7 rounded-xl flex items-center justify-center text-gray-400 hover:text-heading hover:bg-slate-100 transition-colors cursor-pointer"
               title="Dismiss for this session"
               aria-label="Dismiss"
             >
@@ -199,7 +201,7 @@ export function ProfileCompletionPopup({
         </div>
 
         {/* Narrative Description */}
-        <p className="text-xs text-body leading-relaxed">
+        <p className="text-xs text-body leading-relaxed mt-1">
           {hasTrialBooking ? (
             <>
               Your trial session is scheduled! Complete your country, age, and
@@ -214,37 +216,36 @@ export function ProfileCompletionPopup({
         </p>
 
         {/* Progress Bar & Percentage */}
-        <div className="mt-3.5 pt-3 border-t border-border-subtle/80 space-y-1.5">
+        <div className="mt-4 pt-3.5 border-t border-slate-100 space-y-2">
           <div className="flex items-center justify-between text-[11px] font-semibold">
             <span className="text-body-muted">Profile Strength</span>
-            <span className="text-cta font-bold">{completionPercentage}%</span>
+            <span className="text-xs font-bold text-primary">{completionPercentage}%</span>
           </div>
 
-          <div className="w-full h-1.5 bg-neutral-200/70 dark:bg-white/10 rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60">
             <div
-              className="h-full bg-gradient-to-r from-primary via-cta to-accent rounded-full transition-all duration-500 ease-out"
+              className="h-full bg-gradient-to-r from-primary via-cta to-accent rounded-full transition-all duration-700 ease-out shadow-2xs"
               style={{ width: `${completionPercentage}%` }}
             />
           </div>
         </div>
 
-        {/* Missing Item Chips */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        {/* Missing / Completed Item Chips */}
+        <div className="mt-3.5 flex flex-wrap gap-1.5">
           {checklist.map((item) => {
-            const Icon = item.icon;
             return (
               <span
                 key={item.id}
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all ${
                   item.filled
-                    ? "bg-success/10 text-success border border-success/20"
-                    : "bg-surface-muted/90 text-body border border-border-default/70"
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs"
+                    : "bg-purple-50/70 text-purple-900 border border-purple-200/70 shadow-2xs"
                 }`}
               >
                 {item.filled ? (
-                  <CheckCircle2 className="w-3 h-3 text-success shrink-0" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 ) : (
-                  <AlertCircle className="w-3 h-3 text-cta shrink-0" />
+                  <AlertCircle className="w-3.5 h-3.5 text-cta shrink-0" />
                 )}
                 <span>{item.label}</span>
               </span>
@@ -256,16 +257,16 @@ export function ProfileCompletionPopup({
         <div className="mt-4 pt-2">
           <Link
             href="/student/dashboard/profile"
-            className="group btn-tactile w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-primary to-cta hover:from-primary-dark hover:to-cta-hover text-white text-xs font-bold shadow-md shadow-primary/20 flex items-center justify-between transition-all"
+            className="group btn-tactile w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-primary via-[#6B1896] to-cta hover:opacity-95 text-white text-xs font-bold shadow-md shadow-primary/25 flex items-center justify-between transition-all cursor-pointer"
           >
             <span>Complete Profile Details</span>
-            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Link>
-          <div className="mt-2 text-center">
+          <div className="mt-2.5 text-center">
             <button
               type="button"
               onClick={handleDismiss}
-              className="text-[11px] text-body-muted hover:text-heading underline underline-offset-2 transition-colors cursor-pointer"
+              className="text-[11px] font-medium text-body-muted hover:text-heading underline underline-offset-4 transition-colors cursor-pointer"
             >
               Remind me later
             </button>

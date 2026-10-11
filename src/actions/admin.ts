@@ -17,6 +17,9 @@ import {
   TeacherPayoutStatus,
   PaymentStatus,
   NotificationType,
+  CourseRequestStatus,
+  CoursePaymentPlan,
+  CourseEmiStatus,
 } from "@prisma/client";
 import { hashPassword } from "@/lib/password";
 import { normalizePhoneNumber, isValidPhoneNumber } from "@/lib/phone";
@@ -742,6 +745,10 @@ export async function saveFullEnrollmentPlanAction(input: {
           convertedAt: new Date(),
         },
       });
+      await db.studentTrialStatus.updateMany({
+        where: { studentId: student.id },
+        data: { status: TrialStatus.EXHAUSTED },
+      });
     }
 
     // Record payment if paid amount specified
@@ -751,15 +758,25 @@ export async function saveFullEnrollmentPlanAction(input: {
         input.paymentFeeRupees && input.paidAmountRupees >= input.paymentFeeRupees;
       const receiptCode = `RCPT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      await db.payment.create({
+      const pmt = await db.payment.create({
         data: {
           studentId: student.id,
+          enrollmentId: targetEnrollmentId,
           amountMinorUnits,
           currency: "INR",
           gateway: "manual",
           gatewayOrderId: `rec_order_${receiptCode}`,
           gatewayPaymentId: receiptCode,
-          status: isFull ? PaymentStatus.PAID : PaymentStatus.PAID,
+          notes: "Initial admission payment tranche",
+          status: PaymentStatus.PAID,
+        },
+      });
+
+      await db.enrollment.update({
+        where: { id: targetEnrollmentId },
+        data: {
+          paymentId: pmt.id,
+          emiStatus: isFull ? CourseEmiStatus.FULLY_PAID : CourseEmiStatus.PARTIALLY_PAID,
         },
       });
     }
@@ -994,6 +1011,9 @@ export async function saveCourseAdminAction(input: {
   description: string;
   syllabusSummary: string;
   priceMinorUnits: number; // paise
+  emiPrice3MinorUnits?: number | null;
+  emiPrice6MinorUnits?: number | null;
+  allowEmi?: boolean;
   sessionCount: number;
   durationWeeks: number;
   startDate?: string | null;
@@ -1014,6 +1034,15 @@ export async function saveCourseAdminAction(input: {
       description: input.description.trim(),
       syllabusSummary: input.syllabusSummary.trim(),
       priceMinorUnits: Math.max(0, input.priceMinorUnits),
+      emiPrice3MinorUnits:
+        input.emiPrice3MinorUnits !== undefined && input.emiPrice3MinorUnits !== null
+          ? Math.max(0, input.emiPrice3MinorUnits)
+          : null,
+      emiPrice6MinorUnits:
+        input.emiPrice6MinorUnits !== undefined && input.emiPrice6MinorUnits !== null
+          ? Math.max(0, input.emiPrice6MinorUnits)
+          : null,
+      allowEmi: input.allowEmi !== undefined ? input.allowEmi : true,
       sessionCount: Math.max(1, input.sessionCount),
       durationWeeks: Math.max(1, input.durationWeeks),
       startDate: input.startDate ? new Date(input.startDate) : null,
@@ -1600,6 +1629,21 @@ export async function updateTrialLeadStatusAction(input: {
   try {
     await requireRole(Role.ADMIN);
 
+    const currentLead = await db.trialRequest.findUnique({
+      where: { id: input.trialRequestId },
+      select: { isConverted: true },
+    });
+
+    if (currentLead?.isConverted) {
+      // Once converted through trial portal, status cannot be reverted to uncontacted or pending
+      if (input.isConverted === false || input.isContacted === false || (input.status && input.status === TrialRequestStatus.PENDING)) {
+        return {
+          success: false,
+          error: "This student is already converted to an active enrolled student and cannot be reverted back to uncontacted or pending status.",
+        };
+      }
+    }
+
     const updateData: Record<string, unknown> = {};
     if (input.isContacted !== undefined) {
       updateData.isContacted = input.isContacted;
@@ -1646,6 +1690,13 @@ export async function updateTrialLeadStatusAction(input: {
       data: updateData,
     });
 
+    if (input.isConverted) {
+      await db.studentTrialStatus.updateMany({
+        where: { studentId: updated.studentId },
+        data: { status: TrialStatus.EXHAUSTED },
+      });
+    }
+
     if (input.lessonStatus && updated.allottedLessonId) {
       await db.lesson.update({
         where: { id: updated.allottedLessonId },
@@ -1663,11 +1714,11 @@ export async function updateTrialLeadStatusAction(input: {
 
 export async function convertTrialToEnrollmentAction(input: {
   trialRequestId: string;
-  courseId: string;
+  courseId?: string;
   teacherId?: string | null;
   sessionsRemaining?: number;
   adminNotes?: string;
-}): Promise<AdminActionResponse<{ enrollmentId: string }>> {
+}): Promise<AdminActionResponse<{ studentId: string }>> {
   try {
     await requireRole(Role.ADMIN);
 
@@ -1680,64 +1731,29 @@ export async function convertTrialToEnrollmentAction(input: {
       return { success: false, error: "Trial lead not found." };
     }
 
-    const course = await db.course.findUnique({
-      where: { id: input.courseId },
+    // Mark trial request as converted ONLY (universal rule: no auto-allotting courses)
+    await db.trialRequest.update({
+      where: { id: trialRequest.id },
+      data: {
+        isConverted: true,
+        convertedAt: new Date(),
+      },
     });
 
-    if (!course) {
-      return { success: false, error: "Course not found." };
-    }
-
-    const teacherId = input.teacherId || trialRequest.allottedTeacherId || null;
-    const sessionCount =
-      input.sessionsRemaining && input.sessionsRemaining > 0
-        ? input.sessionsRemaining
-        : course.sessionCount;
-
-    const enrollment = await db.$transaction(async (tx) => {
-      // Create active enrollment in student dashboard
-      const enr = await tx.enrollment.create({
-        data: {
-          studentId: trialRequest.studentId,
-          courseId: course.id,
-          teacherId: teacherId,
-          sessionsRemaining: sessionCount,
-          status: EnrollmentStatus.ACTIVE,
-          adminNotes: input.adminNotes || `Converted from Trial CRM Lead #${trialRequest.id.slice(-6)}`,
-        },
-      });
-
-      // Update trial request as converted
-      await tx.trialRequest.update({
-        where: { id: trialRequest.id },
-        data: {
-          isConverted: true,
-          convertedAt: new Date(),
-        },
-      });
-
-      return enr;
+    await db.studentTrialStatus.updateMany({
+      where: { studentId: trialRequest.studentId },
+      data: { status: TrialStatus.EXHAUSTED },
     });
 
-    // Notify student
+    // Notify student that they are converted and can now request courses
     try {
       await createNotification({
         userId: trialRequest.studentId,
-        type: NotificationType.COURSE_REQUEST_APPROVED,
-        title: "Course Enrollment Confirmed!",
-        body: `Congratulations! Your enrollment for "${course.title}" is now active. Explore your student dashboard.`,
-        link: `/student/dashboard/courses/${course.slug}`,
+        type: NotificationType.SYSTEM,
+        title: "Welcome to Gandharva School of Music!",
+        body: "Your trial lead has been converted to an enrolled student account. Explore our course catalog and submit your course admission request.",
+        link: "/student/dashboard/courses",
       });
-
-      if (teacherId) {
-        await createNotification({
-          userId: teacherId,
-          type: NotificationType.SYSTEM,
-          title: "New Student Converted & Allotted",
-          body: `${trialRequest.studentName} has enrolled in "${course.title}" and is allotted to you.`,
-          link: "/teacher/dashboard",
-        });
-      }
     } catch {
       // Non-blocking notification emission
     }
@@ -1746,11 +1762,235 @@ export async function convertTrialToEnrollmentAction(input: {
     revalidatePath("/admin/enrollments");
     revalidatePath("/admin");
     revalidatePath("/student/dashboard");
+    revalidatePath("/student/dashboard/courses");
 
-    return { success: true, data: { enrollmentId: enrollment.id } };
+    return { success: true, data: { studentId: trialRequest.studentId } };
   } catch (error) {
-    logger.error({ error }, "Error converting trial lead to enrollment");
-    return { success: false, error: "Failed to convert trial lead to student enrollment." };
+    logger.error({ error }, "Error converting trial lead");
+    return { success: false, error: "Failed to convert trial lead." };
+  }
+}
+
+export async function adminApproveAndAllotCourseAction(input: {
+  requestId?: string | null;
+  studentId: string;
+  courseId: string;
+  teacherId?: string | null;
+  sessionsRemaining?: number;
+  feeRupees: number;
+  paidRupees: number;
+  paymentPlan?: CoursePaymentPlan;
+  adminNotes?: string | null;
+  slots?: Array<{ startsAt: string; durationMinutes?: number }>;
+}): Promise<AdminActionResponse<{ enrollmentId: string; scheduledCount?: number; newLessons?: any[] }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const student = await db.user.findUnique({
+      where: { id: input.studentId },
+      select: { id: true, name: true, email: true },
+    });
+    if (!student) {
+      return { success: false, error: "Student not found." };
+    }
+
+    const course = await db.course.findUnique({
+      where: { id: input.courseId },
+    });
+    if (!course) {
+      return { success: false, error: "Course not found." };
+    }
+
+    const totalSessions =
+      input.sessionsRemaining && input.sessionsRemaining > 0
+        ? input.sessionsRemaining
+        : course.sessionCount;
+
+    const remainingBalance = Math.max(0, input.feeRupees - input.paidRupees);
+    const emiStatus =
+      input.paidRupees >= input.feeRupees
+        ? CourseEmiStatus.FULLY_PAID
+        : input.paidRupees > 0
+        ? CourseEmiStatus.PARTIALLY_PAID
+        : CourseEmiStatus.PENDING_PAYMENT;
+
+    const paymentPlan = input.paymentPlan || CoursePaymentPlan.FULL_PAYMENT;
+
+    // Run transaction
+    const enrollment = await db.$transaction(async (tx) => {
+      // 1. Create active enrollment
+      const enr = await tx.enrollment.create({
+        data: {
+          studentId: student.id,
+          courseId: course.id,
+          teacherId: input.teacherId || null,
+          sessionsRemaining: totalSessions,
+          status: EnrollmentStatus.ACTIVE,
+          emiStatus,
+          paymentPlan,
+          convertedFromTrial: true,
+          adminNotes:
+            input.adminNotes?.trim() ||
+            `Approved by admin. Fee: ₹${input.feeRupees}, Paid: ₹${input.paidRupees}, Remaining: ₹${remainingBalance}`,
+        },
+      });
+
+      // 2. If student paid any amount, record Payment
+      if (input.paidRupees > 0) {
+        const receiptCode = `RCPT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const pmt = await tx.payment.create({
+          data: {
+            studentId: student.id,
+            enrollmentId: enr.id,
+            amountMinorUnits: Math.round(input.paidRupees * 100),
+            currency: "INR",
+            gateway: "manual",
+            gatewayOrderId: `adm_${enr.id.slice(-6)}_${Date.now()}`,
+            gatewayPaymentId: receiptCode,
+            notes: "Initial admission payment tranche",
+            status: PaymentStatus.PAID,
+          },
+        });
+        await tx.enrollment.update({
+          where: { id: enr.id },
+          data: { paymentId: pmt.id },
+        });
+      }
+
+      // 3. Mark request APPROVED if requestId is given
+      if (input.requestId) {
+        await tx.courseEnrollmentRequest.update({
+          where: { id: input.requestId },
+          data: {
+            status: CourseRequestStatus.APPROVED,
+            allottedTeacherId: input.teacherId || null,
+            enrollmentId: enr.id,
+            adminNotes:
+              input.adminNotes?.trim() ||
+              `Approved with ₹${input.paidRupees} paid and ₹${remainingBalance} due.`,
+          },
+        }).catch(() => {});
+      } else {
+        // Also update any pending request for this student and course
+        await tx.courseEnrollmentRequest.updateMany({
+          where: {
+            studentId: student.id,
+            courseId: course.id,
+            status: CourseRequestStatus.PENDING,
+          },
+          data: {
+            status: CourseRequestStatus.APPROVED,
+            allottedTeacherId: input.teacherId || null,
+            enrollmentId: enr.id,
+          },
+        }).catch(() => {});
+      }
+
+      return enr;
+    });
+
+    // 4. If slots are provided and teacher is assigned, schedule lessons
+    let scheduledCount = 0;
+    const newLessons: Array<{
+      id: string;
+      trackingCode: string | null;
+      startsAt: string;
+      durationMinutes: number;
+      status: LessonStatus;
+      teacherId: string;
+      teacherName: string;
+      studentId: string;
+      studentName: string;
+    }> = [];
+
+    if (input.slots && input.slots.length > 0 && input.teacherId) {
+      const teacher = await db.user.findUnique({
+        where: { id: input.teacherId },
+        include: { teacherProfile: true },
+      });
+      if (teacher?.teacherProfile) {
+        for (const slot of input.slots) {
+          const startsAtDate = new Date(slot.startsAt);
+          if (isNaN(startsAtDate.getTime())) continue;
+
+          const trackingCode = await generateUniqueLessonTrackingCode();
+          const lesson = await db.lesson.create({
+            data: {
+              teacherId: teacher.id,
+              teacherProfileId: teacher.teacherProfile.id,
+              studentId: student.id,
+              instrument: course.instrument,
+              startsAt: startsAtDate,
+              durationMinutes: slot.durationMinutes || 60,
+              status: LessonStatus.SCHEDULED,
+              lessonSource: LessonSource.ENROLLMENT,
+              enrollmentId: enrollment.id,
+              groupRoomId: null,
+              trackingCode,
+            },
+          });
+          scheduledCount++;
+          newLessons.push({
+            id: lesson.id,
+            trackingCode: lesson.trackingCode,
+            startsAt: lesson.startsAt.toISOString(),
+            durationMinutes: lesson.durationMinutes,
+            status: lesson.status,
+            teacherId: teacher.id,
+            teacherName: teacher.name || "Faculty Mentor",
+            studentId: student.id,
+            studentName: student.name || "Student",
+          });
+        }
+      }
+    }
+
+    // Notify Student
+    try {
+      await createNotification({
+        userId: student.id,
+        type: NotificationType.COURSE_REQUEST_APPROVED,
+        title: "Course Approved & Active!",
+        body: `Your admission for "${course.title}" has been approved.${
+          scheduledCount > 0 ? ` ${scheduledCount} weekly sessions have been added to your timetable!` : ""
+        } The course is now active on your dashboard!`,
+        link: `/student/dashboard/courses/${course.slug}`,
+      });
+
+      if (input.teacherId) {
+        await createNotification({
+          userId: input.teacherId,
+          type: NotificationType.SYSTEM,
+          title: "New Student Course Allotment",
+          body: `${student.name || "A student"} has been allotted to you for "${course.title}".${
+            scheduledCount > 0 ? ` ${scheduledCount} sessions scheduled.` : ""
+          }`,
+          link: "/teacher/dashboard",
+        });
+      }
+    } catch {
+      // Non-blocking
+    }
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/admin/trials");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/student/dashboard/courses");
+    revalidatePath(`/student/dashboard/courses/${course.slug}`);
+
+    return {
+      success: true,
+      message: `Course "${course.title}" approved and allotted to ${student.name}!`,
+      data: { enrollmentId: enrollment.id, scheduledCount, newLessons },
+    };
+  } catch (error: any) {
+    logger.error({ error }, "Error approving and allotting course");
+    return {
+      success: false,
+      error: error.message || "Failed to approve and allot course.",
+    };
   }
 }
 
@@ -1909,6 +2149,7 @@ export async function markLessonPayoutAction(input: {
     }
 
     revalidatePath("/admin/payments");
+    revalidatePath("/admin/teacher-payments");
     revalidatePath("/admin/lessons");
     revalidatePath("/teacher/dashboard/earnings");
 
@@ -2054,5 +2295,182 @@ export async function updateTeacherApprovalAction(input: {
     return { success: false, error: errMsg };
   }
 }
+
+export async function adminRecordEnrollmentPaymentAction(input: {
+  enrollmentId: string;
+  amountRupees: number;
+  paymentMethod?: string;
+  referenceCode?: string;
+  notes?: string;
+  slots?: Array<{ startsAt: string; durationMinutes?: number }>;
+}): Promise<
+  AdminActionResponse<{
+    paymentId: string;
+    receiptCode: string;
+    totalPaidRupees: number;
+    emiStatus: CourseEmiStatus;
+    scheduledCount?: number;
+    newLessons?: any[];
+  }>
+> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    if (!input.enrollmentId) {
+      return { success: false, error: "Enrollment ID is required." };
+    }
+
+    if (!input.amountRupees || input.amountRupees <= 0) {
+      return { success: false, error: "Payment amount must be greater than 0." };
+    }
+
+    const enrollment = await db.enrollment.findUnique({
+      where: { id: input.enrollmentId },
+      include: {
+        student: { select: { id: true, name: true, email: true } },
+        course: { select: { id: true, title: true, priceMinorUnits: true, instrument: true } },
+        payments: { select: { id: true, amountMinorUnits: true } },
+      },
+    });
+
+    if (!enrollment) {
+      return { success: false, error: "Enrollment record not found." };
+    }
+
+    const receiptCode =
+      input.referenceCode?.trim() ||
+      `RCPT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const gateway = input.paymentMethod?.trim() || "UPI";
+    const amountMinorUnits = Math.round(input.amountRupees * 100);
+
+    const payment = await db.payment.create({
+      data: {
+        studentId: enrollment.student.id,
+        enrollmentId: enrollment.id,
+        amountMinorUnits,
+        currency: "INR",
+        gateway,
+        gatewayOrderId: `inst_${enrollment.id.slice(-6)}_${Date.now()}`,
+        gatewayPaymentId: receiptCode,
+        notes: input.notes?.trim() || `Installment payment tranche for ${enrollment.course.title}`,
+        status: PaymentStatus.PAID,
+      },
+    });
+
+    // Compute updated total paid across all payments
+    const existingPaidMinor = enrollment.payments.reduce((sum, p) => sum + p.amountMinorUnits, 0);
+    const newTotalPaidMinor = existingPaidMinor + amountMinorUnits;
+    const courseFeeMinor = enrollment.course.priceMinorUnits || 0;
+    const isFullyPaid = newTotalPaidMinor >= courseFeeMinor;
+    const newEmiStatus = isFullyPaid ? CourseEmiStatus.FULLY_PAID : CourseEmiStatus.PARTIALLY_PAID;
+
+    await db.enrollment.update({
+      where: { id: enrollment.id },
+      data: {
+        emiStatus: newEmiStatus,
+        paymentId: enrollment.paymentId || payment.id,
+      },
+    });
+
+    // If slots are provided and enrollment has assigned teacher, schedule sessions
+    let scheduledCount = 0;
+    const newLessons: Array<{
+      id: string;
+      trackingCode: string | null;
+      startsAt: string;
+      durationMinutes: number;
+      status: LessonStatus;
+      teacherId: string;
+      teacherName: string;
+      studentId: string;
+      studentName: string;
+    }> = [];
+
+    if (input.slots && input.slots.length > 0 && enrollment.teacherId) {
+      const teacher = await db.user.findUnique({
+        where: { id: enrollment.teacherId },
+        include: { teacherProfile: true },
+      });
+      if (teacher?.teacherProfile) {
+        for (const slot of input.slots) {
+          const startsAtDate = new Date(slot.startsAt);
+          if (isNaN(startsAtDate.getTime())) continue;
+
+          const trackingCode = await generateUniqueLessonTrackingCode();
+          const lesson = await db.lesson.create({
+            data: {
+              teacherId: teacher.id,
+              teacherProfileId: teacher.teacherProfile.id,
+              studentId: enrollment.student.id,
+              instrument: enrollment.course.instrument,
+              startsAt: startsAtDate,
+              durationMinutes: slot.durationMinutes || 60,
+              status: LessonStatus.SCHEDULED,
+              lessonSource: LessonSource.ENROLLMENT,
+              enrollmentId: enrollment.id,
+              groupRoomId: null,
+              trackingCode,
+            },
+          });
+          scheduledCount++;
+          newLessons.push({
+            id: lesson.id,
+            trackingCode: lesson.trackingCode,
+            startsAt: lesson.startsAt.toISOString(),
+            durationMinutes: lesson.durationMinutes,
+            status: lesson.status,
+            teacherId: teacher.id,
+            teacherName: teacher.name || "Faculty Mentor",
+            studentId: enrollment.student.id,
+            studentName: enrollment.student.name || "Student",
+          });
+        }
+      }
+    }
+
+    // Notify student
+    try {
+      await createNotification({
+        userId: enrollment.student.id,
+        type: NotificationType.SYSTEM,
+        title: `Payment Receipt: ₹${input.amountRupees.toLocaleString("en-IN")}${
+          scheduledCount > 0 ? ` + ${scheduledCount} Sessions Scheduled` : ""
+        }`,
+        body: `Your payment installment of ₹${input.amountRupees.toLocaleString("en-IN")} for "${enrollment.course.title}" was recorded successfully (Receipt ID: ${receiptCode}).${
+          scheduledCount > 0 ? ` ${scheduledCount} weekly sessions have been added to your timetable!` : ""
+        }`,
+        link: `/student/dashboard/payments`,
+      });
+    } catch {
+      // Non-blocking notification emission
+    }
+
+    revalidatePath("/admin/enrollments");
+    revalidatePath("/admin/lessons");
+    revalidatePath("/admin");
+    revalidatePath("/student/dashboard");
+    revalidatePath("/teacher/dashboard");
+    revalidatePath("/student/dashboard/payments");
+
+    return {
+      success: true,
+      data: {
+        paymentId: payment.id,
+        receiptCode,
+        totalPaidRupees: Math.round(newTotalPaidMinor / 100),
+        emiStatus: newEmiStatus,
+        scheduledCount,
+        newLessons,
+      },
+    };
+  } catch (error) {
+    logger.error({ error, input }, "Error recording enrollment installment payment");
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to record payment installment.",
+    };
+  }
+}
+
 
 

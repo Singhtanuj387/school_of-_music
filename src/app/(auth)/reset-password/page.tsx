@@ -3,8 +3,10 @@
 import { Suspense, useActionState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { resetPasswordAction } from "@/actions/auth";
 import { SplitHeading } from "@/components/ui/SplitHeading";
+
 
 function ResetPasswordContent() {
   const searchParams = useSearchParams();
@@ -15,10 +17,26 @@ function ResetPasswordContent() {
   });
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-gradient-to-b from-bg via-bg-alt/25 to-bg px-4 pt-16 sm:pt-20 pb-16">
-      <div className="relative w-full max-w-md space-y-6 overflow-hidden rounded-2xl border border-surface-muted/80 bg-white p-8 sm:p-10 shadow-xl shadow-primary/5 backdrop-blur-sm">
-        {/* Decorative Top Accent Bar */}
-        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
+    <div className="relative min-h-[calc(100vh-4rem)] w-full overflow-hidden flex items-center">
+      {/* Background Stage Image */}
+      <div className="absolute inset-0 z-0">
+        <Image
+          src="/auth-bg.png"
+          alt="Gandharva School of Music"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[24%_center] sm:object-[28%_center] lg:object-left"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/60 lg:bg-gradient-to-r lg:from-black/20 lg:via-black/45 lg:to-black/85" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(168,85,247,0.18),transparent_70%)]" />
+      </div>
+
+      <div className="relative z-10 w-full min-h-[calc(100vh-4rem)] flex items-center justify-center lg:justify-end py-10 sm:py-14 px-4 sm:px-8 lg:px-14 xl:px-20 max-w-[1560px] mx-auto">
+        <div className="w-full max-w-md lg:max-w-[460px]">
+          <div className="relative space-y-6 overflow-hidden rounded-3xl border border-white/80 bg-white/95 p-8 sm:p-10 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+            {/* Decorative Top Accent Bar */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
 
         <div className="space-y-3 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-cta text-white shadow-md shadow-primary/25">
@@ -163,6 +181,8 @@ function ResetPasswordContent() {
             </button>
           </form>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );

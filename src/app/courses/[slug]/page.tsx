@@ -44,16 +44,22 @@ export default async function PublicCourseDetailPage({
     createdAt: string;
   } | null = null;
 
+  let isConvertedStudent = false;
+
   if (user) {
-    const [enrollment, req] = await Promise.all([
+    const [enrollment, req, convertedTrial] = await Promise.all([
       db.enrollment.findFirst({
         where: { studentId: user.id, courseId: course.id, status: "ACTIVE" },
       }),
       db.courseEnrollmentRequest.findFirst({
         where: { studentId: user.id, courseId: course.id, status: "PENDING" },
       }),
+      db.trialRequest.findFirst({
+        where: { studentId: user.id, isConverted: true },
+      }),
     ]);
     isAlreadyEnrolled = !!enrollment;
+    isConvertedStudent = Boolean(convertedTrial);
     if (req) {
       pendingRequest = {
         id: req.id,
@@ -170,17 +176,22 @@ export default async function PublicCourseDetailPage({
                 />
               </div>
 
-              <div className="text-xs text-body-muted sm:text-right">
-                <span className="font-semibold text-accent-dark">
-                  EMI Available from ₹{Math.round(course.priceMinorUnits / 6 / 100).toLocaleString("en-IN")}/mo
-                </span>
-                <p className="text-[11px] text-body-muted">
-                  3 and 6 month zero-interest plans
-                </p>
-              </div>
+              {course.sessionCount > 0 && (
+                <div className="text-xs text-body-muted sm:text-right">
+                  <span className="font-semibold text-accent-dark">
+                    ₹{Math.round(course.priceMinorUnits / course.sessionCount / 100).toLocaleString("en-IN")} / session
+                  </span>
+                  <p className="text-[11px] text-body-muted">
+                    {course.sessionCount} private 1-on-1 sessions
+                  </p>
+                </div>
+              )}
             </div>
 
-            <CourseEmiBreakdown priceMinorUnits={course.priceMinorUnits} />
+            <CourseEmiBreakdown
+              priceMinorUnits={course.priceMinorUnits}
+              sessionCount={course.sessionCount}
+            />
 
             <CourseEnrollmentRequestModal
               courseId={course.id}
@@ -192,6 +203,7 @@ export default async function PublicCourseDetailPage({
               isAlreadyEnrolled={isAlreadyEnrolled}
               pendingRequest={pendingRequest}
               isAuthenticated={!!user}
+              isConvertedStudent={isConvertedStudent}
             />
           </div>
         </div>

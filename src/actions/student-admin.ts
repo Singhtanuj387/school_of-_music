@@ -2,10 +2,11 @@
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-helpers";
-import { Role, PaymentStatus, EnrollmentStatus, LessonStatus, LessonSource } from "@prisma/client";
+import { Role, PaymentStatus, EnrollmentStatus, LessonStatus, LessonSource, NotificationType } from "@prisma/client";
 import { hashPassword } from "@/lib/password";
 import { revalidatePath } from "next/cache";
 import { generateUniqueLessonTrackingCode } from "@/lib/lesson-tracking";
+import { createNotification } from "@/actions/notifications";
 
 export type StudentActionResponse<T = unknown> = {
   success: boolean;
@@ -228,5 +229,48 @@ export async function scheduleStudentLessonAction(input: {
   } catch (error) {
     console.error("Failed to schedule lesson:", error);
     return { success: false, error: "Could not schedule lesson." };
+  }
+}
+
+// ─── 5. Send Student Communication ──────────────────────────────────────────
+export async function sendStudentCommunicationAction(input: {
+  studentId: string;
+  title: string;
+  message: string;
+  type?: NotificationType;
+}): Promise<StudentActionResponse> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const student = await db.user.findUnique({
+      where: { id: input.studentId },
+      select: { id: true, name: true },
+    });
+
+    if (!student) {
+      return { success: false, error: "Student not found." };
+    }
+
+    if (!input.title?.trim() || !input.message?.trim()) {
+      return { success: false, error: "Title and message content are required." };
+    }
+
+    await createNotification({
+      userId: student.id,
+      title: input.title.trim(),
+      body: input.message.trim(),
+      type: input.type || NotificationType.SYSTEM,
+      link: "/student/dashboard",
+    });
+
+    revalidatePath("/admin/students");
+
+    return {
+      success: true,
+      message: `Notification delivered to ${student.name}.`,
+    };
+  } catch (error) {
+    console.error("Failed to send student communication:", error);
+    return { success: false, error: "Could not send communication." };
   }
 }

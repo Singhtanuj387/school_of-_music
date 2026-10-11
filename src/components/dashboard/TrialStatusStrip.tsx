@@ -21,15 +21,16 @@ export type TrialStatusData = {
     preferredTimeSlot?: string;
     notes?: string | null;
   } | null;
+  isConverted?: boolean;
 };
 
 export function TrialStatusStrip({ data }: { data: TrialStatusData }) {
-  const { trialStatus, activeEnrollment, pendingTrialRequest } = data;
+  const { trialStatus, activeEnrollment, pendingTrialRequest, isConverted } = data;
 
   const lessonsGranted = trialStatus?.lessonsGranted ?? 2;
   const lessonsUsed = trialStatus?.lessonsUsed ?? 0;
   const trialsRemaining = Math.max(0, lessonsGranted - lessonsUsed);
-  const isTrialActive = trialStatus?.status === "ACTIVE" && trialsRemaining > 0;
+  const isTrialActive = !isConverted && trialStatus?.status === "ACTIVE" && trialsRemaining > 0;
 
   // Case 0: Pending Trial Request awaiting Admin teacher allotment
   if (pendingTrialRequest) {

@@ -20,7 +20,7 @@ A live, 1-on-1 online music & dance learning platform designed and engineered fo
 | **Framework** | Next.js 16.3.5 (App Router, Turbopack, React 19) |
 | **Language** | TypeScript (Strict type checking) |
 | **Styling & Design** | Tailwind CSS v4 with `@theme inline` custom design tokens |
-| **Typography** | `Vidaloka` (Display / Classical Serif) + `DM Sans` (Clean UI Sans) |
+| **Typography** | `DM Sans` (Geometric Sans for Headings, Body & UI) |
 | **Database & ORM** | PostgreSQL 16 + Prisma ORM 7.10 |
 | **Authentication** | Auth.js (NextAuth v5 beta) with Credentials provider, BCrypt, and Session Cookies |
 | **Real-Time Video/Audio** | LiveKit WebRTC (`livekit-client`, `@livekit/components-react`, `livekit-server-sdk`) |
@@ -39,7 +39,7 @@ A live, 1-on-1 online music & dance learning platform designed and engineered fo
   - **Midnight Violet (`#12072B` to `#220F4B`)**: Studio-grade dark theme surfaces.
   - **Soft Lavender (`#D8D1E8`)**: Borders, dividers, and secondary text.
 - **Landing Page**:
-  - Hero section featuring Vidaloka serif typography and accredited exam partner badges.
+  - Hero section featuring DM Sans modern typography and accredited exam partner badges.
   - Saffron ribbon banner highlighting 1-on-1 mentorship, customized syllabus, and 24/7 support.
   - Four educational pillars ("Exclusively At Gandharva!").
   - Curated course grid across three disciplines:
@@ -147,7 +147,7 @@ meet_platform/
 │   │   ├── teacher/dashboard/ # Teacher dashboard (schedule management, student list, lesson history)
 │   │   ├── teachers/          # Public teacher directory and individual teacher profile pages
 │   │   ├── globals.css        # Tailwind v4 theme tokens (Gandharva color system)
-│   │   ├── layout.tsx         # Root layout with Vidaloka & DM Sans Google fonts
+│   │   ├── layout.tsx         # Root layout with DM Sans Google font
 │   │   └── page.tsx           # Gandharva School of Music homepage
 │   ├── components/
 │   │   ├── layout/            # Navbar, Footer, and Page Shells

@@ -39,6 +39,7 @@ import {
   Send,
   User,
   Music,
+  GraduationCap,
 } from "lucide-react";
 
 export interface AdminTrialRequestItem {
@@ -234,7 +235,8 @@ function formatReadableDateOnly(isoString: string | null | undefined): string {
   }).format(date);
 }
 
-function getCountdownPill(targetIso: string): { label: string; isLive: boolean } {
+function getCountdownPill(targetIso: string, isMounted = true): { label: string; isLive: boolean } {
+  if (!isMounted) return { label: "Scheduled", isLive: false };
   const target = new Date(targetIso);
   const now = new Date();
   const diffMs = target.getTime() - now.getTime();
@@ -278,6 +280,10 @@ export function AdminTrialsManager({
   initialKpis: TrialCrmKpiStats;
 }) {
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   const [requests, setRequests] = useState<AdminTrialRequestItem[]>(initialRequests);
   const [selectedLeadId, setSelectedLeadId] = useState<string>(
     initialRequests[0]?.id || ""
@@ -358,15 +364,6 @@ export function AdminTrialsManager({
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [allotAdminNotes, setAllotAdminNotes] = useState("");
 
-  // ─── Convert to Student Modal State ────────────────────────────────
-  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
-  const [convertTargetLeadId, setConvertTargetLeadId] = useState<string | null>(null);
-  const [convertCourseId, setConvertCourseId] = useState(courses[0]?.id || "");
-  const [convertTeacherId, setConvertTeacherId] = useState("");
-  const [convertSessionCount, setConvertSessionCount] = useState(
-    courses[0]?.sessionCount || 8
-  );
-  const [convertAdminNotes, setConvertAdminNotes] = useState("");
 
   // ─── Book Trial (Manual Lead) Modal State ──────────────────────────
   const [isBookTrialOpen, setIsBookTrialOpen] = useState(false);
@@ -727,6 +724,15 @@ export function AdminTrialsManager({
   const handleStepClick = (stepId: string) => {
     if (!drawerLead) return;
 
+    if (drawerLead.isConverted) {
+      setStatusMessage({
+        type: "error",
+        text: `Student ${drawerLead.studentName} is already converted to an active enrolled student. Status cannot be modified.`,
+      });
+      setTimeout(() => setStatusMessage(null), 3500);
+      return;
+    }
+
     if (stepId === "NEW") {
       // Revert to new lead
       startTransition(async () => {
@@ -777,8 +783,7 @@ export function AdminTrialsManager({
       setFollowUpTargetLeadId(drawerLead.id);
       setIsAddFollowUpModalOpen(true);
     } else if (stepId === "CONVERTED") {
-      // Open Convert Modal
-      openConvertModal(drawerLead);
+      handleDirectConvert(drawerLead);
     }
   };
 
@@ -1132,61 +1137,35 @@ export function AdminTrialsManager({
     });
   };
 
-  // Open Convert Modal
-  const openConvertModal = (lead: AdminTrialRequestItem) => {
-    setConvertTargetLeadId(lead.id);
-    setSelectedLeadId(lead.id);
-    const matchingCourse =
-      courses.find((c) =>
-        c.instrument.toLowerCase().includes(lead.instrument.toLowerCase())
-      ) || courses[0];
-
-    if (matchingCourse) {
-      setConvertCourseId(matchingCourse.id);
-      setConvertSessionCount(matchingCourse.sessionCount || 8);
+  // 1-Click Convert to Enrolled Student (Directly converts and moves to Enrollment section)
+  const handleDirectConvert = (lead: AdminTrialRequestItem) => {
+    if (lead.isConverted) {
+      router.push(`/admin/enrollments?studentId=${lead.studentId}&trialId=${lead.id}`);
+      return;
     }
-    setConvertTeacherId(lead.allottedTeacherId || teachers[0]?.id || "");
-    setConvertAdminNotes(`Converted after trial on ${lead.instrument}`);
-    setIsConvertModalOpen(true);
-  };
-
-  // Submit Convert to Student
-  const handleConvertSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const targetLead = requests.find((r) => r.id === convertTargetLeadId) || selectedLead;
-    if (!targetLead || !convertCourseId) return;
-
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.id === targetLead.id
-          ? {
-              ...r,
-              isConverted: true,
-              convertedAt: new Date().toISOString(),
-            }
-          : r
-      )
-    );
-    setIsConvertModalOpen(false);
 
     startTransition(async () => {
       const res = await convertTrialToEnrollmentAction({
-        trialRequestId: targetLead.id,
-        courseId: convertCourseId,
-        teacherId: convertTeacherId || undefined,
-        sessionsRemaining: convertSessionCount,
-        adminNotes: convertAdminNotes.trim() || undefined,
+        trialRequestId: lead.id,
       });
 
       if (res.success) {
+        setRequests((prev) =>
+          prev.map((r) =>
+            r.id === lead.id
+              ? {
+                  ...r,
+                  isConverted: true,
+                  convertedAt: new Date().toISOString(),
+                }
+              : r
+          )
+        );
         setStatusMessage({
           type: "success",
-          text: `Success! ${targetLead.studentName} converted to enrolled student!`,
+          text: `Success! ${lead.studentName} converted and moved to Enrollment section!`,
         });
-        if (res.data?.enrollmentId) {
-          router.push(`/admin/enrollments?enrollmentId=${res.data.enrollmentId}&trialId=${targetLead.id}`);
-        }
-        setTimeout(() => setStatusMessage(null), 3500);
+        router.push(`/admin/enrollments?studentId=${lead.studentId}&trialId=${lead.id}`);
       } else {
         setStatusMessage({
           type: "error",
@@ -1366,7 +1345,7 @@ export function AdminTrialsManager({
         <div className="flex items-center gap-2.5 text-body/80 self-end sm:self-auto">
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-neutral-200/90 text-[11px] font-medium shadow-2xs">
             <Globe className="w-3.5 h-3.5 text-primary/70" />
-            <span>IST · {new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
+            <span suppressHydrationWarning>IST · {new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
           </div>
         </div>
       </div>
@@ -1493,7 +1472,7 @@ export function AdminTrialsManager({
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {upcomingConfirmedTrials.todayList.map((item) => {
-                    const pill = getCountdownPill(item.requestedStartsAt);
+                    const pill = getCountdownPill(item.requestedStartsAt, isMounted);
                     const parsedTime = formatReadableDateTime(item.requestedStartsAt).split(",")[1] || item.preferredTimeSlot;
 
                     return (
@@ -1504,7 +1483,7 @@ export function AdminTrialsManager({
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-12 text-center shrink-0">
-                            <span className="text-xs font-bold text-heading font-numeric">
+                            <span suppressHydrationWarning className="text-xs font-bold text-heading font-numeric">
                               {parsedTime.trim()}
                             </span>
                           </div>
@@ -1520,6 +1499,7 @@ export function AdminTrialsManager({
 
                         <div className="flex items-center gap-2 shrink-0">
                           <span
+                            suppressHydrationWarning
                             className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
                               pill.isLive
                                 ? "bg-rose-100 text-rose-700 animate-pulse"
@@ -1568,7 +1548,7 @@ export function AdminTrialsManager({
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {upcomingConfirmedTrials.tomorrowList.map((item) => {
-                    const pill = getCountdownPill(item.requestedStartsAt);
+                    const pill = getCountdownPill(item.requestedStartsAt, isMounted);
                     const parsedTime = formatReadableDateTime(item.requestedStartsAt).split(",")[1] || item.preferredTimeSlot;
 
                     return (
@@ -1579,7 +1559,7 @@ export function AdminTrialsManager({
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-12 text-center shrink-0">
-                            <span className="text-xs font-bold text-heading font-numeric">
+                            <span suppressHydrationWarning className="text-xs font-bold text-heading font-numeric">
                               {parsedTime.trim()}
                             </span>
                           </div>
@@ -1594,7 +1574,7 @@ export function AdminTrialsManager({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-numeric">
+                          <span suppressHydrationWarning className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-numeric">
                             {pill.label}
                           </span>
 
@@ -1640,7 +1620,7 @@ export function AdminTrialsManager({
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {upcomingConfirmedTrials.laterList.map((item) => {
-                      const pill = getCountdownPill(item.requestedStartsAt);
+                      const pill = getCountdownPill(item.requestedStartsAt, isMounted);
 
                       return (
                         <div
@@ -1650,7 +1630,7 @@ export function AdminTrialsManager({
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="w-16 text-center shrink-0">
-                              <span className="text-[11px] font-bold text-heading font-numeric">
+                              <span suppressHydrationWarning className="text-[11px] font-bold text-heading font-numeric">
                                 {formatReadableDateOnly(item.requestedStartsAt)}
                               </span>
                             </div>
@@ -1665,7 +1645,7 @@ export function AdminTrialsManager({
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-numeric">
+                            <span suppressHydrationWarning className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-numeric">
                               {pill.label}
                             </span>
 
@@ -1888,17 +1868,38 @@ export function AdminTrialsManager({
                         </td>
 
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openDrawer(req);
-                            }}
-                            className="px-3 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-heading text-[11px] font-semibold inline-flex items-center gap-1 transition-all"
-                          >
-                            <span>Open drawer</span>
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {req.isConverted ? (
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                Enrolled
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDirectConvert(req);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[#3C096C] hover:bg-[#2D0752] text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                                title="1-Click Convert to Enrolled Student"
+                              >
+                                <span>Convert</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDrawer(req);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-heading text-[11px] font-semibold inline-flex items-center gap-1 transition-all"
+                            >
+                              <span>Drawer</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1925,15 +1926,52 @@ export function AdminTrialsManager({
                 {renderStatusBadge(selectedLead)}
               </div>
 
+              {/* Converted status banner OR 1-Click Convert Button */}
+              {selectedLead.isConverted ? (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200/90 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      <Check className="w-4 h-4 stroke-[3]" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-emerald-950">Converted to Enrolled</div>
+                      <div className="text-[10px] text-emerald-700">Lead is active in Enrollments</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/admin/enrollments?trialId=${selectedLead.id}`)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold shadow-2xs transition-all cursor-pointer"
+                  >
+                    Enrollments →
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleDirectConvert(selectedLead)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#3C096C] hover:bg-[#2D0752] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-xs active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                >
+                  {isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  ) : (
+                    <GraduationCap className="w-4 h-4 text-white" />
+                  )}
+                  <span>Convert to Enrolled Student</span>
+                  <ArrowRight className="w-3.5 h-3.5 ml-auto text-white" />
+                </button>
+              )}
+
               {/* Drawer Launcher Button */}
               <button
                 type="button"
                 onClick={() => openDrawer(selectedLead)}
-                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-xs active:scale-[0.98]"
+                className="w-full py-2.5 px-4 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-heading text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-[0.98]"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <SlidersHorizontal className="w-3.5 h-3.5 text-body" />
                 <span>View Full Trial Drawer</span>
-                <ChevronRight className="w-4 h-4 ml-auto" />
+                <ChevronRight className="w-4 h-4 ml-auto text-body/60" />
               </button>
 
               {/* 3 Quick Action Contact Buttons */}
@@ -1954,17 +1992,29 @@ export function AdminTrialsManager({
                   <span>Email</span>
                 </a>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setContactedLeadId(selectedLead.id);
-                    setIsContactedModalOpen(true);
-                  }}
-                  className="py-2 px-3 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-heading text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>WhatsApp</span>
-                </button>
+                {selectedLead.isConverted ? (
+                  <a
+                    href={selectedLead.studentPhone ? `https://wa.me/${selectedLead.studentPhone.replace(/[^0-9]/g, "")}` : "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2 px-3 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-heading text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp</span>
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContactedLeadId(selectedLead.id);
+                      setIsContactedModalOpen(true);
+                    }}
+                    className="py-2 px-3 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-heading text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp</span>
+                  </button>
+                )}
               </div>
 
               <div className="space-y-2 text-xs divide-y divide-neutral-100">
@@ -2333,24 +2383,47 @@ export function AdminTrialsManager({
 
                     {/* Status Dropdown */}
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-body/60 block">
-                        Status
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-body/60 block">
+                          Status
+                        </label>
+                        {drawerLead.isConverted && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            Locked · Converted
+                          </span>
+                        )}
+                      </div>
                       <div className="relative">
                         <select
-                          value={drawerStatusSelection}
-                          onChange={(e) => setDrawerStatusSelection(e.target.value)}
-                          className="w-full appearance-none rounded-xl border border-neutral-200/90 bg-white px-3 py-2 text-xs font-semibold text-heading focus:outline-none focus:border-blue-600 transition-colors pr-8"
+                          disabled={drawerLead.isConverted}
+                          value={drawerLead.isConverted ? "CONVERTED" : drawerStatusSelection}
+                          onChange={(e) => {
+                            if (e.target.value === "CONVERTED") {
+                              handleDirectConvert(drawerLead);
+                            } else {
+                              setDrawerStatusSelection(e.target.value);
+                            }
+                          }}
+                          className={`w-full appearance-none rounded-xl border border-neutral-200/90 px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 transition-colors pr-8 ${
+                            drawerLead.isConverted
+                              ? "bg-neutral-100 text-neutral-500 cursor-not-allowed"
+                              : "bg-white text-heading"
+                          }`}
                         >
                           <option value="NEW">NEW</option>
                           <option value="CONTACTED">CONTACTED</option>
                           <option value="CONFIRMED">CONFIRMED</option>
                           <option value="COMPLETED">COMPLETED</option>
                           <option value="FOLLOW_UP">FOLLOW-UP</option>
-                          <option value="CONVERTED">CONVERTED</option>
+                          <option value="CONVERTED">CONVERTED (Click to Convert)</option>
                         </select>
                         <ChevronDown className="w-4 h-4 text-body/50 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
+                      {drawerLead.isConverted ? (
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          ✓ Student is actively enrolled. Lead status is locked and cannot be edited.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 )}
@@ -3057,122 +3130,7 @@ export function AdminTrialsManager({
         </div>
       )}
 
-      {/* ─── MODAL: CONVERT TO ENROLLED STUDENT ───────────────────────── */}
-      {isConvertModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between border-b border-neutral-100 pb-3">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 font-mono">
-                  Admissions Conversion
-                </span>
-                <h3 className="font-serif text-lg font-bold text-heading mt-0.5">
-                  Convert to Enrolled Student
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsConvertModalOpen(false)}
-                className="p-1 rounded-lg text-body/60 hover:text-heading"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <form onSubmit={handleConvertSubmit} className="space-y-3.5 text-xs">
-              <div className="space-y-1">
-                <label className="font-semibold text-heading block">
-                  Select Enrolled Course *
-                </label>
-                <select
-                  required
-                  value={convertCourseId}
-                  onChange={(e) => {
-                    setConvertCourseId(e.target.value);
-                    const matched = courses.find((c) => c.id === e.target.value);
-                    if (matched) setConvertSessionCount(matched.sessionCount);
-                  }}
-                  className="w-full rounded-xl border border-neutral-200 p-2.5 text-xs text-heading focus:outline-none focus:border-blue-600 bg-white"
-                >
-                  {courses.map((course) => (
-                    <option key={course.id} value={course.id}>
-                      {course.title} ({course.level} · {course.sessionCount} sessions)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-heading block">
-                  Assign Faculty Mentor (Optional)
-                </label>
-                <select
-                  value={convertTeacherId}
-                  onChange={(e) => setConvertTeacherId(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-200 p-2.5 text-xs text-heading focus:outline-none focus:border-blue-600 bg-white"
-                >
-                  <option value="">-- Let student choose / assign later --</option>
-                  {teachers.map((teacher) => (
-                    <option key={teacher.id} value={teacher.id}>
-                      {teacher.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-heading block">
-                  Sessions Allotted *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  max={100}
-                  value={convertSessionCount}
-                  onChange={(e) => setConvertSessionCount(Number(e.target.value))}
-                  className="w-full rounded-xl border border-neutral-200 p-2 text-xs text-heading font-numeric"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-heading block">
-                  Admin Approval Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={convertAdminNotes}
-                  onChange={(e) => setConvertAdminNotes(e.target.value)}
-                  placeholder="e.g. Student paid for 8-session bundle, converted from trial lead."
-                  className="w-full rounded-xl border border-neutral-200 p-2 text-xs text-heading"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setIsConvertModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-neutral-100 text-body font-semibold hover:bg-neutral-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-xs flex items-center gap-1.5 active:scale-95 transition-all"
-                >
-                  {isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <UserPlus className="w-4 h-4" />
-                  )}
-                  <span>Approve & Allot to Student</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ─── MODAL: BOOK TRIAL (MANUAL LEAD CREATION) ────────────────── */}
       {isBookTrialOpen && (

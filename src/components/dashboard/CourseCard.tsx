@@ -103,8 +103,10 @@ export function CourseCard({ course, basePath = "/student/dashboard/courses" }: 
             size="lg"
             showOriginalINR
           />
-          <div className="text-[11px] font-bold text-accent-dark mt-0.5 flex items-center gap-1">
-            <span>EMI from ₹{Math.round(course.priceMinorUnits / 6 / 100).toLocaleString("en-IN")}/mo</span>
+          <div className="text-[11px] font-semibold text-accent-dark mt-0.5 flex items-center gap-1 font-numeric">
+            <span>
+              ₹{Math.round(course.priceMinorUnits / (course.sessionCount || 24) / 100).toLocaleString("en-IN")} / session
+            </span>
           </div>
         </div>
 

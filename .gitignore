@@ -51,4 +51,5 @@ public/uploads/
 scratch/
 .tempmediaStorage/
 *.log
+Gemini_Generated_Image_*.png
 

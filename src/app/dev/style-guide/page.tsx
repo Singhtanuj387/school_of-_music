@@ -273,7 +273,7 @@ export default function StyleGuidePage() {
               size="xl"
             />
             <p className="text-sm text-body max-w-2xl">
-              Vidaloka (serif) for musical headings paired with DM Sans for readable body copy. Reusable SplitHeading component renders navy first clause with orange emphasized clause.
+              DM Sans typography for musical headings and readable body copy. Reusable SplitHeading component renders navy first clause with orange emphasized clause.
             </p>
           </div>
 
