@@ -5,8 +5,8 @@ import { Role } from "@prisma/client";
 import { formatInViewerTimezone } from "@/lib/timezone";
 import {
   OverallPaymentsManager,
-  type FormattedPaymentItem,
-  type CourseOption,
+  FormattedPaymentItem,
+  CourseOption,
 } from "./OverallPaymentsManager";
 
 export const metadata = {

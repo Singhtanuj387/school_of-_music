@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
@@ -10,7 +11,6 @@ import {
   TrialLeadOption,
   AdminCourseEnrollmentRequestItem,
 } from "./AdminEnrollmentsManager";
-import { Suspense } from "react";
 
 export const metadata = {
   title: "Create Enrollment & 1:1 Scheduling | Admin Portal | Gandharva School of Music",
@@ -28,84 +28,44 @@ export default async function AdminEnrollmentsPage() {
   let dbCourseRequests: any[] = [];
 
   try {
-    // 1. Fetch catalog
-    dbCourses = await db.course.findMany({
-      where: { isPublished: true },
-      select: {
-        id: true,
-        title: true,
-        instrument: true,
-        level: true,
-        sessionCount: true,
-        priceMinorUnits: true,
-        durationWeeks: true,
-      },
-      orderBy: { title: "asc" },
-    });
-
-    // 2. Fetch faculty teachers
-    dbTeachers = await db.user.findMany({
-      where: { role: Role.TEACHER },
-      include: {
-        teacherProfile: {
+    // Run ALL queries in parallel — cuts total time from sum(all) to max(slowest)
+    [dbCourses, dbTeachers, dbStudents, dbTrialLeads, dbEnrollments, dbCourseRequests] =
+      await Promise.all([
+        // 1. Fetch catalog
+        db.course.findMany({
+          where: { isPublished: true },
           select: {
-            instruments: true,
-            payoutPerSession: true,
+            id: true,
+            title: true,
+            instrument: true,
+            level: true,
+            sessionCount: true,
+            priceMinorUnits: true,
+            durationWeeks: true,
           },
-        },
-      },
-      orderBy: { name: "asc" },
-    });
+          orderBy: { title: "asc" },
+        }),
 
-    // 3. Fetch students roster - Strictly only students converted via Trial CRM
-    dbStudents = await db.user.findMany({
-      where: {
-        role: Role.STUDENT,
-        trialRequestsAsStudent: { some: { isConverted: true } },
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        timezone: true,
-        guardianName: true,
-        guardianPhone: true,
-        country: true,
-        age: true,
-      },
-      orderBy: { name: "asc" },
-    });
+        // 2. Fetch faculty teachers
+        db.user.findMany({
+          where: { role: Role.TEACHER },
+          include: {
+            teacherProfile: {
+              select: {
+                instruments: true,
+                payoutPerSession: true,
+              },
+            },
+          },
+          orderBy: { name: "asc" },
+        }),
 
-    // 4. Fetch converted trial leads
-    dbTrialLeads = await db.trialRequest.findMany({
-      where: {
-        isConverted: true,
-      },
-      select: {
-        id: true,
-        studentId: true,
-        studentName: true,
-        studentEmail: true,
-        instrument: true,
-        status: true,
-        isConverted: true,
-        preferredTimeSlot: true,
-        allottedTeacherId: true,
-      },
-      orderBy: { convertedAt: "desc" },
-      take: 50,
-    });
-
-    // 5. Fetch full relational enrollments for converted students
-    dbEnrollments = await db.enrollment.findMany({
-      where: {
-        student: {
-          trialRequestsAsStudent: { some: { isConverted: true } },
-        },
-      },
-      include: {
-        student: {
+        // 3. Fetch students roster — only students converted via Trial CRM
+        db.user.findMany({
+          where: {
+            role: Role.STUDENT,
+            trialRequestsAsStudent: { some: { isConverted: true } },
+          },
           select: {
             id: true,
             name: true,
@@ -117,85 +77,129 @@ export default async function AdminEnrollmentsPage() {
             country: true,
             age: true,
           },
-        },
-        course: {
-          select: {
-            id: true,
-            title: true,
-            instrument: true,
-            level: true,
-            sessionCount: true,
-            priceMinorUnits: true,
-            durationWeeks: true,
-          },
-        },
-        lessons: {
-          select: {
-            id: true,
-            trackingCode: true,
-            startsAt: true,
-            durationMinutes: true,
-            status: true,
-            teacherId: true,
-          },
-          orderBy: { startsAt: "asc" },
-        },
-        payment: {
-          select: {
-            id: true,
-            amountMinorUnits: true,
-            status: true,
-            gatewayPaymentId: true,
-          },
-        },
-        payments: {
-          orderBy: { createdAt: "asc" },
-          select: {
-            id: true,
-            amountMinorUnits: true,
-            currency: true,
-            gateway: true,
-            gatewayPaymentId: true,
-            gatewayOrderId: true,
-            status: true,
-            notes: true,
-            createdAt: true,
-          },
-        },
-      },
-      orderBy: { startedAt: "desc" },
-    });
+          orderBy: { name: "asc" },
+        }),
 
-    // 6. Fetch course admission requests submitted by converted students
-    dbCourseRequests = await db.courseEnrollmentRequest.findMany({
-      where: {
-        student: {
-          trialRequestsAsStudent: { some: { isConverted: true } },
-        },
-      },
-      include: {
-        student: {
+        // 4. Fetch converted trial leads (capped at 50)
+        db.trialRequest.findMany({
+          where: { isConverted: true },
           select: {
             id: true,
-            name: true,
-            email: true,
-          },
-        },
-        course: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            discipline: true,
+            studentId: true,
+            studentName: true,
+            studentEmail: true,
             instrument: true,
-            level: true,
-            sessionCount: true,
-            priceMinorUnits: true,
+            status: true,
+            isConverted: true,
+            preferredTimeSlot: true,
+            allottedTeacherId: true,
           },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+          orderBy: { convertedAt: "desc" },
+          take: 50,
+        }),
+
+        // 5. Fetch enrollments with lessons limited to recent 20 per enrollment
+        db.enrollment.findMany({
+          where: {
+            student: {
+              trialRequestsAsStudent: { some: { isConverted: true } },
+            },
+          },
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                timezone: true,
+                guardianName: true,
+                guardianPhone: true,
+                country: true,
+                age: true,
+              },
+            },
+            course: {
+              select: {
+                id: true,
+                title: true,
+                instrument: true,
+                level: true,
+                sessionCount: true,
+                priceMinorUnits: true,
+                durationWeeks: true,
+              },
+            },
+            lessons: {
+              select: {
+                id: true,
+                trackingCode: true,
+                startsAt: true,
+                durationMinutes: true,
+                status: true,
+                teacherId: true,
+              },
+              orderBy: { startsAt: "asc" },
+              take: 30, // Cap lessons per enrollment to reduce payload
+            },
+            payment: {
+              select: {
+                id: true,
+                amountMinorUnits: true,
+                status: true,
+                gatewayPaymentId: true,
+              },
+            },
+            payments: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                amountMinorUnits: true,
+                currency: true,
+                gateway: true,
+                gatewayPaymentId: true,
+                gatewayOrderId: true,
+                status: true,
+                notes: true,
+                createdAt: true,
+              },
+              take: 20, // Cap payment records per enrollment
+            },
+          },
+          orderBy: { startedAt: "desc" },
+        }),
+
+        // 6. Fetch course admission requests
+        db.courseEnrollmentRequest.findMany({
+          where: {
+            student: {
+              trialRequestsAsStudent: { some: { isConverted: true } },
+            },
+          },
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            course: {
+              select: {
+                id: true,
+                title: true,
+                slug: true,
+                discipline: true,
+                instrument: true,
+                level: true,
+                sessionCount: true,
+                priceMinorUnits: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+      ]);
   } catch (error) {
     console.error("[AdminEnrollmentsPage] Error querying PostgreSQL:", error);
   }

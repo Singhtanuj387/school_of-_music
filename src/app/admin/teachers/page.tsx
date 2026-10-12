@@ -11,110 +11,109 @@ export const metadata = {
 export default async function AdminTeachersPage() {
   await requireRole(Role.ADMIN);
 
-  // Query all teacher users and full relational profiles from database
-  const dbUsers = await db.user.findMany({
-    where: { role: Role.TEACHER },
-    include: {
-      teacherProfile: {
-        include: {
-          lessonsAsTeacher: {
-            include: {
-              student: {
-                select: { id: true, name: true, email: true, phone: true },
+  // Run both queries in parallel
+  const [dbUsers, dbEnrollments] = await Promise.all([
+    // Query teacher users with trimmed relational profiles
+    db.user.findMany({
+      where: { role: Role.TEACHER },
+      include: {
+        teacherProfile: {
+          include: {
+            lessonsAsTeacher: {
+              include: {
+                student: {
+                  select: { id: true, name: true, email: true, phone: true },
+                },
+              },
+              orderBy: { startsAt: "desc" },
+              take: 30, // Reduced from 100 — older lessons rarely needed on initial load
+            },
+            availabilityRules: {
+              select: { id: true },
+            },
+          },
+        },
+        courseTeachers: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                instrument: true,
+                level: true,
+                sessionCount: true,
+                syllabusSummary: true,
+                priceMinorUnits: true,
               },
             },
-            orderBy: { startsAt: "desc" },
-            take: 100,
-          },
-          availabilityRules: {
-            select: { id: true },
           },
         },
-      },
-      courseTeachers: {
-        include: {
-          course: {
-            select: {
-              id: true,
-              title: true,
-              instrument: true,
-              level: true,
-              sessionCount: true,
-              syllabusSummary: true,
-              priceMinorUnits: true,
+        resourcesUploaded: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            category: true,
+            fileName: true,
+            fileUrl: true,
+            fileSizeBytes: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20, // Reduced from 50
+        },
+        allottedTrialsAsTeacher: {
+          select: {
+            id: true,
+            instrument: true,
+            status: true,
+            requestedStartsAt: true,
+            isConverted: true,
+          },
+          orderBy: { requestedStartsAt: "desc" },
+          take: 10, // Reduced from 20
+        },
+        // Only load conversation metadata — messages loaded on-demand
+        conversationsAsTeacher: {
+          include: {
+            student: {
+              select: { id: true, name: true, email: true, phone: true },
+            },
+            _count: {
+              select: { messages: true },
             },
           },
+          orderBy: { updatedAt: "desc" },
+          take: 10, // Only recent conversations
         },
       },
-      resourcesUploaded: {
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          category: true,
-          fileName: true,
-          fileUrl: true,
-          fileSizeBytes: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 50,
+      orderBy: { createdAt: "desc" },
+    }),
+
+    // Query enrollments assigned to teachers
+    db.enrollment.findMany({
+      where: {
+        teacherId: { not: null },
       },
-      allottedTrialsAsTeacher: {
-        select: {
-          id: true,
-          instrument: true,
-          status: true,
-          requestedStartsAt: true,
-          isConverted: true,
+      include: {
+        student: {
+          select: { id: true, name: true, email: true, phone: true },
         },
-        orderBy: { requestedStartsAt: "desc" },
-        take: 20,
-      },
-      conversationsAsTeacher: {
-        include: {
-          student: {
-            select: { id: true, name: true, email: true, phone: true },
-          },
-          messages: {
-            include: {
-              sender: {
-                select: { id: true, name: true, role: true },
-              },
-            },
-            orderBy: { createdAt: "asc" },
-            take: 200,
+        course: {
+          select: {
+            id: true,
+            title: true,
+            instrument: true,
+            level: true,
+            sessionCount: true,
           },
         },
-        orderBy: { updatedAt: "desc" },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { startedAt: "desc" },
+    }),
+  ]);
 
-  const teacherUserIds = dbUsers.map((u) => u.id);
-
-  // Query enrollments assigned to any of these teachers
-  const dbEnrollments = await db.enrollment.findMany({
-    where: {
-      teacherId: { in: teacherUserIds },
-    },
-    include: {
-      student: {
-        select: { id: true, name: true, email: true, phone: true },
-      },
-      course: {
-        select: {
-          id: true,
-          title: true,
-          instrument: true,
-          level: true,
-          sessionCount: true,
-        },
-      },
-    },
-    orderBy: { startedAt: "desc" },
-  });
+  const teacherUserIds = new Set(dbUsers.map((u) => u.id));
 
   // Map into TeacherRecord format without dummy data
   const formattedTeachers: TeacherRecord[] = dbUsers.map((u) => {
@@ -265,7 +264,7 @@ export default async function AdminTeachersPage() {
         startsAt: t.requestedStartsAt.toISOString(),
         isConverted: t.isConverted,
       })),
-      conversations: (u.conversationsAsTeacher || []).map((c) => ({
+      conversations: (u.conversationsAsTeacher || []).map((c: any) => ({
         id: c.id,
         studentId: c.studentId,
         studentName: c.student?.name || "Student",
@@ -274,19 +273,8 @@ export default async function AdminTeachersPage() {
         instrument: c.instrument,
         isActive: c.isActive,
         updatedAt: c.updatedAt.toISOString(),
-        messages: (c.messages || []).map((m) => ({
-          id: m.id,
-          senderId: m.senderId,
-          senderName: m.sender?.name || "User",
-          senderRole: m.sender?.role || "STUDENT",
-          messageType: m.messageType,
-          body: m.body,
-          fileName: m.fileName,
-          fileUrl: m.fileUrl,
-          fileSizeBytes: m.fileSizeBytes,
-          isRead: m.isRead,
-          createdAt: m.createdAt.toISOString(),
-        })),
+        messageCount: c._count?.messages || 0,
+        messages: [], // Messages loaded on-demand via API to reduce initial payload
       })),
       availabilitySlotsCount: profile?.availabilityRules.length || 0,
     };

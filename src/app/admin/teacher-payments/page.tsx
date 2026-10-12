@@ -6,7 +6,7 @@ import { formatInViewerTimezone } from "@/lib/timezone";
 import { getLessonTrackingId } from "@/lib/lesson-tracking";
 import {
   AdminTeacherPaymentsManager,
-  type AdminSessionPayoutItem,
+  AdminSessionPayoutItem,
 } from "./AdminTeacherPaymentsManager";
 
 export const metadata = {

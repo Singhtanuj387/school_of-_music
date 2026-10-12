@@ -23,8 +23,8 @@ export default async function StudentDashboardPage() {
   const user = await requireRole(Role.STUDENT);
   const studentTimezone = user.timezone || "UTC";
 
-  // Fetch trial status, active enrollment, lessons, pending trial request, user profile, and converted trial lead in parallel
-  const [trialStatus, activeEnrollment, dbLessons, pendingTrialRequest, dbUser, convertedTrialLead] = await Promise.all([
+  // Fetch trial status, active enrollment, lessons, and trial requests in parallel
+  const [trialStatus, activeEnrollment, dbLessons, trialRequests] = await Promise.all([
     db.studentTrialStatus.findUnique({
       where: { studentId: user.id },
     }),
@@ -34,7 +34,12 @@ export default async function StudentDashboardPage() {
         status: EnrollmentStatus.ACTIVE,
       },
       include: {
-        course: true,
+        course: {
+          select: {
+            title: true,
+            sessionCount: true,
+          },
+        },
       },
       orderBy: { startedAt: "desc" },
     }),
@@ -59,26 +64,30 @@ export default async function StudentDashboardPage() {
       orderBy: {
         startsAt: "desc",
       },
+      take: 60,
     }),
-    db.trialRequest.findFirst({
+    db.trialRequest.findMany({
       where: {
         studentId: user.id,
-        status: TrialRequestStatus.PENDING,
       },
-      orderBy: { requestedStartsAt: "desc" },
-    }),
-    db.user.findUnique({
-      where: { id: user.id },
-      select: { image: true, name: true },
-    }),
-    db.trialRequest.findFirst({
-      where: {
-        studentId: user.id,
+      select: {
+        id: true,
+        instrument: true,
+        ageGroup: true,
+        requestedStartsAt: true,
+        preferredTimeSlot: true,
+        studentNotes: true,
+        status: true,
         isConverted: true,
       },
-      select: { id: true },
+      orderBy: { requestedStartsAt: "desc" },
+      take: 5,
     }),
   ]);
+
+  const pendingTrialRequest =
+    trialRequests.find((t) => t.status === TrialRequestStatus.PENDING) || null;
+  const isConverted = trialRequests.some((t) => t.isConverted);
 
   const formattedLessons: StudentDashboardLesson[] = dbLessons.map((l) => {
     const startsAtDate = new Date(l.startsAt);
@@ -139,7 +148,7 @@ export default async function StudentDashboardPage() {
                 notes: pendingTrialRequest.studentNotes,
               }
             : null,
-          isConverted: Boolean(convertedTrialLead),
+          isConverted,
         }}
       />
 
@@ -151,11 +160,11 @@ export default async function StudentDashboardPage() {
             className="relative group shrink-0"
             title="Edit Profile Picture"
           >
-            {dbUser?.image ? (
+            {user.image ? (
               <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border-2 border-primary/20 shadow-md">
                 <Image
-                  src={dbUser.image}
-                  alt={dbUser.name || user.name || "Student"}
+                  src={user.image}
+                  alt={user.name || "Student"}
                   fill
                   sizes="64px"
                   className="object-cover group-hover:scale-105 transition-transform"

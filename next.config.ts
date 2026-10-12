@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
     "localhost:3000",
   ],
   experimental: {
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
+    optimizePackageImports: [
+      "lucide-react",
+      "date-fns",
+      "date-fns-tz",
+    ],
     serverActions: {
       allowedOrigins: [
         "*.trycloudflare.com",

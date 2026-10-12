@@ -11,126 +11,118 @@ export const metadata = {
 export default async function AdminStudentsPage() {
   await requireRole(Role.ADMIN);
 
-  // 1. Fetch real students from db with complete relational records
-  const dbStudents = await db.user.findMany({
-    where: {
-      role: Role.STUDENT,
-    },
-    include: {
-      enrollments: {
-        include: {
-          course: {
-            include: {
-              teachers: {
-                include: {
-                  teacher: {
-                    select: { name: true },
+  // Run ALL queries in parallel for maximum speed
+  const [dbStudents, dbCourses, dbTeachers] = await Promise.all([
+    // 1. Fetch students with trimmed relational data
+    db.user.findMany({
+      where: { role: Role.STUDENT },
+      include: {
+        enrollments: {
+          include: {
+            course: {
+              include: {
+                teachers: {
+                  include: {
+                    teacher: {
+                      select: { name: true },
+                    },
                   },
                 },
               },
             },
           },
+          orderBy: { startedAt: "desc" },
         },
-        orderBy: { startedAt: "desc" },
-      },
-      lessonsAsStudent: {
-        include: {
-          teacher: {
-            select: { name: true },
+        lessonsAsStudent: {
+          include: {
+            teacher: {
+              select: { name: true },
+            },
           },
+          orderBy: { startsAt: "desc" },
+          take: 25, // Reduced from 100
         },
-        orderBy: { startsAt: "desc" },
-        take: 100,
-      },
-      payments: {
-        include: {
-          enrollment: {
-            include: {
-              course: {
-                select: { title: true },
+        payments: {
+          include: {
+            enrollment: {
+              include: {
+                course: {
+                  select: { title: true },
+                },
               },
             },
           },
+          orderBy: { createdAt: "desc" },
+          take: 20, // Reduced from 100
         },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      },
-      resourcesReceived: {
-        include: {
-          resource: {
-            include: {
-              teacher: {
-                select: { name: true },
+        resourcesReceived: {
+          include: {
+            resource: {
+              include: {
+                teacher: {
+                  select: { name: true },
+                },
               },
             },
-          },
-          course: {
-            select: { title: true },
-          },
-        },
-        orderBy: { sharedAt: "desc" },
-        take: 50,
-      },
-      trialRequestsAsStudent: {
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      },
-      notifications: {
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      },
-      conversationsAsStudent: {
-        include: {
-          teacher: {
-            select: { id: true, name: true, email: true },
-          },
-          messages: {
-            include: {
-              sender: {
-                select: { id: true, name: true, role: true },
-              },
+            course: {
+              select: { title: true },
             },
-            orderBy: { createdAt: "asc" },
-            take: 200,
           },
+          orderBy: { sharedAt: "desc" },
+          take: 15, // Reduced from 50
         },
-        orderBy: { updatedAt: "desc" },
+        trialRequestsAsStudent: {
+          orderBy: { createdAt: "desc" },
+          take: 10, // Reduced from 20
+        },
+        notifications: {
+          orderBy: { createdAt: "desc" },
+          take: 10, // Reduced from 50
+        },
+        // Only load conversation metadata — messages loaded on-demand
+        conversationsAsStudent: {
+          include: {
+            teacher: {
+              select: { id: true, name: true, email: true },
+            },
+            _count: {
+              select: { messages: true },
+            },
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 10, // Only recent conversations
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    }),
 
-  // 2. Fetch real active courses for enrollment modal
-  const dbCourses = await db.course.findMany({
-    where: { isPublished: true },
-    select: {
-      id: true,
-      title: true,
-      instrument: true,
-      level: true,
-      sessionCount: true,
-      priceMinorUnits: true,
-    },
-    orderBy: { title: "asc" },
-  });
+    // 2. Fetch active courses for enrollment modal
+    db.course.findMany({
+      where: { isPublished: true },
+      select: {
+        id: true,
+        title: true,
+        instrument: true,
+        level: true,
+        sessionCount: true,
+        priceMinorUnits: true,
+      },
+      orderBy: { title: "asc" },
+    }),
 
-  // 3. Fetch real teachers for scheduling modal
-  const dbTeachers = await db.user.findMany({
-    where: {
-      role: Role.TEACHER,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      name: true,
-      teacherProfile: {
-        select: {
-          instruments: true,
+    // 3. Fetch teachers for scheduling modal
+    db.user.findMany({
+      where: { role: Role.TEACHER, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        teacherProfile: {
+          select: { instruments: true },
         },
       },
-    },
-    orderBy: { name: "asc" },
-  });
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   // Format student records cleanly for client state
   const formattedStudents: StudentRecord[] = dbStudents.map((s) => ({
@@ -210,28 +202,15 @@ export default async function AdminStudentsPage() {
       type: n.type,
       createdAt: n.createdAt.toISOString(),
     })),
-    conversations: (s.conversationsAsStudent || []).map((c) => ({
+    conversations: (s.conversationsAsStudent || []).map((c: any) => ({
       id: c.id,
       teacherId: c.teacherId,
       teacherName: c.teacher?.name || "Assigned Faculty",
       teacherEmail: c.teacher?.email || "",
       instrument: c.instrument,
       updatedAt: c.updatedAt.toISOString(),
-      messages: c.messages.map((m) => ({
-        id: m.id,
-        senderId: m.senderId,
-        senderName:
-          m.sender?.name ||
-          (m.senderId === s.id ? s.name || "Student" : c.teacher?.name || "Faculty"),
-        senderRole:
-          m.sender?.role || (m.senderId === s.id ? "STUDENT" : "TEACHER"),
-        messageType: m.messageType,
-        body: m.body,
-        fileName: m.fileName,
-        fileUrl: m.fileUrl,
-        fileSizeBytes: m.fileSizeBytes,
-        createdAt: m.createdAt.toISOString(),
-      })),
+      messageCount: c._count?.messages || 0,
+      messages: [], // Messages loaded on-demand via API to reduce initial payload
     })),
   }));
 

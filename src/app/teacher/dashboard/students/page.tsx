@@ -14,44 +14,55 @@ export default async function TeacherStudentsPage() {
   const user = await requireRole(Role.TEACHER);
   const teacherTimezone = user.timezone || "UTC";
 
-  // 1. Enrolled students assigned to this teacher
-  const enrollments = await db.enrollment.findMany({
-    where: { teacherId: user.id },
-    include: {
-      student: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          timezone: true,
+  // Fetch enrolled students and trial students in parallel with selective column projections
+  const [enrollments, trialLessons] = await Promise.all([
+    db.enrollment.findMany({
+      where: { teacherId: user.id },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            timezone: true,
+          },
+        },
+        course: {
+          select: {
+            title: true,
+            sessionCount: true,
+            instrument: true,
+          },
+        },
+        lessons: {
+          select: {
+            status: true,
+            startsAt: true,
+          },
+          orderBy: { startsAt: "asc" },
         },
       },
-      course: true,
-      lessons: {
-        orderBy: { startsAt: "asc" },
+      orderBy: { startedAt: "desc" },
+    }),
+    db.lesson.findMany({
+      where: {
+        teacherId: user.id,
+        lessonSource: "TRIAL",
       },
-    },
-    orderBy: { startedAt: "desc" },
-  });
-
-  // 2. Trial students who had or have a lesson with this teacher
-  const trialLessons = await db.lesson.findMany({
-    where: {
-      teacherId: user.id,
-      lessonSource: "TRIAL",
-    },
-    include: {
-      student: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          timezone: true,
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            timezone: true,
+          },
         },
       },
-    },
-    orderBy: { startsAt: "desc" },
-  });
+      orderBy: { startsAt: "desc" },
+      take: 50,
+    }),
+  ]);
 
   const studentMap = new Map<string, StudentItem>();
 

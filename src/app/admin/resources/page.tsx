@@ -13,10 +13,12 @@ export const metadata = {
 export default async function AdminResourcesPage() {
   await requireRole(Role.ADMIN);
 
-  // Sequential execution to avoid connection pool exhaustion
-  const resources = await getAdminResources();
-  const allStudents = await getAdminAllStudents();
-  const driveFolderId = await getConfiguredFolderId();
+  // Run all fetches in parallel — Prisma handles connection pooling
+  const [resources, allStudents, driveFolderId] = await Promise.all([
+    getAdminResources(),
+    getAdminAllStudents(),
+    getConfiguredFolderId(),
+  ]);
 
   const isDriveReady = Boolean(driveFolderId);
 

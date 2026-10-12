@@ -16,38 +16,36 @@ export const metadata = {
 export default async function TeacherDashboardPage() {
   const user = await requireRole(Role.TEACHER);
 
-  const dbUser = await db.user.findUnique({
-    where: { id: user.id },
+  const profile = await db.teacherProfile.findUnique({
+    where: { userId: user.id },
     include: {
-      teacherProfile: {
+      availabilityRules: {
+        select: { id: true },
+      },
+      lessonsAsTeacher: {
         include: {
-          availabilityRules: true,
-          lessonsAsTeacher: {
-            include: {
-              student: {
-                select: {
-                  name: true,
-                  email: true,
-                  timezone: true,
-                },
-              },
-              enrollment: {
-                include: {
-                  course: {
-                    select: { title: true },
-                  },
-                },
+          student: {
+            select: {
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+          enrollment: {
+            select: {
+              course: {
+                select: { title: true },
               },
             },
-            orderBy: { startsAt: "desc" },
           },
         },
+        orderBy: { startsAt: "desc" },
+        take: 60,
       },
     },
   });
 
-  const profile = dbUser?.teacherProfile;
-  const isEmailVerified = !!dbUser?.emailVerified;
+  const isEmailVerified = !!user.emailVerified;
   const isPublished = !!profile?.isPublished;
   const rulesCount = profile?.availabilityRules.length || 0;
   const hasBio = !!profile?.bio && profile.bio.trim().length >= 20;
@@ -114,10 +112,10 @@ export default async function TeacherDashboardPage() {
             className="relative group shrink-0"
             title="Edit Profile Picture"
           >
-            {dbUser?.image ? (
+            {user.image ? (
               <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 border-primary/20 shadow-md">
                 <Image
-                  src={dbUser.image}
+                  src={user.image}
                   alt={user.name || "Teacher"}
                   fill
                   sizes="80px"

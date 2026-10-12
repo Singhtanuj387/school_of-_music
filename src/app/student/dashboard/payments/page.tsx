@@ -17,21 +17,31 @@ export const metadata = {
 export default async function StudentPaymentsPage() {
   const user = await requireRole(Role.STUDENT);
 
-  const payments = await db.payment.findMany({
-    where: { studentId: user.id },
-    include: {
-      enrollment: {
-        include: {
-          course: true,
+  // Parallelize payments and course lookup queries
+  const [payments, allCourses] = await Promise.all([
+    db.payment.findMany({
+      where: { studentId: user.id },
+      include: {
+        enrollment: {
+          include: {
+            course: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    }),
+    db.course.findMany({
+      select: {
+        priceMinorUnits: true,
+        title: true,
+        slug: true,
+        sessionCount: true,
+        instrument: true,
+      },
+    }),
+  ]);
 
-  // Collect any missing course info for payments without direct enrollment relation
-  const allCourses = await db.course.findMany();
-  const courseMapByPrice = new Map<number, typeof allCourses[0]>();
+  const courseMapByPrice = new Map<number, (typeof allCourses)[0]>();
   for (const c of allCourses) {
     courseMapByPrice.set(c.priceMinorUnits, c);
   }

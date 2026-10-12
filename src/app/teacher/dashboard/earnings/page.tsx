@@ -29,11 +29,14 @@ export default async function TeacherEarningsPage() {
               },
               enrollment: {
                 include: {
-                  course: true,
+                  course: {
+                    select: { title: true },
+                  },
                 },
               },
             },
             orderBy: { startsAt: "desc" },
+            take: 100,
           },
         },
       },

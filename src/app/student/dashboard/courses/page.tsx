@@ -24,17 +24,9 @@ export default async function StudentCoursesPage({
   const user = await requireRole(Role.STUDENT);
   const { discipline } = await searchParams;
 
-  const [trialStatus, activeEnrollment, courses, allMyEnrollments, myRequests] = await Promise.all([
+  const [trialStatus, courses, allMyEnrollments, myRequests] = await Promise.all([
     db.studentTrialStatus.findUnique({
       where: { studentId: user.id },
-    }),
-    db.enrollment.findFirst({
-      where: {
-        studentId: user.id,
-        status: EnrollmentStatus.ACTIVE,
-      },
-      include: { course: true },
-      orderBy: { startedAt: "desc" },
     }),
     db.course.findMany({
       where: {
@@ -56,6 +48,9 @@ export default async function StudentCoursesPage({
       orderBy: { createdAt: "desc" },
     }),
   ]);
+
+  const activeEnrollment =
+    allMyEnrollments.find((e) => e.status === EnrollmentStatus.ACTIVE) || null;
 
   const teacherIds = allMyEnrollments
     .map((e) => e.teacherId)

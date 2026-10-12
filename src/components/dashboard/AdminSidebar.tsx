@@ -132,6 +132,7 @@ export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
               <Link
                 key={item.name}
                 href={item.href}
+                prefetch={true}
                 className={`relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all active:scale-[0.98] ${
                   active
                     ? "bg-white/15 text-white font-bold shadow-xs"
@@ -207,6 +208,7 @@ export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
               <Link
                 key={item.name}
                 href={item.href}
+                prefetch={true}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all ${
                   active
                     ? "bg-white/15 text-white font-bold"

@@ -120,6 +120,7 @@ export function TeacherSidebar({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   className={`btn-tactile flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
                     active
                       ? "bg-primary/10 text-primary border border-primary/20 shadow-xs font-bold"
@@ -197,6 +198,7 @@ export function TeacherSidebar({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
               className={`btn-tactile flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 active
                   ? "bg-primary text-white shadow-xs font-bold"

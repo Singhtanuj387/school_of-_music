@@ -1,16 +1,16 @@
+import { Suspense } from "react";
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
 import {
   AdminStudentCoursesManager,
-  type StudentCourseRequestRow,
-  type StudentCourseEnrollmentRow,
-  type TeacherOption,
-  type StudentOption,
-  type CourseOption,
+  StudentCourseRequestRow,
+  StudentCourseEnrollmentRow,
+  TeacherOption,
+  StudentOption,
+  CourseOption,
 } from "./AdminStudentCoursesManager";
 import { SplitHeading } from "@/components/ui/SplitHeading";
-import { Suspense } from "react";
 
 export const metadata = {
   title: "Student Courses & Admissions | Admin Portal | Gandharva School of Music",
