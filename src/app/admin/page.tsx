@@ -532,6 +532,54 @@ const getCachedAdminOverviewData = unstable_cache(
   }
 );
 
+const FALLBACK_OVERVIEW_DATA = {
+  kpis: {
+    activeStudents: 0,
+    studentsGrowth: "0 this month",
+    activeTeachers: 0,
+    teachersAvailable: "0 approved faculty",
+    todayClasses: 0,
+    todayClassesDetail: "0 scheduled · 0 complete",
+    liveClasses: 0,
+    liveClassesStatus: "All rooms healthy",
+    pendingTrials: 0,
+    pendingTrialsDetail: "0 need follow-up",
+    activeEnrollments: 0,
+    enrollmentsStanding: "Synchronizing...",
+    inrOutstanding: "₹0",
+    inrOverdue: "₹0 overdue",
+    collectedThisWeek: "₹0",
+    collectedGrowth: "0% this week",
+    mondayPayoutPending: "₹0",
+    mondayPayoutDetail: "0 teachers · prior period",
+    awaitingReview: 0,
+    awaitingReviewDetail: "Queue clear",
+  },
+  todaySessionsCount: 0,
+  scheduleList: [] as ScheduleItem[],
+  funnelStages: [
+    { label: "Booked", count: 0, pct: 0 },
+    { label: "Attended", count: 0, pct: 0 },
+    { label: "Qualified", count: 0, pct: 0 },
+    { label: "Enrolled", count: 0, pct: 0, isHighlight: true },
+  ],
+  weeklyCollectionsDisplay: "₹0 this week",
+  collectionsBars: [
+    { day: "M", amountRupees: 0, heightPct: 0, isPeakOrCurrent: false },
+    { day: "T", amountRupees: 0, heightPct: 0, isPeakOrCurrent: false },
+    { day: "W", amountRupees: 0, heightPct: 0, isPeakOrCurrent: false },
+    { day: "T", amountRupees: 0, heightPct: 0, isPeakOrCurrent: false },
+    { day: "F", amountRupees: 0, heightPct: 0, isPeakOrCurrent: false },
+    { day: "S", amountRupees: 0, heightPct: 0, isPeakOrCurrent: false },
+    { day: "S", amountRupees: 0, heightPct: 0, isPeakOrCurrent: true },
+  ],
+  payoutReadinessPct: 100,
+  payoutTotalDisplay: "₹0",
+  payoutBreakdown: "0 ready · 0 need review · 0 on hold",
+  payoutApproveCount: 0,
+  attentionItems: [] as NeedsAttentionItem[],
+};
+
 export default async function AdminOverviewPage() {
   const user = await getCurrentUser();
 
@@ -543,7 +591,12 @@ export default async function AdminOverviewPage() {
     redirect("/dashboard");
   }
 
-  const data = await getCachedAdminOverviewData();
+  let data = FALLBACK_OVERVIEW_DATA;
+  try {
+    data = await getCachedAdminOverviewData();
+  } catch (err) {
+    console.error("Admin overview failed to load live telemetry, falling back to safe defaults:", err);
+  }
 
   return <AdminOverviewClient {...data} />;
 }

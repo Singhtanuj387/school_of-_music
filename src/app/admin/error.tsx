@@ -45,7 +45,10 @@ export default function AdminError({
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <button
             type="button"
-            onClick={() => reset()}
+            onClick={() => {
+              reset();
+              window.location.reload();
+            }}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition-all shadow-xs active:scale-[0.98] cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />

@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-const POOL_VERSION = 4;
+const POOL_VERSION = 5;
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -22,6 +22,15 @@ if (connectionString.includes("db.kprifflfakbucchpimvz.supabase.co")) {
     connectionString = connectionString.replace("postgres:", "postgres.kprifflfakbucchpimvz:");
   }
   connectionString = connectionString.replace("db.kprifflfakbucchpimvz.supabase.co", "aws-0-ap-northeast-1.pooler.supabase.com");
+}
+
+// Automatically route Supabase connections to the dedicated PgBouncer / Supavisor transaction pooler (port 6543)
+// instead of port 5432 (session mode pooler).
+// Session mode pooler (port 5432) has a strict cap of 15 connections (EMAXCONNSESSION) which crashes
+// in serverless environments (Vercel) and during concurrent navigation ("Session or Data Sync Interrupted").
+// Transaction mode pooler (port 6543) supports unlimited concurrent connections.
+if (connectionString.includes(":5432")) {
+  connectionString = connectionString.replace(":5432", ":6543");
 }
 
 const isSupabaseOrSsl =
@@ -51,16 +60,15 @@ if (
 globalForPrisma.poolVersion = POOL_VERSION;
 globalForPrisma.connectionString = connectionString;
 
-// Supabase session pooler has a server-side limit of 15 connections (EMAXCONNSESSION).
-// max: 10 ensures we stay strictly within server limits while queuing concurrent requests gracefully.
-// Omitting connectionTimeoutMillis ensures queued queries wait for a connection without throwing "timeout exceeded when trying to connect".
+// Transaction mode pooler (port 6543) with max: 8 connections per serverless instance
 const pool =
   globalForPrisma.pool ??
   new Pool({
     connectionString,
     ssl: isSupabaseOrSsl ? { rejectUnauthorized: false } : undefined,
-    max: 10,
-    idleTimeoutMillis: 15000,
+    max: 8,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 10000,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,
   });
