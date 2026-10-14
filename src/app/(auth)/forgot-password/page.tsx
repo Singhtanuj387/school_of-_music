@@ -12,24 +12,23 @@ export default function ForgotPasswordPage() {
   });
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] w-full overflow-hidden flex items-center">
+    <div className="relative min-h-[100dvh] w-full flex items-center justify-center lg:justify-end pt-24 sm:pt-28 pb-14 px-4 sm:px-8 lg:px-14 xl:px-20 max-w-[1560px] mx-auto">
       {/* Background Stage Image */}
-      <div className="absolute inset-0 z-0">
+      <div className="fixed inset-0 z-0 pointer-events-none">
         <Image
           src="/auth-bg.png"
           alt="Gandharva School of Music"
           fill
           priority
           sizes="100vw"
-          className="object-cover object-[24%_center] sm:object-[28%_center] lg:object-left"
+          className="object-cover object-[20%_18%] sm:object-[22%_20%] lg:object-[16%_22%]"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/60 lg:bg-gradient-to-r lg:from-black/20 lg:via-black/45 lg:to-black/85" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/60 lg:bg-gradient-to-r lg:from-black/15 lg:via-black/45 lg:to-black/85" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(168,85,247,0.18),transparent_70%)]" />
       </div>
 
-      <div className="relative z-10 w-full min-h-[calc(100vh-4rem)] flex items-center justify-center lg:justify-end py-10 sm:py-14 px-4 sm:px-8 lg:px-14 xl:px-20 max-w-[1560px] mx-auto">
-        <div className="w-full max-w-md lg:max-w-[460px]">
-          <div className="relative space-y-6 overflow-hidden rounded-3xl border border-white/80 bg-white/95 p-8 sm:p-10 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+      <div className="relative z-10 w-full max-w-md lg:max-w-[460px]">
+        <div className="relative space-y-6 overflow-hidden rounded-3xl border border-white/80 bg-white/95 p-8 sm:p-10 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] backdrop-blur-xl">
             {/* Decorative Top Accent Bar */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary via-cta to-accent" />
 
@@ -164,7 +163,6 @@ export default function ForgotPasswordPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
