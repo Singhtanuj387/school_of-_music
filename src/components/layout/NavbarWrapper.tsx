@@ -24,22 +24,22 @@ export function NavbarWrapper({
 }) {
   const pathname = usePathname();
 
-  // On the landing page ("/") without a logged-in user, render the authentic Gandharva landing header
-  if (!user && pathname === "/") {
-    return <LandingHeader />;
-  }
-
-
   const isDashboard = Boolean(
     pathname &&
       (pathname.startsWith("/admin") ||
         pathname.startsWith("/teacher") ||
         pathname.startsWith("/student") ||
+        pathname.startsWith("/classroom") ||
         pathname.startsWith("/dashboard"))
   );
 
-  // Otherwise (authenticated, or on /login, /signup, /teachers, /courses, etc.),
-  // render the platform navbar which is sticky with fixed height and never submerges content!
+  // On public pages without a logged-in user, render our authentic Gandharva navbar (LandingHeader)
+  if (!user && !isDashboard) {
+    return <LandingHeader />;
+  }
+
+  // Otherwise (authenticated portal or dashboard routes),
+  // render the platform dashboard navbar which is sticky with fixed height and user controls
   return (
     <nav className="sticky top-0 z-50 border-0 bg-primary shadow-md backdrop-blur-md">
       <div
@@ -67,14 +67,6 @@ export function NavbarWrapper({
 
         {/* Right-hand items: notification bell, dashboard logo/button, signout button (sent to far right) */}
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          {!isDashboard && (
-            <Link
-              href="/teachers"
-              className="hidden xs:inline-block text-xs sm:text-sm font-medium text-white/90 transition-colors hover:text-white"
-            >
-              Browse Teachers
-            </Link>
-          )}
 
           {user ? (
             <div className="flex items-center gap-2 sm:gap-3.5">

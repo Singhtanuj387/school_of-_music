@@ -89,13 +89,13 @@ export function LandingFooter() {
             <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
               Packages
             </Link>
-            <Link href="/teachers" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/teach-with-us" className="text-purple-200 hover:text-white transition-colors">
               Careers
             </Link>
             <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
               Courses
             </Link>
-            <Link href="/teachers" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/contact-us" className="text-purple-200 hover:text-white transition-colors">
               Contact us
             </Link>
           </div>
@@ -105,22 +105,22 @@ export function LandingFooter() {
             <h4 className="text-white font-semibold text-base mb-1 tracking-wide">
               Online Music Classes
             </h4>
-            <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/company" className="text-purple-200 hover:text-white transition-colors">
               About us
             </Link>
-            <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/policy/terms-conditions" className="text-purple-200 hover:text-white transition-colors">
               Terms & Conditions
             </Link>
-            <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/policy/privacy-policy" className="text-purple-200 hover:text-white transition-colors">
               Privacy Policy
             </Link>
-            <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/policy/cookies-policy" className="text-purple-200 hover:text-white transition-colors">
               Cookies policy
             </Link>
-            <Link href="/courses" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/policy/refund-policy" className="text-purple-200 hover:text-white transition-colors">
               Refund policy
             </Link>
-            <Link href="/teachers" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/faq" className="text-purple-200 hover:text-white transition-colors">
               FAQ&apos;s
             </Link>
           </div>
@@ -130,28 +130,28 @@ export function LandingFooter() {
             <h4 className="text-white font-semibold text-base mb-1 tracking-wide">
               Available Courses
             </h4>
-            <Link href="/teachers?instrument=Piano" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/piano" className="text-purple-200 hover:text-white transition-colors">
               Piano
             </Link>
-            <Link href="/teachers?instrument=Acoustic%20Guitar" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/acoustic-guitar" className="text-purple-200 hover:text-white transition-colors">
               Acoustic guitar
             </Link>
-            <Link href="/teachers?instrument=Electronic%20Keyboard" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/electronic-keyboard" className="text-purple-200 hover:text-white transition-colors">
               Electronic keyboard
             </Link>
-            <Link href="/teachers?instrument=Ukulele" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/ukulele" className="text-purple-200 hover:text-white transition-colors">
               Ukulele
             </Link>
-            <Link href="/teachers?instrument=Violin" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/violin" className="text-purple-200 hover:text-white transition-colors">
               Violin
             </Link>
-            <Link href="/teachers?instrument=Electric%20Guitar" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/electric-guitar" className="text-purple-200 hover:text-white transition-colors">
               Electric guitar
             </Link>
-            <Link href="/teachers?instrument=Flute" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/flute" className="text-purple-200 hover:text-white transition-colors">
               Flute
             </Link>
-            <Link href="/teachers?instrument=Tabla" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/tabla" className="text-purple-200 hover:text-white transition-colors">
               Tabla
             </Link>
           </div>
@@ -161,28 +161,28 @@ export function LandingFooter() {
             <h4 className="text-white font-semibold text-base mb-1 tracking-wide">
               Vocal Courses
             </h4>
-            <Link href="/teachers?instrument=Bollywood%20Vocals" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/bollywood-vocals" className="text-purple-200 hover:text-white transition-colors">
               Bollywood Vocals
             </Link>
-            <Link href="/teachers?instrument=Western%20Vocals" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/western-vocals" className="text-purple-200 hover:text-white transition-colors">
               Western Vocals
             </Link>
-            <Link href="/teachers?instrument=Hindustani%20Vocals" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/hindustani-vocals" className="text-purple-200 hover:text-white transition-colors">
               Hindustani Vocals
             </Link>
-            <Link href="/teachers?instrument=Carnatic%20Vocals" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/carnatic-vocals" className="text-purple-200 hover:text-white transition-colors">
               Carnatic Vocals
             </Link>
-            <Link href="/teachers?instrument=Tamil%20Music" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/tamil-music" className="text-purple-200 hover:text-white transition-colors">
               Tamil Music
             </Link>
-            <Link href="/teachers?instrument=Telugu%20Music" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/telugu-music" className="text-purple-200 hover:text-white transition-colors">
               Telugu Music
             </Link>
-            <Link href="/teachers?instrument=Kannada%20Music" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/kannada-music" className="text-purple-200 hover:text-white transition-colors">
               Kannada Music
             </Link>
-            <Link href="/teachers?instrument=Malayalam%20Music" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/malayalam-music" className="text-purple-200 hover:text-white transition-colors">
               Malayalam Music
             </Link>
           </div>
@@ -192,13 +192,13 @@ export function LandingFooter() {
             <h4 className="text-white font-semibold text-base mb-1 tracking-wide">
               Dance Courses
             </h4>
-            <Link href="/teachers?instrument=Bharatanatyam" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/bharatanatyam" className="text-purple-200 hover:text-white transition-colors">
               Bharatanatyam Dance
             </Link>
-            <Link href="/teachers?instrument=Bollywood%20Dance" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/bollywood-dance" className="text-purple-200 hover:text-white transition-colors">
               Bollywood Dance
             </Link>
-            <Link href="/teachers?instrument=Kathak" className="text-purple-200 hover:text-white transition-colors">
+            <Link href="/courses/kathak" className="text-purple-200 hover:text-white transition-colors">
               Kathak Dance
             </Link>
           </div>

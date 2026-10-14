@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://www.gandharvaschoolofmusic.com
+
+# Sitemaps
+Sitemap: https://www.gandharvaschoolofmusic.com/sitemap.xml

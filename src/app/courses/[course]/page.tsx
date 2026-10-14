@@ -1,6 +1,9 @@
+import { notFound } from "next/navigation";
+import { CourseDataAll } from "@/Data/course";
+import CoursePage, { CourseDataAllType } from "./Client";
+import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { notFound } from "next/navigation";
 import Link from "next/link";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 import { PriceDisplay } from "@/components/currency/PriceDisplay";
@@ -12,29 +15,79 @@ import {
   CheckCircle2,
   ArrowLeft,
   GraduationCap,
-  ArrowRight,
 } from "lucide-react";
 import { CourseEnrollmentRequestModal } from "@/components/courses/CourseEnrollmentRequestModal";
 import { CourseEmiBreakdown } from "@/components/courses/CourseEmiBreakdown";
 
-export default async function PublicCourseDetailPage({
+const siteURL = "https://www.gandharvaschoolofmusic.com";
+
+export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  const user = await getCurrentUser();
+  params: Promise<{ course: string }>;
+}): Promise<Metadata> {
+  const course = (await params).course;
+  // @ts-expect-error improve
+  const courseInfo: CourseDataAllType = CourseDataAll[`${course}All`];
 
+  if (courseInfo) {
+    return {
+      title: `Learn Online ${courseInfo.title} Courses | Gandharva School Of Music`,
+      description: `Master the ${courseInfo.title} from anywhere with world-class online lessons at Gandharva School of Music. Flexible programs for kids, teens, and adults. Start your musical journey today`,
+      alternates: {
+        canonical: `${siteURL}/courses/${course}/`,
+      },
+    };
+  }
+
+  try {
+    const dbCourse = await db.course.findUnique({
+      where: { slug: course },
+      select: { title: true, description: true },
+    });
+    if (dbCourse) {
+      return {
+        title: `${dbCourse.title} | Gandharva School of Music`,
+        description: dbCourse.description.slice(0, 160),
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  return {
+    title: "Course Not Found",
+    description: "The course you're looking for does not exist.",
+  };
+}
+
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ course: string }>;
+}) {
+  const courseSlug = (await params).course;
+  // @ts-expect-error improve
+  const courseInfo: CourseDataAllType = CourseDataAll[`${courseSlug}All`];
+
+  if (courseInfo) {
+    return <CoursePage params={{ courseData: courseInfo }} />;
+  }
+
+  // Fallback to Prisma DB course
+  const user = await getCurrentUser();
   const course = await db.course.findUnique({
-    where: { slug },
+    where: { slug: courseSlug },
   });
 
   if (!course || !course.isPublished) {
-    notFound();
+    return notFound();
   }
 
-  const priceFormatted = `₹${(course.priceMinorUnits / 100).toLocaleString("en-IN")}`;
-  const syllabusItems = course.syllabusSummary.split("•").map((s) => s.trim()).filter(Boolean);
+  const syllabusItems = course.syllabusSummary
+    .split("•")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   let isAlreadyEnrolled = false;
   let pendingRequest: {
@@ -43,7 +96,6 @@ export default async function PublicCourseDetailPage({
     paymentPlan: any;
     createdAt: string;
   } | null = null;
-
   let isConvertedStudent = false;
 
   if (user) {

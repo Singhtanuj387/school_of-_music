@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
-import { DM_Sans } from "next/font/google";
+import { DM_Sans, Vidaloka } from "next/font/google";
 import "./globals.css";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-dm-sans",
+  weight: ["300", "400", "500", "700"],
+  display: "swap",
+});
+
+const vidaloka = Vidaloka({
+  subsets: ["latin"],
+  variable: "--font-vidaloka",
+  weight: "400",
   display: "swap",
 });
 
@@ -33,6 +41,7 @@ export const metadata: Metadata = {
 };
 
 import { Navbar } from "@/components/layout/Navbar";
+import SiteChrome from "@/components/SiteChrome";
 import { getServerCurrency } from "@/lib/currency-server";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 
@@ -48,7 +57,7 @@ export default async function RootLayout({
       lang="en"
       data-scroll-behavior="smooth"
       suppressHydrationWarning
-      className={dmSans.variable}
+      className={`${dmSans.variable} ${vidaloka.variable}`}
     >
       <head>
         <meta name="darkreader-lock" />
@@ -59,7 +68,9 @@ export default async function RootLayout({
       >
         <CurrencyProvider initialCurrency={initialCurrency}>
           <Navbar />
-          <main>{children}</main>
+          <SiteChrome>
+            <main>{children}</main>
+          </SiteChrome>
         </CurrencyProvider>
       </body>
     </html>

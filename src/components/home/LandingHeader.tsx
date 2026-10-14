@@ -5,31 +5,31 @@ import Link from "next/link";
 import Image from "next/image";
 
 const INSTRUMENT_ITEMS = [
-  { label: "Piano", href: "/teachers?instrument=Piano" },
-  { label: "Electronic Keyboard", href: "/teachers?instrument=Electronic%20Keyboard" },
-  { label: "Acoustic Guitar", href: "/teachers?instrument=Acoustic%20Guitar" },
-  { label: "Electric Guitar", href: "/teachers?instrument=Electric%20Guitar" },
-  { label: "Ukulele", href: "/teachers?instrument=Ukulele" },
-  { label: "Violin", href: "/teachers?instrument=Violin" },
-  { label: "Flute", href: "/teachers?instrument=Flute" },
-  { label: "Tabla", href: "/teachers?instrument=Tabla" },
+  { label: "Piano", href: "/courses/piano" },
+  { label: "Electronic Keyboard", href: "/courses/electronic-keyboard" },
+  { label: "Acoustic Guitar", href: "/courses/acoustic-guitar" },
+  { label: "Electric Guitar", href: "/courses/electric-guitar" },
+  { label: "Ukulele", href: "/courses/ukulele" },
+  { label: "Violin", href: "/courses/violin" },
+  { label: "Flute", href: "/courses/flute" },
+  { label: "Tabla", href: "/courses/tabla" },
 ];
 
 const VOCAL_ITEMS = [
-  { label: "Western Vocals", href: "/teachers?instrument=Western%20Vocals" },
-  { label: "Carnatic Vocals", href: "/teachers?instrument=Carnatic%20Vocals" },
-  { label: "Hindustani Vocals", href: "/teachers?instrument=Hindustani%20Vocals" },
-  { label: "Bollywood Vocals", href: "/teachers?instrument=Bollywood%20Vocals" },
-  { label: "Kannada Music", href: "/teachers?instrument=Kannada%20Music" },
-  { label: "Malayalam Music", href: "/teachers?instrument=Malayalam%20Music" },
-  { label: "Tamil Music", href: "/teachers?instrument=Tamil%20Music" },
-  { label: "Telugu Music", href: "/teachers?instrument=Telugu%20Music" },
+  { label: "Western Vocals", href: "/courses/western-vocals" },
+  { label: "Carnatic Vocals", href: "/courses/carnatic-vocals" },
+  { label: "Hindustani Vocals", href: "/courses/hindustani-vocals" },
+  { label: "Bollywood Vocals", href: "/courses/bollywood-vocals" },
+  { label: "Kannada Music", href: "/courses/kannada-music" },
+  { label: "Malayalam Music", href: "/courses/malayalam-music" },
+  { label: "Tamil Music", href: "/courses/tamil-music" },
+  { label: "Telugu Music", href: "/courses/telugu-music" },
 ];
 
 const DANCE_ITEMS = [
-  { label: "Bharatanatyam", href: "/teachers?instrument=Bharatanatyam" },
-  { label: "Kathak", href: "/teachers?instrument=Kathak" },
-  { label: "Bollywood Dance", href: "/teachers?instrument=Bollywood%20Dance" },
+  { label: "Bharatanatyam", href: "/courses/bharatanatyam" },
+  { label: "Kathak", href: "/courses/kathak" },
+  { label: "Bollywood Dance", href: "/courses/bollywood-dance" },
 ];
 
 export function LandingHeader() {
@@ -123,9 +123,9 @@ export function LandingHeader() {
                   >
                     <div className="bg-white text-black rounded-2xl shadow-2xl grid grid-cols-3 p-4 xl:p-5 gap-3 xl:gap-4 border border-gray-100 w-[520px] xl:w-[560px] max-w-[calc(100vw-2rem)]">
                       <div>
-                        <p className="px-3 py-1.5 font-bold text-[13px] text-[#24105E] border-b border-gray-100 mb-1 tracking-wider uppercase">
+                        <Link href="/courses" className="block px-3 py-1.5 font-bold text-[13px] text-[#24105E] hover:text-[#FF7703] border-b border-gray-100 mb-1 tracking-wider uppercase transition-colors">
                           INSTRUMENTS
-                        </p>
+                        </Link>
                         <ul className="space-y-0.5">
                           {INSTRUMENT_ITEMS.map((item) => (
                             <li key={item.label}>
@@ -141,9 +141,9 @@ export function LandingHeader() {
                       </div>
 
                       <div>
-                        <p className="px-3 py-1.5 font-bold text-[13px] text-[#24105E] border-b border-gray-100 mb-1 tracking-wider uppercase">
+                        <Link href="/courses" className="block px-3 py-1.5 font-bold text-[13px] text-[#24105E] hover:text-[#FF7703] border-b border-gray-100 mb-1 tracking-wider uppercase transition-colors">
                           SINGING
-                        </p>
+                        </Link>
                         <ul className="space-y-0.5">
                           {VOCAL_ITEMS.map((item) => (
                             <li key={item.label}>
@@ -159,9 +159,9 @@ export function LandingHeader() {
                       </div>
 
                       <div>
-                        <p className="px-3 py-1.5 font-bold text-[13px] text-[#24105E] border-b border-gray-100 mb-1 tracking-wider uppercase">
+                        <Link href="/courses" className="block px-3 py-1.5 font-bold text-[13px] text-[#24105E] hover:text-[#FF7703] border-b border-gray-100 mb-1 tracking-wider uppercase transition-colors">
                           DANCING
-                        </p>
+                        </Link>
                         <ul className="space-y-0.5">
                           {DANCE_ITEMS.map((item) => (
                             <li key={item.label}>
@@ -215,12 +215,12 @@ export function LandingHeader() {
                   >
                     <ul className="w-44 bg-white text-black rounded-xl shadow-xl border border-gray-100 overflow-hidden py-1">
                       <li>
-                        <Link href="/courses" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
+                        <Link href="/company" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
                           Company
                         </Link>
                       </li>
                       <li>
-                        <Link href="/courses" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
+                        <Link href="/policy" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
                           Policy
                         </Link>
                       </li>
@@ -264,12 +264,12 @@ export function LandingHeader() {
                   >
                     <ul className="w-44 bg-white text-black rounded-xl shadow-xl border border-gray-100 overflow-hidden py-1">
                       <li>
-                        <Link href="/courses" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
+                        <Link href="/blog" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
                           Blog
                         </Link>
                       </li>
                       <li>
-                        <Link href="/teachers" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
+                        <Link href="/tools" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
                           Tools
                         </Link>
                       </li>
@@ -313,12 +313,12 @@ export function LandingHeader() {
                   >
                     <ul className="w-44 bg-white text-black rounded-xl shadow-xl border border-gray-100 overflow-hidden py-1">
                       <li>
-                        <Link href="/teachers" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
+                        <Link href="/faq" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
                           FAQ
                         </Link>
                       </li>
                       <li>
-                        <Link href="/teachers" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
+                        <Link href="/contact-us" className="block px-4 py-2 text-sm text-gray-700 hover:bg-[#D8D1E8] hover:text-black hover:font-semibold transition-colors whitespace-nowrap">
                           Contact Us
                         </Link>
                       </li>
@@ -329,7 +329,7 @@ export function LandingHeader() {
                 {/* Direct Links */}
                 <li>
                   <Link
-                    href="/teachers"
+                    href="/teach-with-us"
                     className="px-2.5 xl:px-3 py-2 text-white/90 hover:text-white hover:bg-white/15 rounded-lg transition-all font-medium whitespace-nowrap inline-block text-[13px] xl:text-[15px]"
                   >
                     Teach With Us
@@ -337,7 +337,7 @@ export function LandingHeader() {
                 </li>
                 <li>
                   <Link
-                    href="/teachers"
+                    href="/become-our-affiliate"
                     className="px-2.5 xl:px-3 py-2 text-white/90 hover:text-white hover:bg-white/15 rounded-lg transition-all font-medium whitespace-nowrap inline-block text-[13px] xl:text-[15px]"
                   >
                     Become Our Affiliate
@@ -515,10 +515,10 @@ export function LandingHeader() {
             </button>
             {mobileAboutOpen && (
               <div className="pl-4 pt-2 space-y-1.5 text-sm text-gray-700">
-                <Link href="/courses" onClick={() => setMobileMenuOpen(false)} className="block py-1">
+                <Link href="/company" onClick={() => setMobileMenuOpen(false)} className="block py-1">
                   Company
                 </Link>
-                <Link href="/courses" onClick={() => setMobileMenuOpen(false)} className="block py-1">
+                <Link href="/policy" onClick={() => setMobileMenuOpen(false)} className="block py-1">
                   Policy
                 </Link>
               </div>
@@ -544,10 +544,10 @@ export function LandingHeader() {
             </button>
             {mobileResourcesOpen && (
               <div className="pl-4 pt-2 space-y-1.5 text-sm text-gray-700">
-                <Link href="/courses" onClick={() => setMobileMenuOpen(false)} className="block py-1">
+                <Link href="/blog" onClick={() => setMobileMenuOpen(false)} className="block py-1">
                   Blog
                 </Link>
-                <Link href="/teachers" onClick={() => setMobileMenuOpen(false)} className="block py-1">
+                <Link href="/tools" onClick={() => setMobileMenuOpen(false)} className="block py-1">
                   Tools
                 </Link>
               </div>
@@ -573,10 +573,10 @@ export function LandingHeader() {
             </button>
             {mobileSupportOpen && (
               <div className="pl-4 pt-2 space-y-1.5 text-sm text-gray-700">
-                <Link href="/teachers" onClick={() => setMobileMenuOpen(false)} className="block py-1">
+                <Link href="/faq" onClick={() => setMobileMenuOpen(false)} className="block py-1">
                   FAQ
                 </Link>
-                <Link href="/teachers" onClick={() => setMobileMenuOpen(false)} className="block py-1">
+                <Link href="/contact-us" onClick={() => setMobileMenuOpen(false)} className="block py-1">
                   Contact Us
                 </Link>
               </div>
@@ -585,14 +585,14 @@ export function LandingHeader() {
 
           {/* Direct Links */}
           <Link
-            href="/teachers"
+            href="/teach-with-us"
             onClick={() => setMobileMenuOpen(false)}
             className="block py-1 font-semibold hover:text-[#FF7703]"
           >
             Teach With Us
           </Link>
           <Link
-            href="/teachers"
+            href="/become-our-affiliate"
             onClick={() => setMobileMenuOpen(false)}
             className="block py-1 font-semibold hover:text-[#FF7703]"
           >

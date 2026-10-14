@@ -38,7 +38,11 @@
     "qrcode": "^1.5.4",
     "razorpay": "^2.9.8",
     "react": "19.2.8",
+    "react-countup": "^6.5.3",
     "react-dom": "19.2.8",
+    "react-icons": "^5.7.0",
+    "react-intersection-observer": "^11.0.1",
+    "react-select": "^5.10.2",
     "resend": "^6.28.1",
     "zod": "^4.6.5"
   },
