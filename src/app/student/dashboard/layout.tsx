@@ -5,36 +5,12 @@ import { db } from "@/lib/db";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { ProfileCompletionPopup } from "@/components/dashboard/ProfileCompletionPopup";
 
-export default async function StudentDashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const user = await getCurrentUser();
+import { unstable_cache } from "next/cache";
 
-  if (!user) {
-    redirect("/login?callbackUrl=/student/dashboard");
-  }
-
-  if (user.role !== Role.STUDENT) {
-    redirect("/dashboard");
-  }
-
-  // Check student profile completeness and trial booking status
-  let profileData: {
-    country: string | null;
-    age: number | null;
-    gender: string | null;
-    guardianName: string | null;
-    guardianPhone: string | null;
-    address: string | null;
-    trialStatus: { id: number | string } | null;
-    _count: { trialRequestsAsStudent: number };
-  } | null = null;
-
-  try {
-    profileData = await db.user.findUnique({
-      where: { id: user.id },
+const getCachedStudentProfileData = unstable_cache(
+  async (userId: string) => {
+    return db.user.findUnique({
+      where: { id: userId },
       select: {
         country: true,
         age: true,
@@ -52,6 +28,40 @@ export default async function StudentDashboardLayout({
         },
       },
     });
+  },
+  ["student-profile-layout-data"],
+  { revalidate: 60, tags: ["student-profile"] }
+);
+
+export default async function StudentDashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login?callbackUrl=/student/dashboard");
+  }
+
+  if (user.role !== Role.STUDENT) {
+    redirect("/dashboard");
+  }
+
+  // Check student profile completeness and trial booking status (cached for 60s)
+  let profileData: {
+    country: string | null;
+    age: number | null;
+    gender: string | null;
+    guardianName: string | null;
+    guardianPhone: string | null;
+    address: string | null;
+    trialStatus: { id: number | string } | null;
+    _count: { trialRequestsAsStudent: number };
+  } | null = null;
+
+  try {
+    profileData = await getCachedStudentProfileData(user.id);
   } catch (err) {
     console.warn("Could not query student profile completeness:", err);
   }

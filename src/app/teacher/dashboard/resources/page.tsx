@@ -1,27 +1,158 @@
 import { requireRole } from "@/lib/auth-helpers";
+import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
-import { getTeacherResources, getTeacherAllottedStudents } from "@/actions/resources";
 import { getConfiguredFolderId } from "@/lib/google-drive";
 import { TeacherResourcesClient, TeacherResourceItem } from "@/components/resources/TeacherResourcesClient";
+import type { AllottedStudentOption } from "@/actions/resources";
+import { unstable_cache } from "next/cache";
 
 export const metadata = {
   title: "Learning Resources | Faculty Studio | Gandharva School of Music",
   description: "Upload, manage, and share sheet music, practice exercises, and audio tracks with your students.",
 };
 
+const getCachedTeacherResourcesData = unstable_cache(
+  async (userId: string) => {
+    const [resources, enrollments, courseTeachers, trialLessons] = await Promise.all([
+      db.resource.findMany({
+        where: { teacherId: userId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          shares: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
+              },
+              course: {
+                select: {
+                  id: true,
+                  title: true,
+                  instrument: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      db.enrollment.findMany({
+        where: { teacherId: userId },
+        include: {
+          student: {
+            select: { id: true, name: true, email: true, image: true },
+          },
+          course: {
+            select: { id: true, title: true, instrument: true },
+          },
+        },
+      }),
+      db.courseTeacher.findMany({
+        where: { teacherId: userId },
+        include: {
+          course: {
+            include: {
+              enrollments: {
+                include: {
+                  student: {
+                    select: { id: true, name: true, email: true, image: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+      db.lesson.findMany({
+        where: { teacherId: userId, lessonSource: "TRIAL" },
+        include: {
+          student: {
+            select: { id: true, name: true, email: true, image: true },
+          },
+        },
+      }),
+    ]);
+
+    const studentsMap = new Map<string, AllottedStudentOption>();
+
+    for (const enr of enrollments) {
+      if (enr.student) {
+        studentsMap.set(enr.student.id, {
+          id: enr.student.id,
+          name: enr.student.name || "Enrolled Student",
+          email: enr.student.email,
+          image: enr.student.image,
+          courseTitle: enr.course.title,
+          courseId: enr.course.id,
+          instrument: enr.course.instrument,
+        });
+      }
+    }
+
+    for (const ct of courseTeachers) {
+      for (const enr of ct.course.enrollments) {
+        if (enr.student && !studentsMap.has(enr.student.id)) {
+          studentsMap.set(enr.student.id, {
+            id: enr.student.id,
+            name: enr.student.name || "Course Student",
+            email: enr.student.email,
+            image: enr.student.image,
+            courseTitle: ct.course.title,
+            courseId: ct.course.id,
+            instrument: ct.course.instrument,
+          });
+        }
+      }
+    }
+
+    for (const tl of trialLessons) {
+      if (tl.student && !studentsMap.has(tl.student.id)) {
+        studentsMap.set(tl.student.id, {
+          id: tl.student.id,
+          name: tl.student.name || "Trial Student",
+          email: tl.student.email,
+          image: tl.student.image,
+          courseTitle: "Trial Lesson",
+          instrument: tl.instrument,
+        });
+      }
+    }
+
+    return {
+      resources,
+      allottedStudents: Array.from(studentsMap.values()),
+    };
+  },
+  ["teacher-resources-data"],
+  { revalidate: 30, tags: ["teacher-resources", "teacher-students"] }
+);
+
 export default async function TeacherResourcesPage() {
-  await requireRole(Role.TEACHER);
+  const user = await requireRole(Role.TEACHER);
 
-  const [resources, allottedStudents, driveFolderId] = await Promise.all([
-    getTeacherResources(),
-    getTeacherAllottedStudents(),
-    getConfiguredFolderId(),
-  ]);
+  let resourcesData = { resources: [] as any[], allottedStudents: [] as AllottedStudentOption[] };
+  let driveFolderId: string | null = null;
 
+  try {
+    const [cached, folderId] = await Promise.all([
+      getCachedTeacherResourcesData(user.id),
+      getConfiguredFolderId(),
+    ]);
+    resourcesData = cached;
+    driveFolderId = folderId;
+  } catch (err) {
+    console.error("Failed to load cached teacher resources:", err);
+    driveFolderId = await getConfiguredFolderId();
+  }
+
+  const { resources, allottedStudents } = resourcesData;
   const isDriveReady = Boolean(driveFolderId);
 
   // Format resources safely
-  const formattedResources: TeacherResourceItem[] = resources.map((r) => ({
+  const formattedResources: TeacherResourceItem[] = resources.map((r: any) => ({
     id: r.id,
     title: r.title,
     description: r.description,
@@ -31,12 +162,12 @@ export default async function TeacherResourcesPage() {
     fileId: r.fileId,
     fileSizeBytes: r.fileSizeBytes,
     mimeType: r.mimeType,
-    createdAt: r.createdAt.toISOString(),
-    shares: r.shares.map((s) => ({
+    createdAt: new Date(r.createdAt).toISOString(),
+    shares: (r.shares || []).map((s: any) => ({
       id: s.id,
       studentId: s.studentId,
       teacherNote: s.teacherNote,
-      sharedAt: s.sharedAt.toISOString(),
+      sharedAt: new Date(s.sharedAt).toISOString(),
       isViewed: s.isViewed,
       student: {
         id: s.student.id,

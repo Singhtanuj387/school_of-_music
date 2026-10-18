@@ -13,32 +13,54 @@ export const metadata = {
   description: "Configure weekly teaching hours, holiday blocks, and exception dates.",
 };
 
-export const dynamic = "force-dynamic";
+import { unstable_cache } from "next/cache";
+
+const getCachedTeacherAvailabilityData = unstable_cache(
+  async (userId: string) => {
+    return db.teacherProfile.findUnique({
+      where: { userId },
+      include: {
+        availabilityRules: true,
+        availabilityExceptions: {
+          orderBy: { date: "asc" },
+        },
+      },
+    });
+  },
+  ["teacher-availability-data"],
+  { revalidate: 30, tags: ["teacher-availability", "teacher-profile"] }
+);
 
 export default async function TeacherDashboardAvailabilityPage() {
   const user = await requireRole(Role.TEACHER);
 
-  const profile = await db.teacherProfile.findUnique({
-    where: { userId: user.id },
-    include: {
-      availabilityRules: true,
-      availabilityExceptions: {
-        orderBy: { date: "asc" },
+  let profile: any = null;
+  try {
+    profile = await getCachedTeacherAvailabilityData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached teacher availability data:", err);
+    profile = await db.teacherProfile.findUnique({
+      where: { userId: user.id },
+      include: {
+        availabilityRules: true,
+        availabilityExceptions: {
+          orderBy: { date: "asc" },
+        },
       },
-    },
-  });
+    });
+  }
 
   const rules =
-    profile?.availabilityRules.map((r) => ({
+    profile?.availabilityRules?.map((r: any) => ({
       dayOfWeek: r.dayOfWeek,
       startMinute: r.startMinute,
       endMinute: r.endMinute,
     })) || [];
 
   const exceptions =
-    profile?.availabilityExceptions.map((e) => ({
+    profile?.availabilityExceptions?.map((e: any) => ({
       id: e.id,
-      date: e.date.toISOString().split("T")[0],
+      date: new Date(e.date).toISOString().split("T")[0],
       isBlocked: e.isBlocked,
       startMinute: e.startMinute,
       endMinute: e.endMinute,

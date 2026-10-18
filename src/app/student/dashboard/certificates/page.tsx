@@ -11,20 +11,46 @@ export const metadata = {
     "View and download your official, verified graduation certificates and diplomas.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedStudentCertificates = unstable_cache(
+  async (userId: string) => {
+    return db.certificate.findMany({
+      where: { studentId: userId },
+      include: {
+        enrollment: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { issuedAt: "desc" },
+    });
+  },
+  ["student-certificates-data"],
+  { revalidate: 60, tags: ["student-certificates"] }
+);
+
 export default async function StudentCertificatesPage() {
   const user = await requireRole(Role.STUDENT);
 
-  const certificates = await db.certificate.findMany({
-    where: { studentId: user.id },
-    include: {
-      enrollment: {
-        include: {
-          course: true,
+  let certificates: any[] = [];
+  try {
+    certificates = await getCachedStudentCertificates(user.id);
+  } catch (err) {
+    console.error("Failed to load cached student certificates:", err);
+    certificates = await db.certificate.findMany({
+      where: { studentId: user.id },
+      include: {
+        enrollment: {
+          include: {
+            course: true,
+          },
         },
       },
-    },
-    orderBy: { issuedAt: "desc" },
-  });
+      orderBy: { issuedAt: "desc" },
+    });
+  }
 
   return (
     <div className="space-y-6">

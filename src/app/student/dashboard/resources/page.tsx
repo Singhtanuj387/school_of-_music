@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-helpers";
+import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
-import { getStudentReceivedResources } from "@/actions/resources";
+import { unstable_cache } from "next/cache";
 import {
   StudentResourcesClient,
   StudentReceivedResourceItem,
@@ -11,19 +12,91 @@ export const metadata = {
   description: "Access sheet music, practice audio tracks, and personal notes sent by your faculty teachers.",
 };
 
-export default async function StudentResourcesPage() {
-  await requireRole(Role.STUDENT);
+const getCachedStudentResources = unstable_cache(
+  async (userId: string) => {
+    return db.resourceShare.findMany({
+      where: { studentId: userId },
+      orderBy: { sharedAt: "desc" },
+      include: {
+        resource: {
+          include: {
+            teacher: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+                teacherProfile: {
+                  select: {
+                    instruments: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        course: {
+          select: {
+            id: true,
+            title: true,
+            instrument: true,
+          },
+        },
+      },
+    });
+  },
+  ["student-resources-data"],
+  { revalidate: 30, tags: ["student-resources"] }
+);
 
-  const receivedShares = await getStudentReceivedResources();
+export default async function StudentResourcesPage() {
+  const user = await requireRole(Role.STUDENT);
+
+  let receivedShares: any[] = [];
+  try {
+    receivedShares = await getCachedStudentResources(user.id);
+  } catch (err) {
+    console.error("Failed to load cached student resources:", err);
+    receivedShares = await db.resourceShare.findMany({
+      where: { studentId: user.id },
+      orderBy: { sharedAt: "desc" },
+      include: {
+        resource: {
+          include: {
+            teacher: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+                teacherProfile: {
+                  select: {
+                    instruments: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        course: {
+          select: {
+            id: true,
+            title: true,
+            instrument: true,
+          },
+        },
+      },
+    });
+  }
 
   // Format safely for client
-  const formattedItems: StudentReceivedResourceItem[] = receivedShares.map((item) => ({
+  const formattedItems: StudentReceivedResourceItem[] = receivedShares.map((item: any) => ({
     id: item.id,
     resourceId: item.resourceId,
     teacherNote: item.teacherNote,
-    sharedAt: item.sharedAt.toISOString(),
+    sharedAt: new Date(item.sharedAt).toISOString(),
     isViewed: item.isViewed,
-    viewedAt: item.viewedAt?.toISOString() || null,
+    viewedAt: item.viewedAt ? new Date(item.viewedAt).toISOString() : null,
     resource: {
       id: item.resource.id,
       title: item.resource.title,

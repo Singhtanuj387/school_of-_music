@@ -1,8 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarCheck,
   Calendar,
@@ -81,8 +82,18 @@ export function TeacherSidebar({
   teacherImage?: string | null;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNavigatingTo(null);
+  }, [pathname]);
 
   const isActive = (item: NavItem) => {
+    if (navigatingTo) {
+      if (item.exact) return navigatingTo === item.href;
+      return navigatingTo.startsWith(item.href);
+    }
     if (!pathname) return false;
     if (item.exact) {
       return pathname === item.href;
@@ -120,7 +131,10 @@ export function TeacherSidebar({
                 <Link
                   key={item.href}
                   href={item.href}
-                  prefetch={true}
+                  prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onTouchStart={() => router.prefetch(item.href)}
+                  onClick={() => setNavigatingTo(item.href)}
                   className={`btn-tactile flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
                     active
                       ? "bg-primary/10 text-primary border border-primary/20 shadow-xs font-bold"
@@ -198,7 +212,10 @@ export function TeacherSidebar({
             <Link
               key={item.href}
               href={item.href}
-              prefetch={true}
+              prefetch={false}
+              onMouseEnter={() => router.prefetch(item.href)}
+              onTouchStart={() => router.prefetch(item.href)}
+              onClick={() => setNavigatingTo(item.href)}
               className={`btn-tactile flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 active
                   ? "bg-primary text-white shadow-xs font-bold"

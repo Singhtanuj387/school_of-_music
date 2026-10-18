@@ -10,45 +10,88 @@ export const metadata = {
   description: "View session payout ledger, track paid vs unpaid sessions, and search by session ID.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedTeacherEarningsData = unstable_cache(
+  async (userId: string) => {
+    return db.user.findUnique({
+      where: { id: userId },
+      include: {
+        teacherProfile: {
+          include: {
+            lessonsAsTeacher: {
+              include: {
+                student: {
+                  select: {
+                    name: true,
+                    email: true,
+                  },
+                },
+                enrollment: {
+                  include: {
+                    course: {
+                      select: { title: true },
+                    },
+                  },
+                },
+              },
+              orderBy: { startsAt: "desc" },
+              take: 100,
+            },
+          },
+        },
+      },
+    });
+  },
+  ["teacher-earnings-data"],
+  { revalidate: 30, tags: ["teacher-earnings", "teacher-lessons"] }
+);
+
 export default async function TeacherEarningsPage() {
   const user = await requireRole(Role.TEACHER);
   const teacherTimezone = user.timezone || "UTC";
 
-  const dbUser = await db.user.findUnique({
-    where: { id: user.id },
-    include: {
-      teacherProfile: {
-        include: {
-          lessonsAsTeacher: {
-            include: {
-              student: {
-                select: {
-                  name: true,
-                  email: true,
+  let dbUser: any = null;
+  try {
+    dbUser = await getCachedTeacherEarningsData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached teacher earnings data:", err);
+    dbUser = await db.user.findUnique({
+      where: { id: user.id },
+      include: {
+        teacherProfile: {
+          include: {
+            lessonsAsTeacher: {
+              include: {
+                student: {
+                  select: {
+                    name: true,
+                    email: true,
+                  },
                 },
-              },
-              enrollment: {
-                include: {
-                  course: {
-                    select: { title: true },
+                enrollment: {
+                  include: {
+                    course: {
+                      select: { title: true },
+                    },
                   },
                 },
               },
+              orderBy: { startsAt: "desc" },
+              take: 100,
             },
-            orderBy: { startsAt: "desc" },
-            take: 100,
           },
         },
       },
-    },
-  });
+    });
+  }
 
   const profile = dbUser?.teacherProfile;
   const payoutPerSession = profile?.payoutPerSession || 80000;
   const payoutPerSessionRupees = payoutPerSession / 100;
   const lessons = profile?.lessonsAsTeacher || [];
 
-  const initialItems: TeacherPayoutItem[] = lessons.map((l) => {
+  const initialItems: TeacherPayoutItem[] = lessons.map((l: any) => {
     const isPaid = l.payoutStatus === "PAID";
     const amountRupees = (l.payoutAmountMinor ? l.payoutAmountMinor : payoutPerSession) / 100;
 
@@ -56,12 +99,12 @@ export default async function TeacherEarningsPage() {
       id: l.id,
       trackingCode: getLessonTrackingId(l),
       dateFormatted: formatInViewerTimezone(
-        l.startsAt,
+        new Date(l.startsAt),
         teacherTimezone,
         "MMM d, yyyy 'at' h:mm a",
       ),
-      studentName: l.student.name || "Student",
-      studentEmail: l.student.email,
+      studentName: l.student?.name || "Student",
+      studentEmail: l.student?.email || "",
       courseOrTrial:
         l.lessonSource === "TRIAL"
           ? "Free Trial Lesson"
@@ -71,7 +114,7 @@ export default async function TeacherEarningsPage() {
       amountRupees,
       payoutStatus: isPaid ? "PAID" : "UNPAID",
       payoutPaidAtFormatted: l.payoutPaidAt
-        ? formatInViewerTimezone(l.payoutPaidAt, teacherTimezone, "MMM d, yyyy")
+        ? formatInViewerTimezone(new Date(l.payoutPaidAt), teacherTimezone, "MMM d, yyyy")
         : null,
       payoutTransactionId: l.payoutTransactionId,
       payoutNotes: l.payoutNotes,

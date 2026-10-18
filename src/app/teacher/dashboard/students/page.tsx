@@ -10,76 +10,141 @@ export const metadata = {
   description: "View enrolled and trial students, curriculum progress, and private teaching notes.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedTeacherStudentsData = unstable_cache(
+  async (userId: string) => {
+    return Promise.all([
+      db.enrollment.findMany({
+        where: { teacherId: userId },
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+          course: {
+            select: {
+              title: true,
+              sessionCount: true,
+              instrument: true,
+            },
+          },
+          lessons: {
+            select: {
+              status: true,
+              startsAt: true,
+            },
+            orderBy: { startsAt: "asc" },
+          },
+        },
+        orderBy: { startedAt: "desc" },
+      }),
+      db.lesson.findMany({
+        where: {
+          teacherId: userId,
+          lessonSource: "TRIAL",
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+        },
+        orderBy: { startsAt: "desc" },
+        take: 50,
+      }),
+    ]);
+  },
+  ["teacher-students-data"],
+  { revalidate: 30, tags: ["teacher-students", "student-enrollments"] }
+);
+
 export default async function TeacherStudentsPage() {
   const user = await requireRole(Role.TEACHER);
   const teacherTimezone = user.timezone || "UTC";
 
-  // Fetch enrolled students and trial students in parallel with selective column projections
-  const [enrollments, trialLessons] = await Promise.all([
-    db.enrollment.findMany({
-      where: { teacherId: user.id },
-      include: {
-        student: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            timezone: true,
+  // Fetch enrolled students and trial students in parallel (cached 30s)
+  let enrollments: any[] = [];
+  let trialLessons: any[] = [];
+
+  try {
+    [enrollments, trialLessons] = await getCachedTeacherStudentsData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached teacher students data:", err);
+    [enrollments, trialLessons] = await Promise.all([
+      db.enrollment.findMany({
+        where: { teacherId: user.id },
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+          course: {
+            select: {
+              title: true,
+              sessionCount: true,
+              instrument: true,
+            },
+          },
+          lessons: {
+            select: {
+              status: true,
+              startsAt: true,
+            },
+            orderBy: { startsAt: "asc" },
           },
         },
-        course: {
-          select: {
-            title: true,
-            sessionCount: true,
-            instrument: true,
+        orderBy: { startedAt: "desc" },
+      }),
+      db.lesson.findMany({
+        where: {
+          teacherId: user.id,
+          lessonSource: "TRIAL",
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              timezone: true,
+            },
           },
         },
-        lessons: {
-          select: {
-            status: true,
-            startsAt: true,
-          },
-          orderBy: { startsAt: "asc" },
-        },
-      },
-      orderBy: { startedAt: "desc" },
-    }),
-    db.lesson.findMany({
-      where: {
-        teacherId: user.id,
-        lessonSource: "TRIAL",
-      },
-      include: {
-        student: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            timezone: true,
-          },
-        },
-      },
-      orderBy: { startsAt: "desc" },
-      take: 50,
-    }),
-  ]);
+        orderBy: { startsAt: "desc" },
+        take: 50,
+      }),
+    ]);
+  }
 
   const studentMap = new Map<string, StudentItem>();
 
   // Process enrolled students
   for (const enr of enrollments) {
     const totalSessions = enr.course.sessionCount;
-    const completedSessions = enr.lessons.filter(
-      (l) => l.status === "COMPLETED",
+    const completedSessions = (enr.lessons || []).filter(
+      (l: any) => l.status === "COMPLETED",
     ).length;
 
-    const upcomingLesson = enr.lessons.find(
-      (l) => l.status === "SCHEDULED" && new Date(l.startsAt) >= new Date(),
+    const upcomingLesson = (enr.lessons || []).find(
+      (l: any) => l.status === "SCHEDULED" && new Date(l.startsAt) >= new Date(),
     );
 
     const nextFormatted = upcomingLesson
       ? formatInViewerTimezone(
-          upcomingLesson.startsAt,
+          new Date(upcomingLesson.startsAt),
           teacherTimezone,
           "EEE, MMM d 'at' h:mm a",
         )
@@ -119,7 +184,7 @@ export default async function TeacherStudentsPage() {
         sessionsTotal: 1,
         nextLessonFormatted: isUpcoming
           ? formatInViewerTimezone(
-              tl.startsAt,
+              new Date(tl.startsAt),
               teacherTimezone,
               "EEE, MMM d 'at' h:mm a",
             )

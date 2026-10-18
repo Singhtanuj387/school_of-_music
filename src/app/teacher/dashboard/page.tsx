@@ -13,43 +13,86 @@ export const metadata = {
   description: "View scheduled live music lessons, enter video rooms, and manage students.",
 };
 
-export default async function TeacherDashboardPage() {
-  const user = await requireRole(Role.TEACHER);
+import { unstable_cache } from "next/cache";
 
-  const profile = await db.teacherProfile.findUnique({
-    where: { userId: user.id },
-    include: {
-      availabilityRules: {
-        select: { id: true },
-      },
-      lessonsAsTeacher: {
-        include: {
-          student: {
-            select: {
-              name: true,
-              email: true,
-              timezone: true,
+const getCachedTeacherDashboardProfile = unstable_cache(
+  async (userId: string) => {
+    return db.teacherProfile.findUnique({
+      where: { userId },
+      include: {
+        availabilityRules: {
+          select: { id: true },
+        },
+        lessonsAsTeacher: {
+          include: {
+            student: {
+              select: {
+                name: true,
+                email: true,
+                timezone: true,
+              },
             },
-          },
-          enrollment: {
-            select: {
-              course: {
-                select: { title: true },
+            enrollment: {
+              select: {
+                course: {
+                  select: { title: true },
+                },
               },
             },
           },
+          orderBy: { startsAt: "desc" },
+          take: 60,
         },
-        orderBy: { startsAt: "desc" },
-        take: 60,
       },
-    },
-  });
+    });
+  },
+  ["teacher-dashboard-profile"],
+  { revalidate: 30, tags: ["teacher-lessons", "teacher-profile"] }
+);
+
+export default async function TeacherDashboardPage() {
+  const user = await requireRole(Role.TEACHER);
+
+  let profile: any = null;
+  try {
+    profile = await getCachedTeacherDashboardProfile(user.id);
+  } catch (err) {
+    console.error("Failed to load cached teacher dashboard profile:", err);
+    profile = await db.teacherProfile.findUnique({
+      where: { userId: user.id },
+      include: {
+        availabilityRules: {
+          select: { id: true },
+        },
+        lessonsAsTeacher: {
+          include: {
+            student: {
+              select: {
+                name: true,
+                email: true,
+                timezone: true,
+              },
+            },
+            enrollment: {
+              select: {
+                course: {
+                  select: { title: true },
+                },
+              },
+            },
+          },
+          orderBy: { startsAt: "desc" },
+          take: 60,
+        },
+      },
+    });
+  }
 
   const isEmailVerified = !!user.emailVerified;
   const isPublished = !!profile?.isPublished;
-  const rulesCount = profile?.availabilityRules.length || 0;
+  const rulesCount = profile?.availabilityRules?.length || 0;
   const hasBio = !!profile?.bio && profile.bio.trim().length >= 20;
-  const hasInstruments = (profile?.instruments.length || 0) > 0;
+  const hasInstruments = (profile?.instruments?.length || 0) > 0;
   const hasRate = (profile?.hourlyRate || 0) > 0;
   const hasAvailability = rulesCount > 0;
 
@@ -67,10 +110,10 @@ export default async function TeacherDashboardPage() {
   else if (!hasAvailability) blockReason = "Configure weekly availability";
 
   const allLessons = profile?.lessonsAsTeacher || [];
-  const scheduledLessons = allLessons.filter((l) => l.status === "SCHEDULED" || l.status === "RESCHEDULED");
-  const completedLessons = allLessons.filter((l) => l.status === "COMPLETED");
+  const scheduledLessons = allLessons.filter((l: any) => l.status === "SCHEDULED" || l.status === "RESCHEDULED");
+  const completedLessons = allLessons.filter((l: any) => l.status === "COMPLETED");
 
-  const formattedLessons: TeacherDashboardLesson[] = allLessons.map((l) => {
+  const formattedLessons: TeacherDashboardLesson[] = allLessons.map((l: any) => {
     const startsAtDate = new Date(l.startsAt);
     const endsAtDate = new Date(
       startsAtDate.getTime() + l.durationMinutes * 60_000,
@@ -94,10 +137,10 @@ export default async function TeacherDashboardPage() {
       timezoneAbbr: getTimezoneAbbr(startsAtDate, user.timezone || "UTC"),
       studentName: l.student.name || "Student",
       studentEmail: l.student.email,
-      teacherJoinedAt: l.teacherJoinedAt?.toISOString() || null,
-      studentJoinedAt: l.studentJoinedAt?.toISOString() || null,
+      teacherJoinedAt: l.teacherJoinedAt ? new Date(l.teacherJoinedAt).toISOString() : null,
+      studentJoinedAt: l.studentJoinedAt ? new Date(l.studentJoinedAt).toISOString() : null,
       cancelledBy: l.cancelledBy,
-      cancelledAt: l.cancelledAt?.toISOString() || null,
+      cancelledAt: l.cancelledAt ? new Date(l.cancelledAt).toISOString() : null,
       recordingUrl: l.recordingUrl,
     };
   });

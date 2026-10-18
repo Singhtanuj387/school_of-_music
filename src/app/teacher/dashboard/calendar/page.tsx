@@ -9,106 +9,171 @@ export const metadata = {
   description: "Interactive monthly schedule with availability overlay and booked lessons.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedTeacherCalendarData = unstable_cache(
+  async (userId: string) => {
+    return Promise.all([
+      db.user.findUnique({
+        where: { id: userId },
+        include: {
+          teacherProfile: {
+            include: {
+              availabilityRules: true,
+              availabilityExceptions: {
+                orderBy: { date: "asc" },
+              },
+              lessonsAsTeacher: {
+                where: {
+                  status: { in: ["SCHEDULED", "RESCHEDULED"] },
+                },
+                include: {
+                  student: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+                orderBy: { startsAt: "asc" },
+              },
+            },
+          },
+        },
+      }),
+      db.event.findMany({
+        where: {
+          teacherId: userId,
+          isPublished: true,
+        },
+        include: {
+          registrations: {
+            include: {
+              student: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+            orderBy: { registeredAt: "asc" },
+          },
+        },
+        orderBy: { startsAt: "asc" },
+      }),
+    ]);
+  },
+  ["teacher-calendar-data"],
+  { revalidate: 30, tags: ["teacher-calendar", "teacher-lessons"] }
+);
+
 export default async function TeacherCalendarPage() {
   const user = await requireRole(Role.TEACHER);
 
-  const [dbUser, dbEvents] = await Promise.all([
-    db.user.findUnique({
-      where: { id: user.id },
-      include: {
-        teacherProfile: {
-          include: {
-            availabilityRules: true,
-            availabilityExceptions: {
-              orderBy: { date: "asc" },
-            },
-            lessonsAsTeacher: {
-              where: {
-                status: { in: ["SCHEDULED", "RESCHEDULED"] },
+  let dbUser: any = null;
+  let dbEvents: any[] = [];
+
+  try {
+    [dbUser, dbEvents] = await getCachedTeacherCalendarData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached teacher calendar data:", err);
+    [dbUser, dbEvents] = await Promise.all([
+      db.user.findUnique({
+        where: { id: user.id },
+        include: {
+          teacherProfile: {
+            include: {
+              availabilityRules: true,
+              availabilityExceptions: {
+                orderBy: { date: "asc" },
               },
-              include: {
-                student: {
-                  select: {
-                    name: true,
+              lessonsAsTeacher: {
+                where: {
+                  status: { in: ["SCHEDULED", "RESCHEDULED"] },
+                },
+                include: {
+                  student: {
+                    select: {
+                      name: true,
+                    },
                   },
                 },
-              },
-              orderBy: { startsAt: "asc" },
-            },
-          },
-        },
-      },
-    }),
-    db.event.findMany({
-      where: {
-        teacherId: user.id,
-        isPublished: true,
-      },
-      include: {
-        registrations: {
-          include: {
-            student: {
-              select: {
-                name: true,
-                email: true,
+                orderBy: { startsAt: "asc" },
               },
             },
           },
-          orderBy: { registeredAt: "asc" },
         },
-      },
-      orderBy: { startsAt: "asc" },
-    }),
-  ]);
+      }),
+      db.event.findMany({
+        where: {
+          teacherId: user.id,
+          isPublished: true,
+        },
+        include: {
+          registrations: {
+            include: {
+              student: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+            orderBy: { registeredAt: "asc" },
+          },
+        },
+        orderBy: { startsAt: "asc" },
+      }),
+    ]);
+  }
 
   const profile = dbUser?.teacherProfile;
   const teacherTimezone = user.timezone || "UTC";
 
-  const rules = (profile?.availabilityRules || []).map((r) => ({
+  const rules = (profile?.availabilityRules || []).map((r: any) => ({
     dayOfWeek: r.dayOfWeek,
     startMinute: r.startMinute,
     endMinute: r.endMinute,
   }));
 
-  const exceptions = (profile?.availabilityExceptions || []).map((e) => ({
+  const exceptions = (profile?.availabilityExceptions || []).map((e: any) => ({
     id: e.id,
-    date: e.date.toISOString().split("T")[0],
+    date: new Date(e.date).toISOString().split("T")[0],
     isBlocked: e.isBlocked,
     startMinute: e.startMinute,
     endMinute: e.endMinute,
   }));
 
-  const lessons = (profile?.lessonsAsTeacher || []).map((l) => ({
+  const lessons = (profile?.lessonsAsTeacher || []).map((l: any) => ({
     id: l.id,
-    startsAt: l.startsAt.toISOString(),
+    startsAt: new Date(l.startsAt).toISOString(),
     durationMinutes: l.durationMinutes,
     instrument: l.instrument,
-    studentName: l.student.name || "Student",
+    studentName: l.student?.name || "Student",
     lessonSource: l.lessonSource as "TRIAL" | "ENROLLMENT",
     status: l.status,
     formattedTime: formatInViewerTimezone(
-      l.startsAt,
+      new Date(l.startsAt),
       teacherTimezone,
       "h:mm a",
     ),
   }));
 
-  const formattedEvents = dbEvents.map((ev) => ({
+  const formattedEvents = dbEvents.map((ev: any) => ({
     id: ev.id,
     title: ev.title,
     description: ev.description,
     type: ev.type,
-    startsAt: ev.startsAt.toISOString(),
+    startsAt: new Date(ev.startsAt).toISOString(),
     durationMinutes: ev.durationMinutes,
     capacity: ev.capacity,
     formattedTime: formatInViewerTimezone(
-      ev.startsAt,
+      new Date(ev.startsAt),
       teacherTimezone,
       "h:mm a",
     ),
-    registrations: ev.registrations.map((r) => ({
-      studentName: r.student.name || "Student",
-      studentEmail: r.student.email,
+    registrations: ev.registrations.map((r: any) => ({
+      studentName: r.student?.name || "Student",
+      studentEmail: r.student?.email,
     })),
   }));
 

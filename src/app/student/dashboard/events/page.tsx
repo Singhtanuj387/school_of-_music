@@ -12,41 +12,83 @@ export const metadata = {
     "Register for live classical workshops, guest masterclasses, and student performance recitals.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedStudentEvents = unstable_cache(
+  async () => {
+    return db.event.findMany({
+      where: {
+        isPublished: true,
+        startsAt: {
+          gte: new Date(),
+        },
+      },
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            teacherProfile: {
+              select: {
+                instruments: true,
+              },
+            },
+          },
+        },
+        registrations: {
+          select: {
+            studentId: true,
+          },
+        },
+      },
+      orderBy: { startsAt: "asc" },
+    });
+  },
+  ["student-events-catalog"],
+  { revalidate: 60, tags: ["events"] }
+);
+
 export default async function StudentEventsPage() {
   const user = await requireRole(Role.STUDENT);
   const studentTimezone = user.timezone || "UTC";
 
-  const dbEvents = await db.event.findMany({
-    where: {
-      isPublished: true,
-      startsAt: {
-        gte: new Date(),
+  let dbEvents: any[] = [];
+  try {
+    dbEvents = await getCachedStudentEvents();
+  } catch (err) {
+    console.error("Failed to load cached events:", err);
+    dbEvents = await db.event.findMany({
+      where: {
+        isPublished: true,
+        startsAt: {
+          gte: new Date(),
+        },
       },
-    },
-    include: {
-      teacher: {
-        select: {
-          id: true,
-          name: true,
-          teacherProfile: {
-            select: {
-              instruments: true,
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            teacherProfile: {
+              select: {
+                instruments: true,
+              },
             },
           },
         },
-      },
-      registrations: {
-        select: {
-          studentId: true,
+        registrations: {
+          select: {
+            studentId: true,
+          },
         },
       },
-    },
-    orderBy: { startsAt: "asc" },
-  });
+      orderBy: { startsAt: "asc" },
+    });
+  }
 
-  const formattedEvents: EventItem[] = dbEvents.map((evt) => {
+  const formattedEvents: EventItem[] = dbEvents.map((evt: any) => {
     const startsAtDate = new Date(evt.startsAt);
-    const isRegistered = evt.registrations.some((r) => r.studentId === user.id);
+    const isRegistered = evt.registrations.some((r: any) => r.studentId === user.id);
 
     return {
       id: evt.id,

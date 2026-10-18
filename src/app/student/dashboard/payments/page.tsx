@@ -14,39 +14,78 @@ export const metadata = {
     "View your course payment history, transaction references, and download official tax receipts.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedStudentPaymentsData = unstable_cache(
+  async (userId: string) => {
+    return Promise.all([
+      db.payment.findMany({
+        where: { studentId: userId },
+        include: {
+          enrollment: {
+            include: {
+              course: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      db.course.findMany({
+        select: {
+          priceMinorUnits: true,
+          title: true,
+          slug: true,
+          sessionCount: true,
+          instrument: true,
+        },
+      }),
+    ]);
+  },
+  ["student-payments-data"],
+  { revalidate: 30, tags: ["student-payments"] }
+);
+
 export default async function StudentPaymentsPage() {
   const user = await requireRole(Role.STUDENT);
 
-  // Parallelize payments and course lookup queries
-  const [payments, allCourses] = await Promise.all([
-    db.payment.findMany({
-      where: { studentId: user.id },
-      include: {
-        enrollment: {
-          include: {
-            course: true,
+  // Parallelize payments and course lookup queries (cached 30s)
+  let payments: any[] = [];
+  let allCourses: any[] = [];
+
+  try {
+    [payments, allCourses] = await getCachedStudentPaymentsData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached student payments data:", err);
+    [payments, allCourses] = await Promise.all([
+      db.payment.findMany({
+        where: { studentId: user.id },
+        include: {
+          enrollment: {
+            include: {
+              course: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.course.findMany({
-      select: {
-        priceMinorUnits: true,
-        title: true,
-        slug: true,
-        sessionCount: true,
-        instrument: true,
-      },
-    }),
-  ]);
+        orderBy: { createdAt: "desc" },
+      }),
+      db.course.findMany({
+        select: {
+          priceMinorUnits: true,
+          title: true,
+          slug: true,
+          sessionCount: true,
+          instrument: true,
+        },
+      }),
+    ]);
+  }
 
   const courseMapByPrice = new Map<number, (typeof allCourses)[0]>();
   for (const c of allCourses) {
     courseMapByPrice.set(c.priceMinorUnits, c);
   }
 
-  const formattedPayments: StudentPaymentRecord[] = payments.map((p) => {
+  const formattedPayments: StudentPaymentRecord[] = payments.map((p: any) => {
     const course =
       p.enrollment?.course || courseMapByPrice.get(p.amountMinorUnits);
 
@@ -57,7 +96,7 @@ export default async function StudentPaymentsPage() {
       amountMinorUnits: p.amountMinorUnits,
       currency: p.currency,
       status: p.status,
-      createdAt: p.createdAt.toISOString(),
+      createdAt: new Date(p.createdAt).toISOString(),
       courseTitle: course?.title || "Gandharva Music Masterclass",
       courseSlug: course?.slug || "",
       sessionCount: course?.sessionCount || 4,

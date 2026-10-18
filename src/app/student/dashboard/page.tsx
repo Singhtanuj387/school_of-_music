@@ -19,75 +19,127 @@ export const metadata = {
     "View scheduled live music lessons, trial status, and join video classrooms.",
 };
 
+import { unstable_cache } from "next/cache";
+
+const getCachedStudentDashboardData = unstable_cache(
+  async (userId: string) => {
+    return Promise.all([
+      db.studentTrialStatus.findUnique({
+        where: { studentId: userId },
+      }),
+      db.enrollment.findFirst({
+        where: {
+          studentId: userId,
+          status: EnrollmentStatus.ACTIVE,
+        },
+        include: {
+          course: {
+            select: {
+              title: true,
+              sessionCount: true,
+            },
+          },
+        },
+        orderBy: { startedAt: "desc" },
+      }),
+      db.lesson.findMany({
+        where: {
+          studentId: userId,
+        },
+        include: {
+          teacher: {
+            select: {
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+          teacherProfile: {
+            select: {
+              id: true,
+            },
+          },
+        },
+        orderBy: {
+          startsAt: "desc",
+        },
+        take: 60,
+      }),
+      db.trialRequest.findMany({
+        where: {
+          studentId: userId,
+        },
+        select: {
+          id: true,
+          instrument: true,
+          ageGroup: true,
+          requestedStartsAt: true,
+          preferredTimeSlot: true,
+          studentNotes: true,
+          status: true,
+          isConverted: true,
+        },
+        orderBy: { requestedStartsAt: "desc" },
+        take: 5,
+      }),
+    ]);
+  },
+  ["student-dashboard-overview"],
+  { revalidate: 30, tags: ["student-lessons", "student-trials"] }
+);
+
 export default async function StudentDashboardPage() {
   const user = await requireRole(Role.STUDENT);
   const studentTimezone = user.timezone || "UTC";
 
-  // Fetch trial status, active enrollment, lessons, and trial requests in parallel
-  const [trialStatus, activeEnrollment, dbLessons, trialRequests] = await Promise.all([
-    db.studentTrialStatus.findUnique({
-      where: { studentId: user.id },
-    }),
-    db.enrollment.findFirst({
-      where: {
-        studentId: user.id,
-        status: EnrollmentStatus.ACTIVE,
-      },
-      include: {
-        course: {
-          select: {
-            title: true,
-            sessionCount: true,
-          },
+  // Fetch trial status, active enrollment, lessons, and trial requests in parallel (cached 30s)
+  let trialStatus: any = null;
+  let activeEnrollment: any = null;
+  let dbLessons: any[] = [];
+  let trialRequests: any[] = [];
+
+  try {
+    [trialStatus, activeEnrollment, dbLessons, trialRequests] =
+      await getCachedStudentDashboardData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached student dashboard data:", err);
+    [trialStatus, activeEnrollment, dbLessons, trialRequests] = await Promise.all([
+      db.studentTrialStatus.findUnique({ where: { studentId: user.id } }),
+      db.enrollment.findFirst({
+        where: { studentId: user.id, status: EnrollmentStatus.ACTIVE },
+        include: { course: { select: { title: true, sessionCount: true } } },
+        orderBy: { startedAt: "desc" },
+      }),
+      db.lesson.findMany({
+        where: { studentId: user.id },
+        include: {
+          teacher: { select: { name: true, email: true, timezone: true } },
+          teacherProfile: { select: { id: true } },
         },
-      },
-      orderBy: { startedAt: "desc" },
-    }),
-    db.lesson.findMany({
-      where: {
-        studentId: user.id,
-      },
-      include: {
-        teacher: {
-          select: {
-            name: true,
-            email: true,
-            timezone: true,
-          },
+        orderBy: { startsAt: "desc" },
+        take: 60,
+      }),
+      db.trialRequest.findMany({
+        where: { studentId: user.id },
+        select: {
+          id: true,
+          instrument: true,
+          ageGroup: true,
+          requestedStartsAt: true,
+          preferredTimeSlot: true,
+          studentNotes: true,
+          status: true,
+          isConverted: true,
         },
-        teacherProfile: {
-          select: {
-            id: true,
-          },
-        },
-      },
-      orderBy: {
-        startsAt: "desc",
-      },
-      take: 60,
-    }),
-    db.trialRequest.findMany({
-      where: {
-        studentId: user.id,
-      },
-      select: {
-        id: true,
-        instrument: true,
-        ageGroup: true,
-        requestedStartsAt: true,
-        preferredTimeSlot: true,
-        studentNotes: true,
-        status: true,
-        isConverted: true,
-      },
-      orderBy: { requestedStartsAt: "desc" },
-      take: 5,
-    }),
-  ]);
+        orderBy: { requestedStartsAt: "desc" },
+        take: 5,
+      }),
+    ]);
+  }
 
   const pendingTrialRequest =
-    trialRequests.find((t) => t.status === TrialRequestStatus.PENDING) || null;
-  const isConverted = trialRequests.some((t) => t.isConverted);
+    trialRequests.find((t: any) => t.status === TrialRequestStatus.PENDING) || null;
+  const isConverted = trialRequests.some((t: any) => t.isConverted);
 
   const formattedLessons: StudentDashboardLesson[] = dbLessons.map((l) => {
     const startsAtDate = new Date(l.startsAt);
@@ -136,7 +188,7 @@ export default async function StudentDashboardPage() {
                   id: pendingTrialRequest.id,
                   instrument: pendingTrialRequest.instrument,
                   ageGroup: pendingTrialRequest.ageGroup,
-                  requestedStartsAt: pendingTrialRequest.requestedStartsAt.toISOString(),
+                  requestedStartsAt: new Date(pendingTrialRequest.requestedStartsAt).toISOString(),
                   preferredTimeSlot: pendingTrialRequest.preferredTimeSlot,
                   notes: pendingTrialRequest.studentNotes,
                 }

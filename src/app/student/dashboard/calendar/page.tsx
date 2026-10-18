@@ -10,66 +10,139 @@ export const metadata = {
   description: "View and export your scheduled music lessons on an interactive month & week calendar.",
 };
 
-export default async function StudentCalendarPage() {
-  const user = await requireRole(Role.STUDENT);
-  const studentTimezone = user.timezone || "UTC";
+import { unstable_cache } from "next/cache";
 
-  const [dbLessons, dbRegistrations] = await Promise.all([
-    db.lesson.findMany({
-      where: {
-        studentId: user.id,
-        status: { in: ["SCHEDULED", "RESCHEDULED"] },
-      },
-      include: {
-        teacher: {
-          select: {
-            name: true,
-            email: true,
-            timezone: true,
+const getCachedStudentCalendarData = unstable_cache(
+  async (userId: string) => {
+    return Promise.all([
+      db.lesson.findMany({
+        where: {
+          studentId: userId,
+          status: { in: ["SCHEDULED", "RESCHEDULED"] },
+        },
+        include: {
+          teacher: {
+            select: {
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+          teacherProfile: {
+            select: {
+              id: true,
+            },
           },
         },
-        teacherProfile: {
-          select: {
-            id: true,
+        orderBy: {
+          startsAt: "asc",
+        },
+      }),
+      db.eventRegistration.findMany({
+        where: {
+          studentId: userId,
+          event: {
+            isPublished: true,
           },
         },
-      },
-      orderBy: {
-        startsAt: "asc",
-      },
-    }),
-    db.eventRegistration.findMany({
-      where: {
-        studentId: user.id,
-        event: {
-          isPublished: true,
-        },
-      },
-      include: {
-        event: {
-          include: {
-            teacher: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                teacherProfile: {
-                  select: {
-                    instruments: true,
+        include: {
+          event: {
+            include: {
+              teacher: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  teacherProfile: {
+                    select: {
+                      instruments: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      orderBy: {
-        event: {
+        orderBy: {
+          event: {
+            startsAt: "asc",
+          },
+        },
+      }),
+    ]);
+  },
+  ["student-calendar-data"],
+  { revalidate: 30, tags: ["student-lessons", "student-calendar"] }
+);
+
+export default async function StudentCalendarPage() {
+  const user = await requireRole(Role.STUDENT);
+  const studentTimezone = user.timezone || "UTC";
+
+  let dbLessons: any[] = [];
+  let dbRegistrations: any[] = [];
+
+  try {
+    [dbLessons, dbRegistrations] = await getCachedStudentCalendarData(user.id);
+  } catch (err) {
+    console.error("Failed to load cached student calendar data:", err);
+    [dbLessons, dbRegistrations] = await Promise.all([
+      db.lesson.findMany({
+        where: {
+          studentId: user.id,
+          status: { in: ["SCHEDULED", "RESCHEDULED"] },
+        },
+        include: {
+          teacher: {
+            select: {
+              name: true,
+              email: true,
+              timezone: true,
+            },
+          },
+          teacherProfile: {
+            select: {
+              id: true,
+            },
+          },
+        },
+        orderBy: {
           startsAt: "asc",
         },
-      },
-    }),
-  ]);
+      }),
+      db.eventRegistration.findMany({
+        where: {
+          studentId: user.id,
+          event: {
+            isPublished: true,
+          },
+        },
+        include: {
+          event: {
+            include: {
+              teacher: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  teacherProfile: {
+                    select: {
+                      instruments: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: {
+          event: {
+            startsAt: "asc",
+          },
+        },
+      }),
+    ]);
+  }
 
   const formattedLessons: CalendarLesson[] = dbLessons.map((l) => {
     const startsAtDate = new Date(l.startsAt);

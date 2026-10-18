@@ -1,8 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Clock,
   Calendar,
@@ -85,6 +86,20 @@ const STUDENT_NAV_ITEMS = [
 
 export function DashboardSidebar({ user }: { user: SidebarUserInfo }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNavigatingTo(null);
+  }, [pathname]);
+
+  const checkIsActive = (href: string, exact?: boolean) => {
+    if (navigatingTo) {
+      return exact ? navigatingTo === href : navigatingTo.startsWith(href);
+    }
+    if (!pathname) return false;
+    return exact ? pathname === href : pathname.startsWith(href);
+  };
 
   return (
     <>
@@ -110,18 +125,17 @@ export function DashboardSidebar({ user }: { user: SidebarUserInfo }) {
           {/* Nav Items */}
           <nav className="space-y-1.5">
             {STUDENT_NAV_ITEMS.map((item) => {
-              const isActive = pathname
-                ? item.exact
-                  ? pathname === item.href
-                  : pathname.startsWith(item.href)
-                : false;
+              const isActive = checkIsActive(item.href, item.exact);
               const Icon = item.icon;
 
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  prefetch={true}
+                  prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onTouchStart={() => router.prefetch(item.href)}
+                  onClick={() => setNavigatingTo(item.href)}
                   className={`btn-tactile flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
                     isActive
                       ? "bg-primary/10 text-primary border border-primary/20 shadow-xs"
@@ -189,18 +203,17 @@ export function DashboardSidebar({ user }: { user: SidebarUserInfo }) {
       {/* Mobile Top Navigation Tabs (< 768px, 100% usable at 375px) */}
       <div className="md:hidden sticky top-16 z-30 bg-white/95 border-b border-surface-muted/80 backdrop-blur-md px-3 py-2 overflow-x-auto scrollbar-none flex gap-1.5 shadow-xs">
         {STUDENT_NAV_ITEMS.map((item) => {
-          const isActive = pathname
-            ? item.exact
-              ? pathname === item.href
-              : pathname.startsWith(item.href)
-            : false;
+          const isActive = checkIsActive(item.href, item.exact);
           const Icon = item.icon;
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              prefetch={true}
+              prefetch={false}
+              onMouseEnter={() => router.prefetch(item.href)}
+              onTouchStart={() => router.prefetch(item.href)}
+              onClick={() => setNavigatingTo(item.href)}
               className={`btn-tactile flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 isActive
                   ? "bg-primary text-white shadow-xs"
