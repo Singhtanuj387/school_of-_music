@@ -1,142 +1,245 @@
+import { Metadata } from "next";
 import Link from "next/link";
+import React from "react";
 
-export const metadata = {
-  title: "Music Practice Tools | Gandharva School Of Music",
+export const metadata: Metadata = {
+  title: "Free Online Musical Instruments Tools | Gandharva School Of Music",
   description:
-    "Free online practice tools for musicians: interactive metronome, guitar tuner & chord finder, virtual piano keyboard, and drum rhythm trainer.",
+    "Explore free online music tools like a guitar tuner, metronome, virtual piano, and drums at Gandharva School of Music to perfect your skills!",
+  alternates: {
+    canonical: "/tools/",
+  },
 };
 
-export default function ToolsHubPage() {
-  const tools = [
-    {
-      title: "Interactive Metronome",
-      slug: "metronome",
-      badge: "Essential",
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
-      description:
-        "High-precision web audio metronome with customizable BPM (40-240), tap tempo, accent beats, and time signature options (2/4, 3/4, 4/4, 6/8).",
-      features: ["Precision Web Audio synthesis", "Tap Tempo detection", "Accent on downbeat", "Subdivision practice"],
-    },
-    {
-      title: "Guitar Tuner & Chord Finder",
-      slug: "guitar",
-      badge: "Popular",
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-        </svg>
-      ),
-      description:
-        "Accurate standard guitar pitch generator (E-A-D-G-B-E) and comprehensive interactive visual chord diagram explorer.",
-      features: ["Standard 6-string reference notes", "Interactive string audio", "Fretboard chord library", "Finger placement guide"],
-    },
-    {
-      title: "Virtual Piano & Chord Visualizer",
-      slug: "piano-tools",
-      badge: "Interactive",
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-        </svg>
-      ),
-      description:
-        "Full interactive 2-octave digital piano with polyphonic Web Audio playback, major/minor chord highlights, and key labeling.",
-      features: ["Low-latency Web Audio API", "Interactive mouse & keyboard touch", "Major/Minor chords highlight", "Octave shifting"],
-    },
-    {
-      title: "Virtual Drum Machine & Beats",
-      slug: "drums",
-      badge: "Rhythm",
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
-        </svg>
-      ),
-      description:
-        "Practice rhythm with kick, snare, hi-hat, tom, and cymbal pads. Ideal for locking your timing in rock, pop, and blues rhythms.",
-      features: ["Synthesized drum sounds", "Responsive touch pads", "Keyboard shortcuts", "Loop rhythm accompaniments"],
-    },
-  ];
+const tools = [
+  {
+    imageSrc: "/Untitled-500-x-250-px-1.avif",
+    title: "Guitar",
+    url: "/tools/guitar/",
+    description:
+      "Use a guitar tuner to hone your skills and stay perfectly in tune.",
+  },
+  {
+    imageSrc: "/metronome.avif",
+    title: "Metronome",
+    description: "Practice with a Metronome and always stay in perfect rhythm.",
+    url: "/tools/metronome/",
+  },
+  {
+    imageSrc: "/Untitled-500-x-250-px-2.avif",
+    title: "Piano",
+    description:
+      "You can stay sharp and in tune with consistent practice on a Virtual Piano.",
+    url: "/tools/piano-tools/",
+  },
+  {
+    imageSrc: "/Untitled-500-x-250-px-3.avif",
+    title: "Drums",
+    description:
+      "Use our online Drums to refine your skills and hit every beat perfectly.",
+    url: "/tools/drums/",
+  },
+];
 
+function ToolsPage() {
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans">
+    <div>
       {/* Hero Section */}
-      <section className="bg-[#24105E] pt-24 md:pt-32 pb-16 md:pb-24 px-4 text-center text-white relative">
-        <div className="max-w-4xl mx-auto">
-          <span className="inline-block px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-[#FF7703] text-white mb-4">
-            Free Musician Utilities
-          </span>
+      <section className="bg-[url(/tool-photos.avif)] w-full h-[75vh] md:h-[75vh] bg-no-repeat bg-top bg-cover flex flex-col items-start justify-center py-10 px-4">
+        <div className="md:px-[10%] py-5 md:p-[10%] px-1 md:w-[67%]">
           <h1
-            className="text-4xl sm:text-5xl font-bold mb-4"
-            style={{ fontFamily: "var(--font-vidaloka), serif" }}
+            className="text-[32px] w-full md:w-2/3 text-left md:text-[48px] text-white mb-6 mt-12 md:mt-28 "
+            style={{
+              fontFamily: "var(--font-vidaloka)",
+              fontWeight: 500,
+              lineHeight: 1,
+            }}
           >
-            Digital Practice Tools for Musicians
+            Online Tools
           </h1>
-          <p className="text-purple-200 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
-            Free browser-based practice companions built with the Web Audio API. Perfect your timing, pitch, chords, and rhythmic precision.
-          </p>
+          <div className="mt-8">
+            <span
+              className="text-[16px] md:text-[17px] text-white"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 400 }}
+            >
+              Welcome to Gandharva&apos;s Free Tools! Enhance your skills with
+              our smart resources, guiding you to mastery beyond your sessions.
+            </span>
+          </div>
         </div>
       </section>
+      {/* <section className="md:px-[10%] mt-20 px-1 ">
+        <div className="w-full">
+          <h2
+            className="
+                  text-[26px] md:text-[46px]
+                  text-[#1A022D] text-center
+                  "
+            style={{ fontFamily: "var(--font-vidaloka)", fontWeight: 500 }}
+          >
+            Gandharva&apos;s{" "}
+            <span className="text-[#FF7703]">Online Tools</span>
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 p-5 mx-auto border-2 w-full">
+            {tools.map((tool, index) => (
+              <ToolCard key={index} {...tool} />
+            ))}
+          </div>
+        </div>
+      </section> */}
+      <section className="md:px-[10%] mt-20 px-4">
+        <div className="w-full">
+          <h2
+            className="text-[26px] md:text-[46px] text-[#1A022D] text-center mb-8"
+            style={{ fontFamily: "var(--font-vidaloka)", fontWeight: 500 }}
+          >
+            Gandharva&apos;s{" "}
+            <span className="text-[#FF7703]">Online Tools</span>
+          </h2>
 
-      {/* Tools Grid */}
-      <section className="py-16 md:py-20 px-4 bg-gray-50/60 flex-1">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {tools.map((tool) => (
-              <div
-                key={tool.slug}
-                className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-5">
-                    <div className="w-14 h-14 rounded-2xl bg-purple-50 text-[#9506EE] flex items-center justify-center group-hover:bg-[#9506EE] group-hover:text-white transition-colors duration-300">
-                      {tool.icon}
-                    </div>
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-[#FF7703]">
-                      {tool.badge}
-                    </span>
-                  </div>
-
-                  <h2 className="text-2xl font-bold text-[#24105E] mb-3 group-hover:text-[#9506EE] transition-colors">
-                    {tool.title}
-                  </h2>
-                  <p className="text-gray-600 text-sm leading-relaxed mb-6">
-                    {tool.description}
-                  </p>
-
-                  <div className="space-y-2 mb-8">
-                    {tool.features.map((feat, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-                        <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        <span>{feat}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <Link
-                  href={`/tools/${tool.slug}`}
-                  className="w-full py-3.5 bg-[#9506EE] hover:bg-[#8200DA] text-white text-center font-semibold rounded-xl transition-all shadow-md shadow-purple-600/20 text-sm flex items-center justify-center gap-2"
-                >
-                  Launch {tool.title}
-                  <span>→</span>
-                </Link>
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-screen-xl mx-auto px-4">
+            {tools.map((tool, index) => (
+              <ToolCard key={index} {...tool} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* 24/7 Support Banner */}
-      <div className="bg-[#FF9E00] py-4 text-white text-center font-medium text-base sm:text-lg tracking-wide">
-        24/7 Dedicated Customer Support
+      <section className="bg-[url(/Untitled-design-3-scaled.avif)] w-full h-[100vh] md:h-[70vh] bg-no-repeat bg-cover flex flex-col items-center justify-center py-10 px-4 text-center mt-20 text-white bg-[#3c096c]">
+        <h3
+          className="text-[26px] md:text-[40px] text-[#1A020D] mb-4"
+          style={{
+            fontFamily: "var(--font-vidaloka)",
+            fontWeight: 500,
+          }}
+        >
+          Learn Music Easily in Just{" "}
+          <span className="text-[#FF7703]">3 Simple Steps</span>
+        </h3>
+        <div className="flex flex-col md:flex-row justify-between mt-10  gap-8 md:gap-16">
+          <div>
+            <h4
+              className="text-[26px] md:text-[34px] text-[#1A022D]"
+              style={{
+                fontFamily: "var(--font-vidaloka)",
+                fontWeight: 400,
+              }}
+            >
+              1. Book
+            </h4>
+            <p
+              className="text-[#424242] text-[17px]"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
+            >
+              Book a free demo, and we’ll reach out to you promptly.
+            </p>
+          </div>
+          <div>
+            <h4
+              className="text-[26px] md:text-[34px] text-[#1A022D]"
+              style={{
+                fontFamily: "var(--font-vidaloka)",
+                fontWeight: 400,
+              }}
+            >
+              2. Experience
+            </h4>
+            <p
+              className="text-[#424242] text-[17px]"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
+            >
+              Experience unparalleled learning with guidance from industry
+              professionals.
+            </p>
+          </div>
+          <div>
+            <h4
+              className="text-[26px] md:text-[34px] text-[#1A022D]"
+              style={{
+                fontFamily: "var(--font-vidaloka)",
+                fontWeight: 400,
+              }}
+            >
+              3. Start
+            </h4>
+            <p
+              className="text-[#424242] text-[17px]"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
+            >
+              Join us today and begin your musical journey!
+            </p>
+          </div>
+        </div>
+        <Link
+          href={"/book-your-free-trial/"}
+          className="mt-10"
+          aria-label="Book a free trial now"
+        >
+          <button
+            aria-label="Book a free trial now"
+            className="bg-[#FF9E00] px-8 py-3 rounded-lg mt-3 md:mt-15 text-[16px] "
+            style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 400 }}
+          >
+            Book a free trial now
+          </button>
+        </Link>
+      </section>
+      <div>
+        <p
+          className="bg-[#FF9E00]  py-5 rounded-lg text-white text-[19px] md:text-[24px] text-center "
+          style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 500 }}
+        >
+          24/7 Dedicated Customer Support
+        </p>
       </div>
     </div>
   );
 }
+
+type TooCardProp = {
+  imageSrc?: string;
+  imageSrcMobile?: string;
+  title: string;
+  description: string;
+  url: string;
+};
+
+const ToolCard = ({
+  imageSrc,
+  imageSrcMobile,
+  title,
+  url,
+  description,
+}: TooCardProp) => {
+  return (
+    <div className="max-w-xs rounded-2xl shadow-lg overflow-hidden bg-[#F5F5F5] ">
+      <Link href={url} aria-label="Click to explore the tool">
+        <div className="relative">
+          <img
+            src={imageSrc}
+            srcSet={`${imageSrcMobile} 480w, ${imageSrc} 1024w`}
+            alt={title}
+            className="w-full h-48 object-cover"
+          />
+          <h2
+            className="absolute bottom-5  text-white text-center text-2xl w-full"
+            style={{
+              fontFamily: "var(--font-vidaloka)",
+              fontWeight: 500,
+            }}
+          >
+            {title}
+          </h2>
+        </div>
+        <div
+          className="p-5 text-gray-600 text-center"
+          style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
+        >
+          {description}
+        </div>
+      </Link>
+    </div>
+  );
+};
+
+export default ToolsPage;

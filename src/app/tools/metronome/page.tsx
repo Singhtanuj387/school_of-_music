@@ -1,295 +1,169 @@
-"use client";
-
-import { useState, useEffect, useRef } from "react";
+import { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
+import React from "react";
 
-export default function MetronomePage() {
-  const [bpm, setBpm] = useState<number>(100);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [beatsPerMeasure, setBeatsPerMeasure] = useState<number>(4);
-  const [currentBeat, setCurrentBeat] = useState<number>(0);
+export const metadata: Metadata = {
+  title: "Free Online Metronome | Gandharva School Of Music",
+  description:
+    "Practice music online with Gandharva School of Music's virtual metronome, designed to help you maintain a consistent tempo and synchronize seamlessly with other musicians.",
+  alternates: {
+    canonical: "/tools/metronome/",
+  },
+};
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const nextNoteTimeRef = useRef<number>(0);
-  const timerIdRef = useRef<number | null>(null);
-  const currentBeatRef = useRef<number>(0);
-  const bpmRef = useRef<number>(bpm);
-  const beatsPerMeasureRef = useRef<number>(beatsPerMeasure);
-
-  // Tap tempo state
-  const tapTimesRef = useRef<number[]>([]);
-
-  useEffect(() => {
-    bpmRef.current = bpm;
-  }, [bpm]);
-
-  useEffect(() => {
-    beatsPerMeasureRef.current = beatsPerMeasure;
-  }, [beatsPerMeasure]);
-
-  const getTempoTerm = (tempo: number) => {
-    if (tempo < 60) return "Largo (Very Slow)";
-    if (tempo < 76) return "Adagio (Slow & Stately)";
-    if (tempo < 108) return "Andante (Walking Pace)";
-    if (tempo < 120) return "Moderato (Moderate)";
-    if (tempo < 168) return "Allegro (Fast & Bright)";
-    if (tempo < 200) return "Vivace (Lively & Fast)";
-    return "Presto (Extremely Fast)";
-  };
-
-  const playClick = (time: number, isAccent: boolean) => {
-    if (!audioCtxRef.current) return;
-    const osc = audioCtxRef.current.createOscillator();
-    const gain = audioCtxRef.current.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = isAccent ? 1200 : 800;
-
-    gain.gain.setValueAtTime(isAccent ? 0.9 : 0.6, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-
-    osc.connect(gain);
-    gain.connect(audioCtxRef.current.destination);
-
-    osc.start(time);
-    osc.stop(time + 0.05);
-  };
-
-  const scheduler = () => {
-    if (!audioCtxRef.current) return;
-
-    while (nextNoteTimeRef.current < audioCtxRef.current.currentTime + 0.1) {
-      const isAccent = currentBeatRef.current === 0;
-      playClick(nextNoteTimeRef.current, isAccent);
-
-      const beatToShow = currentBeatRef.current;
-      setTimeout(() => {
-        setCurrentBeat(beatToShow);
-      }, Math.max(0, (nextNoteTimeRef.current - audioCtxRef.current!.currentTime) * 1000));
-
-      // Advance
-      const secondsPerBeat = 60.0 / bpmRef.current;
-      nextNoteTimeRef.current += secondsPerBeat;
-      currentBeatRef.current = (currentBeatRef.current + 1) % beatsPerMeasureRef.current;
-    }
-
-    timerIdRef.current = window.setTimeout(scheduler, 25);
-  };
-
-  const toggleMetronome = () => {
-    if (isPlaying) {
-      if (timerIdRef.current) clearTimeout(timerIdRef.current);
-      setIsPlaying(false);
-      setCurrentBeat(0);
-    } else {
-      if (!audioCtxRef.current) {
-        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        audioCtxRef.current = new AudioContextClass();
-      }
-      if (audioCtxRef.current.state === "suspended") {
-        audioCtxRef.current.resume();
-      }
-      currentBeatRef.current = 0;
-      nextNoteTimeRef.current = audioCtxRef.current.currentTime + 0.05;
-      setIsPlaying(true);
-      scheduler();
-    }
-  };
-
-  const handleTap = () => {
-    const now = performance.now();
-    const taps = tapTimesRef.current;
-
-    // Clear taps if more than 2.5s since last tap
-    if (taps.length > 0 && now - taps[taps.length - 1] > 2500) {
-      tapTimesRef.current = [now];
-      return;
-    }
-
-    taps.push(now);
-    if (taps.length > 4) taps.shift();
-
-    if (taps.length >= 2) {
-      const intervals = [];
-      for (let i = 1; i < taps.length; i++) {
-        intervals.push(taps[i] - taps[i - 1]);
-      }
-      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      const calculatedBpm = Math.round(60000 / avgInterval);
-      if (calculatedBpm >= 40 && calculatedBpm <= 240) {
-        setBpm(calculatedBpm);
-      }
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (timerIdRef.current) clearTimeout(timerIdRef.current);
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-      }
-    };
-  }, []);
-
+function ToolPage() {
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans">
-      {/* Header Bar */}
-      <section className="bg-[#24105E] pt-24 md:pt-28 pb-12 px-4 text-white text-center">
-        <div className="max-w-4xl mx-auto">
-          <Link href="/tools" className="inline-flex items-center text-xs text-purple-200 hover:text-white mb-3">
-            ← Back to Practice Tools
-          </Link>
+    <div>
+      <section className="bg-[#1A022D] w-full h-[50vh] md:h-[60vh] bg-no-repeat bg-top bg-cover flex flex-col items-start justify-center py-10 px-4">
+        <div className="md:px-[10%] py-5 md:p-[10%] px-1 md:w-[67%]">
           <h1
-            className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2"
-            style={{ fontFamily: "var(--font-vidaloka), serif" }}
+            className="text-[32px] w-full  text-left md:text-[54px] text-white mb-6 mt-12 md:mt-28 "
+            style={{
+              fontFamily: "var(--font-vidaloka)",
+              fontWeight: 500,
+              lineHeight: 1,
+            }}
           >
-            Interactive Metronome
+            Online Metronome
           </h1>
-          <p className="text-purple-200 text-sm sm:text-base">
-            Audio-snythesized precision metronome with customizable beats, tap tempo, and visual feedback.
+        </div>
+      </section>
+      <section className=" py-10 ">
+        <div className="flex flex-col md:flex-row justify-evenly items-center">
+          <div>
+            <Image
+              src={"/Online-Metronome.avif"}
+              width={400}
+              height={400}
+              alt="Metronome"
+            />
+          </div>
+          <div>
+            <iframe
+              src="https://guitarapp.com/metronome.html?embed=true&tempo=120&timeSignature=2&pattern=1&theme=light"
+              title="Online Metronome"
+              style={{
+                width: "360px",
+                height: "520px",
+                border: "none",
+                borderRadius: "4px",
+              }}
+            />
+          </div>
+        </div>
+        <div className="p-10 md:p-30">
+          <h2
+            className="text-[#1A022D] text-[20px] md:text-[40px] text-center mb-7 md:px-80"
+            style={{
+              fontFamily: "var(--font-vidaloka)",
+              fontWeight: 500,
+            }}
+          >
+            What is the role of a metronome when practicing music?
+          </h2>
+          <p
+            className="text-[#424242] text-[16px]  text-center "
+            style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 400 }}
+          >
+            When playing in a band or recording a song, multiple musicians are
+            involved, making it crucial to maintain a consistent tempo, beat, or
+            speed across all players. If each musician performs perfectly but at
+            varying tempos, the result would be chaotic. To avoid this, a shared
+            tempo is essential, and a metronome ensures that everyone stays
+            synchronized. This online metronome is an excellent tool for
+            developing a steady tempo and is especially helpful when learning to
+            play an instrument or collaborating with other musicians. It is
+            versatile and can be used with any instrument, including keyboards,
+            guitars, drums, pianos, saxophones, violins, ukuleles, and more.
           </p>
         </div>
       </section>
-
-      {/* Main Interactive Metronome Panel */}
-      <main className="py-12 px-4 flex-1 flex flex-col items-center justify-center bg-gray-50/60">
-        <div className="max-w-lg w-full bg-white rounded-3xl p-8 sm:p-10 shadow-xl border border-gray-100 flex flex-col items-center">
-          {/* Visual Beat Indicators */}
-          <div className="flex items-center gap-3 mb-8">
-            {Array.from({ length: beatsPerMeasure }).map((_, index) => {
-              const isActive = isPlaying && currentBeat === index;
-              const isDownbeat = index === 0;
-              return (
-                <div
-                  key={index}
-                  className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full transition-all duration-100 ${
-                    isActive
-                      ? isDownbeat
-                        ? "bg-[#FF7703] scale-125 shadow-lg shadow-orange-500/50"
-                        : "bg-[#9506EE] scale-125 shadow-lg shadow-purple-500/50"
-                      : "bg-gray-200"
-                  }`}
-                />
-              );
-            })}
-          </div>
-
-          {/* BPM Readout */}
-          <div className="text-center mb-6">
-            <span className="text-6xl sm:text-7xl font-extrabold text-[#24105E] tracking-tight">
-              {bpm}
-            </span>
-            <span className="text-base text-gray-400 font-bold ml-2">BPM</span>
-            <p className="text-xs sm:text-sm font-semibold text-[#FF7703] mt-1 uppercase tracking-wider">
-              {getTempoTerm(bpm)}
+      <section className="bg-[url(/Untitled-design-3-scaled.avif)] w-full h-[100vh] md:h-[80vh] bg-no-repeat  bg-cover flex flex-col items-center justify-center py-10 px-4 text-center text-white bg-[#3c096c]">
+        <h3
+          className="text-[26px] md:text-[40px] text-[#1A020D] mb-4"
+          style={{
+            fontFamily: "var(--font-vidaloka)",
+            fontWeight: 500,
+          }}
+        >
+          Learn Music Easily in Just{" "}
+          <span className="text-[#FF7703]">3 Simple Steps</span>
+        </h3>
+        <div className="flex flex-col md:flex-row justify-between  gap-8 md:gap-16">
+          <div>
+            <h4
+              className="text-[26px] md:text-[34px] text-[#1A022D]"
+              style={{
+                fontFamily: "var(--font-vidaloka)",
+                fontWeight: 400,
+              }}
+            >
+              1. Book
+            </h4>
+            <p
+              className="text-[#424242] text-[17px]"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
+            >
+              Book a free demo, and we’ll reach out to you promptly.
             </p>
           </div>
-
-          {/* Tempo Slider */}
-          <div className="w-full px-2 mb-8">
-            <input
-              type="range"
-              min="40"
-              max="240"
-              value={bpm}
-              onChange={(e) => setBpm(Number(e.target.value))}
-              className="w-full h-3 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-[#9506EE]"
-            />
-            <div className="flex justify-between text-[11px] text-gray-400 font-bold mt-1.5 px-1">
-              <span>40 (Largo)</span>
-              <span>120 (Moderato)</span>
-              <span>240 (Prestissimo)</span>
-            </div>
+          <div>
+            <h4
+              className="text-[26px] md:text-[34px] text-[#1A022D]"
+              style={{
+                fontFamily: "var(--font-vidaloka)",
+                fontWeight: 400,
+              }}
+            >
+              2. Experience
+            </h4>
+            <p
+              className="text-[#424242] text-[17px]"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
+            >
+              Experience unparalleled learning with guidance from industry
+              professionals.
+            </p>
           </div>
-
-          {/* Tempo Adjust Buttons (+/-) */}
-          <div className="flex items-center gap-3 mb-8">
-            <button
-              onClick={() => setBpm((prev) => Math.max(40, prev - 5))}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-all"
+          <div>
+            <h4
+              className="text-[26px] md:text-[34px] text-[#1A022D]"
+              style={{
+                fontFamily: "var(--font-vidaloka)",
+                fontWeight: 400,
+              }}
             >
-              -5
-            </button>
-            <button
-              onClick={() => setBpm((prev) => Math.max(40, prev - 1))}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-all"
+              3. Start
+            </h4>
+            <p
+              className="text-[#424242] text-[17px]"
+              style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 300 }}
             >
-              -1
-            </button>
-            <button
-              onClick={handleTap}
-              className="px-6 py-2 bg-purple-50 hover:bg-purple-100 text-[#9506EE] border border-purple-200 font-bold rounded-xl text-sm transition-all shadow-sm active:scale-95"
-            >
-              TAP TEMPO
-            </button>
-            <button
-              onClick={() => setBpm((prev) => Math.min(240, prev + 1))}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-all"
-            >
-              +1
-            </button>
-            <button
-              onClick={() => setBpm((prev) => Math.min(240, prev + 5))}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-all"
-            >
-              +5
-            </button>
+              Join us today and begin your musical journey!
+            </p>
           </div>
-
-          {/* Time Signature Buttons */}
-          <div className="flex items-center gap-2 mb-8">
-            {[
-              { beats: 2, label: "2/4" },
-              { beats: 3, label: "3/4" },
-              { beats: 4, label: "4/4" },
-              { beats: 6, label: "6/8" },
-            ].map((ts) => (
-              <button
-                key={ts.beats}
-                onClick={() => setBeatsPerMeasure(ts.beats)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  beatsPerMeasure === ts.beats
-                    ? "bg-[#24105E] text-white shadow-sm"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {ts.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Primary Play / Stop Button */}
-          <button
-            onClick={toggleMetronome}
-            className={`w-full py-4 rounded-2xl font-bold text-lg text-white shadow-lg transition-all transform hover:-translate-y-0.5 cursor-pointer flex items-center justify-center gap-3 ${
-              isPlaying
-                ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/30"
-                : "bg-[#FF7703] hover:bg-[#e06902] shadow-orange-500/30"
-            }`}
-          >
-            {isPlaying ? (
-              <>
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <span>STOP</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                </svg>
-                <span>START METRONOME</span>
-              </>
-            )}
-          </button>
         </div>
-      </main>
-
-      {/* 24/7 Support Banner */}
-      <div className="bg-[#FF9E00] py-4 text-white text-center font-medium text-base sm:text-lg tracking-wide">
-        24/7 Dedicated Customer Support
+        <Link href="/book-your-free-trial/" aria-label="Book a free trial now">
+          <button
+            aria-label="Book a free trial now"
+            className="bg-[#FF9E00] px-8 py-3 rounded-lg mt-3 md:mt-15 text-[16px] cursor-pointer hover:bg-[#e08b00] transition-colors"
+            style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 400 }}
+          >
+            Book a free trial now
+          </button>
+        </Link>
+      </section>
+      <div>
+        <p
+          className="bg-[#FF9E00]  py-5 rounded-lg text-white text-[19px] md:text-[24px] text-center "
+          style={{ fontFamily: "var(--font-dm-sans)", fontWeight: 500 }}
+        >
+          24/7 Dedicated Customer Support
+        </p>
       </div>
     </div>
   );
 }
+
+export default ToolPage;
