@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { AdminTeachersManager, TeacherRecord } from "./AdminTeachersManager";
 
 export const metadata = {
@@ -8,11 +9,10 @@ export const metadata = {
   description: "Faculty accreditation, master credentials, remuneration control, and verified teaching timeline.",
 };
 
-export default async function AdminTeachersPage() {
-  await requireRole(Role.ADMIN);
-
-  // Run both queries in parallel
-  const [dbUsers, dbEnrollments] = await Promise.all([
+const getCachedAdminTeachersData = unstable_cache(
+  async () => {
+    // Run both queries in parallel
+    const [dbUsers, dbEnrollments] = await Promise.all([
     // Query teacher users with trimmed relational profiles
     db.user.findMany({
       where: { role: Role.TEACHER },
@@ -279,6 +279,22 @@ export default async function AdminTeachersPage() {
       availabilitySlotsCount: profile?.availabilityRules.length || 0,
     };
   });
+
+  return formattedTeachers;
+},
+  ["admin-teachers-data-v1"],
+  { revalidate: 30, tags: ["admin-teachers", "teachers"] }
+);
+
+export default async function AdminTeachersPage() {
+  await requireRole(Role.ADMIN);
+
+  let formattedTeachers: TeacherRecord[] = [];
+  try {
+    formattedTeachers = await getCachedAdminTeachersData();
+  } catch (err) {
+    console.error("[AdminTeachersPage] Failed to load cached teachers data, using fallback:", err);
+  }
 
   return <AdminTeachersManager initialTeachers={formattedTeachers} />;
 }

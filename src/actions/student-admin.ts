@@ -274,3 +274,41 @@ export async function sendStudentCommunicationAction(input: {
     return { success: false, error: "Could not send communication." };
   }
 }
+
+// 6. Toggle Student Login Access
+export async function toggleStudentAccessAction(
+  studentId: string,
+  isActive: boolean,
+): Promise<StudentActionResponse<{ isActive: boolean }>> {
+  try {
+    await requireRole(Role.ADMIN);
+
+    const student = await db.user.findUnique({
+      where: { id: studentId, role: Role.STUDENT },
+      select: { id: true, name: true, isActive: true },
+    });
+
+    if (!student) {
+      return { success: false, error: "Student not found." };
+    }
+
+    const updated = await db.user.update({
+      where: { id: studentId },
+      data: { isActive },
+      select: { id: true, name: true, isActive: true },
+    });
+
+    revalidatePath("/admin/students");
+
+    return {
+      success: true,
+      message: isActive
+        ? `Login access granted for ${updated.name || "student"}.`
+        : `Login access removed for ${updated.name || "student"}.`,
+      data: { isActive: updated.isActive },
+    };
+  } catch (error) {
+    console.error("Failed to toggle student login access:", error);
+    return { success: false, error: "Could not update student login access." };
+  }
+}

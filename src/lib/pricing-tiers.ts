@@ -1,0 +1,157 @@
+import { CurrencyCode, SUPPORTED_CURRENCIES } from "./currency";
+
+export type CourseTierLevel = "FOUNDATION" | "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+
+export interface TierPriceDefinition {
+  inr: {
+    offer: number; // ₹ per session
+    original: number; // ₹ per session
+  };
+  usd: {
+    offer: number; // $ per session
+    original: number; // $ per session
+  };
+}
+
+/**
+ * Official platform base rates per session:
+ * 
+ * India (INR):
+ * - Foundation & Beginners: ₹800 (was ₹900)
+ * - Intermediate: ₹1,000 (was ₹1,200)
+ * - Advanced: ₹1,250 (was ₹1,500)
+ * 
+ * Abroad (USD Base):
+ * - Foundation & Beginners: $16 (was $18) -> In UK: 12 GBP (was 14 GBP)
+ * - Intermediate: $21 (was $25) -> In UK: 16 GBP (was 19 GBP)
+ * - Advanced: $28 (was $35) -> In UK: 21 GBP (was 26 GBP)
+ */
+export const LEVEL_PER_SESSION_RATES: Record<CourseTierLevel, TierPriceDefinition> = {
+  FOUNDATION: {
+    inr: { offer: 800, original: 900 },
+    usd: { offer: 16, original: 18 },
+  },
+  BEGINNER: {
+    inr: { offer: 800, original: 900 },
+    usd: { offer: 16, original: 18 },
+  },
+  INTERMEDIATE: {
+    inr: { offer: 1000, original: 1200 },
+    usd: { offer: 21, original: 25 },
+  },
+  ADVANCED: {
+    inr: { offer: 1250, original: 1500 },
+    usd: { offer: 28, original: 35 },
+  },
+};
+
+export interface CoursePricingBreakdown {
+  level: CourseTierLevel;
+  currency: CurrencyCode;
+  symbol: string;
+  sessionCount: number;
+
+  // Per session
+  perSessionOffer: number;
+  perSessionOriginal: number;
+  formattedPerSession: string;
+  formattedOriginalPerSession: string;
+
+  // Total
+  totalOffer: number;
+  totalOriginal: number;
+  formattedTotal: string;
+  formattedOriginalTotal: string;
+
+  // Discount & Savings
+  discountPercent: number;
+  savingsTotal: number;
+  formattedSavingsTotal: string;
+  isDiscounted: boolean;
+  isInternational: boolean;
+}
+
+export function normalizeCourseLevel(level?: string | null): CourseTierLevel {
+  if (!level) return "BEGINNER";
+  const upper = String(level).toUpperCase().trim();
+  if (upper.includes("FOUNDATION")) return "FOUNDATION";
+  if (upper.includes("INTERMEDIATE")) return "INTERMEDIATE";
+  if (upper.includes("ADVANCE")) return "ADVANCED";
+  return "BEGINNER";
+}
+
+/**
+ * Calculates official localized pricing breakdown for any course level and session count.
+ */
+export function getCourseTierPricing({
+  level,
+  sessionCount = 24,
+  currency = "INR",
+}: {
+  level?: string | null;
+  sessionCount?: number;
+  currency?: CurrencyCode;
+}): CoursePricingBreakdown {
+  const normLevel = normalizeCourseLevel(level);
+  const tierDef = LEVEL_PER_SESSION_RATES[normLevel];
+  const config = SUPPORTED_CURRENCIES[currency] || SUPPORTED_CURRENCIES.INR;
+  const count = sessionCount > 0 ? sessionCount : 24;
+
+  let perSessionOffer = 0;
+  let perSessionOriginal = 0;
+
+  if (currency === "INR") {
+    perSessionOffer = tierDef.inr.offer;
+    perSessionOriginal = tierDef.inr.original;
+  } else if (currency === "USD") {
+    perSessionOffer = tierDef.usd.offer;
+    perSessionOriginal = tierDef.usd.original;
+  } else {
+    // Other international currencies convert from USD base rate
+    const rate = config.rateFromUSD ?? 1;
+    perSessionOffer = Math.round(tierDef.usd.offer * rate);
+    perSessionOriginal = Math.round(tierDef.usd.original * rate);
+  }
+
+  const totalOffer = perSessionOffer * count;
+  const totalOriginal = perSessionOriginal * count;
+  const savingsTotal = Math.max(0, totalOriginal - totalOffer);
+  const discountPercent =
+    perSessionOriginal > perSessionOffer
+      ? Math.round(((perSessionOriginal - perSessionOffer) / perSessionOriginal) * 100)
+      : 0;
+
+  // Helper for formatting
+  const formatAmount = (amt: number): string => {
+    const formattedNum = amt.toLocaleString(config.formatLocale, {
+      maximumFractionDigits: 0,
+    });
+    if (config.code === "AED") {
+      return `AED ${formattedNum}`;
+    }
+    if (config.code === "CAD" || config.code === "AUD" || config.code === "SGD") {
+      return `${config.symbol}${formattedNum} ${config.code}`;
+    }
+    return `${config.symbol}${formattedNum}`;
+  };
+
+  return {
+    level: normLevel,
+    currency: config.code,
+    symbol: config.symbol,
+    sessionCount: count,
+    perSessionOffer,
+    perSessionOriginal,
+    formattedPerSession: formatAmount(perSessionOffer),
+    formattedOriginalPerSession: formatAmount(perSessionOriginal),
+    totalOffer,
+    totalOriginal,
+    formattedTotal: formatAmount(totalOffer),
+    formattedOriginalTotal: formatAmount(totalOriginal),
+    discountPercent,
+    savingsTotal,
+    formattedSavingsTotal: formatAmount(savingsTotal),
+    isDiscounted: discountPercent > 0,
+    isInternational: currency !== "INR",
+  };
+}

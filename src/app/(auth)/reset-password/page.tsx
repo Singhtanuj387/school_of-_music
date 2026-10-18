@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useActionState } from "react";
+import { Suspense, useActionState, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { Eye, EyeOff } from "lucide-react";
 import { resetPasswordAction } from "@/actions/auth";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 
@@ -15,6 +16,8 @@ function ResetPasswordContent() {
   const [state, formAction, isPending] = useActionState(resetPasswordAction, {
     success: false,
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   return (
     <div className="relative min-h-[100dvh] w-full flex items-center justify-center lg:justify-end pt-24 sm:pt-28 pb-14 px-4 sm:px-8 lg:px-14 xl:px-20 max-w-[1560px] mx-auto">
@@ -123,15 +126,30 @@ function ResetPasswordContent() {
               >
                 New Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                placeholder="At least 8 chars, uppercase, lowercase & number"
-                className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 text-sm text-heading placeholder-body/40 shadow-sm transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  required
+                  placeholder="At least 8 chars, uppercase, lowercase & number"
+                  className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 pr-11 text-sm text-heading placeholder-body/40 shadow-sm transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-body/50 hover:text-heading hover:bg-surface-subtle transition-all active:scale-95 cursor-pointer"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4 text-heading/70" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-body/60" />
+                  )}
+                </button>
+              </div>
               {state?.fieldErrors?.password && (
                 <p className="mt-1.5 text-xs font-medium text-error flex items-center gap-1">
                   <span>•</span>
@@ -147,15 +165,30 @@ function ResetPasswordContent() {
               >
                 Confirm New Password
               </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                placeholder="Repeat new password"
-                className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 text-sm text-heading placeholder-body/40 shadow-sm transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
-              />
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  required
+                  placeholder="Repeat new password"
+                  className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 pr-11 text-sm text-heading placeholder-body/40 shadow-sm transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-body/50 hover:text-heading hover:bg-surface-subtle transition-all active:scale-95 cursor-pointer"
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  title={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-4 h-4 text-heading/70" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-body/60" />
+                  )}
+                </button>
+              </div>
               {state?.fieldErrors?.confirmPassword && (
                 <p className="mt-1.5 text-xs font-medium text-error flex items-center gap-1">
                   <span>•</span>

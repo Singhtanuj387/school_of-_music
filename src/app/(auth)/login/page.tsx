@@ -17,12 +17,15 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 export default function LoginPage() {
   const [loginMode, setLoginMode] = useState<"PASSWORD" | "OTP">("PASSWORD");
 
   // Password state
+  const [showPassword, setShowPassword] = useState(false);
   const [pwdState, pwdFormAction, isPwdPending] = useActionState(loginAction, {
     success: false,
   });
@@ -294,15 +297,30 @@ export default function LoginPage() {
                     Forgot password?
                   </Link>
                 </div>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  placeholder="••••••••"
-                  className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 text-sm text-heading placeholder-body/40 shadow-xs transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
-                />
+                <div className="relative">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    required
+                    placeholder="••••••••"
+                    className="block w-full rounded-xl border border-surface-muted/90 bg-white px-3.5 py-2.5 pr-11 text-sm text-heading placeholder-body/40 shadow-xs transition-all focus:border-cta focus:outline-none focus:ring-4 focus:ring-cta/15"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-body/50 hover:text-heading hover:bg-surface-subtle transition-all active:scale-95 cursor-pointer"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4 text-heading/70" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-body/60" />
+                    )}
+                  </button>
+                </div>
                 {pwdState?.fieldErrors?.password && (
                   <p className="mt-1.5 text-xs font-medium text-error flex items-center gap-1">
                     <span>•</span>

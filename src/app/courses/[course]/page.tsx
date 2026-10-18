@@ -223,25 +223,19 @@ export default async function Page({
                 </div>
                 <PriceDisplay
                   priceMinorUnits={course.priceMinorUnits}
+                  level={course.level}
+                  sessionCount={course.sessionCount}
                   size="3xl"
-                  showOriginalINR
+                  showOriginalStrike
+                  showDiscountBadge
+                  showPerSessionBadge
                 />
               </div>
-
-              {course.sessionCount > 0 && (
-                <div className="text-xs text-body-muted sm:text-right">
-                  <span className="font-semibold text-accent-dark">
-                    ₹{Math.round(course.priceMinorUnits / course.sessionCount / 100).toLocaleString("en-IN")} / session
-                  </span>
-                  <p className="text-[11px] text-body-muted">
-                    {course.sessionCount} private 1-on-1 sessions
-                  </p>
-                </div>
-              )}
             </div>
 
             <CourseEmiBreakdown
               priceMinorUnits={course.priceMinorUnits}
+              level={course.level}
               sessionCount={course.sessionCount}
             />
 

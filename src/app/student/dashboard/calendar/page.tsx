@@ -18,7 +18,7 @@ export default async function StudentCalendarPage() {
     db.lesson.findMany({
       where: {
         studentId: user.id,
-        status: "SCHEDULED",
+        status: { in: ["SCHEDULED", "RESCHEDULED"] },
       },
       include: {
         teacher: {

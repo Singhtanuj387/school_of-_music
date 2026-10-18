@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Sparkles,
@@ -99,8 +100,18 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNavigatingTo(null);
+  }, [pathname]);
 
   const isActive = (item: NavItem) => {
+    if (navigatingTo) {
+      if (item.exact) return navigatingTo === item.href;
+      return navigatingTo.startsWith(item.href);
+    }
     if (!pathname) return false;
     if (item.exact) {
       return pathname === item.href;
@@ -132,7 +143,10 @@ export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
               <Link
                 key={item.name}
                 href={item.href}
-                prefetch={true}
+                prefetch={false}
+                onMouseEnter={() => router.prefetch(item.href)}
+                onTouchStart={() => router.prefetch(item.href)}
+                onClick={() => setNavigatingTo(item.href)}
                 className={`relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all active:scale-[0.98] ${
                   active
                     ? "bg-white/15 text-white font-bold shadow-xs"
@@ -208,7 +222,9 @@ export function AdminSidebar({ currentUser }: AdminSidebarProps = {}) {
               <Link
                 key={item.name}
                 href={item.href}
-                prefetch={true}
+                prefetch={false}
+                onTouchStart={() => router.prefetch(item.href)}
+                onClick={() => setNavigatingTo(item.href)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all ${
                   active
                     ? "bg-white/15 text-white font-bold"

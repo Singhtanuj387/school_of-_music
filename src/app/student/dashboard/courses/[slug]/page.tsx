@@ -339,8 +339,12 @@ export default async function StudentCourseDetailPage({
                 <div className="sm:text-right">
                   <PriceDisplay
                     priceMinorUnits={course.priceMinorUnits}
+                    level={course.level}
+                    sessionCount={course.sessionCount}
                     size="2xl"
-                    showOriginalINR
+                    showOriginalStrike
+                    showDiscountBadge
+                    showPerSessionBadge
                   />
                 </div>
               </div>
@@ -350,6 +354,7 @@ export default async function StudentCourseDetailPage({
           {/* Course Tuition Breakdown */}
           <CourseEmiBreakdown
             priceMinorUnits={course.priceMinorUnits}
+            level={course.level}
             sessionCount={course.sessionCount}
           />
 

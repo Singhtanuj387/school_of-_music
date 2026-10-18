@@ -1356,9 +1356,6 @@ export function AdminTrialsManager({
           <h1 className="font-serif text-2xl sm:text-3xl font-bold text-heading tracking-tight">
             Trial bookings CRM
           </h1>
-          <p className="text-xs sm:text-sm text-body/80 mt-1">
-            Qualify leads, schedule timezone-safe trials, and convert with full attribution
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5">
@@ -1615,9 +1612,6 @@ export function AdminTrialsManager({
                 upcomingConfirmedTrials.tomorrowList.length === 0)) &&
               upcomingConfirmedTrials.laterList.length > 0 && (
                 <div className="space-y-2.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-body/60">
-                    Upcoming Dates
-                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {upcomingConfirmedTrials.laterList.map((item) => {
                       const pill = getCountdownPill(item.requestedStartsAt, isMounted);
@@ -1771,9 +1765,6 @@ export function AdminTrialsManager({
               <h2 className="text-sm font-bold text-heading">
                 Active trial leads
               </h2>
-              <p className="text-[11px] text-body/70 mt-0.5">
-                {filteredRequests.length} of {requests.length} leads · click row to open detail drawer
-              </p>
             </div>
           </div>
 

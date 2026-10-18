@@ -1667,14 +1667,20 @@ export function BookTrialClient({ currentUser, isConvertedStudent }: BookTrialCl
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Min. 6 characters"
-                        className={inputClass + " pr-10"}
+                        className={inputClass + " pr-11"}
                       />
                       <button
                         type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-body/40 hover:text-body transition-colors"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-body/50 hover:text-heading hover:bg-surface-subtle transition-all active:scale-95 cursor-pointer"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        title={showPassword ? "Hide password" : "Show password"}
                       >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4 text-heading/70" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-body/60" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -1691,14 +1697,20 @@ export function BookTrialClient({ currentUser, isConvertedStudent }: BookTrialCl
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="Re-enter password"
-                        className={inputClass + " pr-10"}
+                        className={inputClass + " pr-11"}
                       />
                       <button
                         type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-body/40 hover:text-body transition-colors"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-body/50 hover:text-heading hover:bg-surface-subtle transition-all active:scale-95 cursor-pointer"
+                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                        title={showConfirmPassword ? "Hide password" : "Show password"}
                       >
-                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {showConfirmPassword ? (
+                          <EyeOff className="w-4 h-4 text-heading/70" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-body/60" />
+                        )}
                       </button>
                     </div>
                   </div>

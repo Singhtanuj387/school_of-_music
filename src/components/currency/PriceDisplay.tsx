@@ -1,24 +1,44 @@
 "use client";
 
 import { useCurrency } from "@/context/CurrencyContext";
+import { getCourseTierPricing, CourseTierLevel } from "@/lib/pricing-tiers";
 
 interface PriceDisplayProps {
-  priceMinorUnits: number;
+  priceMinorUnits?: number;
+  level?: CourseTierLevel | string;
+  sessionCount?: number;
   size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
+  showOriginalStrike?: boolean;
   showOriginalINR?: boolean;
+  showPerSessionBadge?: boolean;
+  showDiscountBadge?: boolean;
   className?: string;
   subtextClassName?: string;
 }
 
 export function PriceDisplay({
   priceMinorUnits,
+  level,
+  sessionCount = 24,
   size = "lg",
+  showOriginalStrike = true,
   showOriginalINR = false,
+  showPerSessionBadge = false,
+  showDiscountBadge = false,
   className = "",
   subtextClassName = "",
 }: PriceDisplayProps) {
   const { convertPrice, isInternational, currency } = useCurrency();
-  const converted = convertPrice(priceMinorUnits);
+
+  // If level is provided, use official tier rates with original & offer strikethrough
+  const tierPricing = level
+    ? getCourseTierPricing({ level, sessionCount, currency })
+    : null;
+
+  // Fallback if level not provided
+  const converted = priceMinorUnits !== undefined
+    ? convertPrice(priceMinorUnits)
+    : null;
 
   const sizeClasses: Record<string, string> = {
     xs: "text-xs font-semibold",
@@ -32,13 +52,39 @@ export function PriceDisplay({
 
   const selectedSize = sizeClasses[size] || sizeClasses.lg;
 
+  // Amount & formatting values
+  const mainFormatted = tierPricing
+    ? tierPricing.formattedTotal
+    : converted?.formatted || "₹0";
+
+  const originalFormatted = tierPricing?.formattedOriginalTotal;
+  const isDiscounted = tierPricing?.isDiscounted ?? false;
+  const discountPercent = tierPricing?.discountPercent ?? 0;
+
   return (
     <div className={`inline-flex flex-col ${className}`}>
-      <div className="flex items-baseline gap-1.5 flex-wrap">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        {/* Strikethrough Original Price */}
+        {showOriginalStrike && isDiscounted && originalFormatted && (
+          <span className="text-body-muted/70 line-through text-xs sm:text-sm font-normal tabular-nums">
+            {originalFormatted}
+          </span>
+        )}
+
+        {/* Highlighted Offer Price */}
         <span className={`tabular-nums text-heading ${selectedSize}`}>
-          {converted.formatted}
+          {mainFormatted}
         </span>
-        {isInternational && showOriginalINR && (
+
+        {/* Discount Badge */}
+        {showDiscountBadge && isDiscounted && (
+          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            {discountPercent}% OFF
+          </span>
+        )}
+
+        {/* Optional conversion breakdown */}
+        {isInternational && showOriginalINR && converted && (
           <span
             className={`text-[11px] text-body-muted tabular-nums ${subtextClassName}`}
             title={`Equivalent to ${converted.originalINRFormatted} INR`}
@@ -47,6 +93,19 @@ export function PriceDisplay({
           </span>
         )}
       </div>
+
+      {/* Per Session Rate info if requested */}
+      {showPerSessionBadge && tierPricing && (
+        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-numeric text-accent-dark font-semibold">
+          {tierPricing.isDiscounted && (
+            <span className="line-through text-body-muted font-normal">
+              {tierPricing.formattedOriginalPerSession}
+            </span>
+          )}
+          <span>{tierPricing.formattedPerSession} / session</span>
+        </div>
+      )}
+
       {isInternational && (
         <span className="text-[10px] text-accent-dark font-medium">
           Prices localized to {currency}

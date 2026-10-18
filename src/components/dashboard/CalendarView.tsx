@@ -364,6 +364,11 @@ export function CalendarView({
                               Enrolled
                             </span>
                           )}
+                          {lesson.status === "RESCHEDULED" && (
+                            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
+                              Rescheduled
+                            </span>
+                          )}
                         </div>
                         <h4 className="text-sm font-bold text-heading mt-1.5 flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-primary" />

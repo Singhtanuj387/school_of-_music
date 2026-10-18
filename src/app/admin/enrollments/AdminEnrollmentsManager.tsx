@@ -45,6 +45,7 @@ import {
   CalendarClock,
   Receipt,
   ArrowUpRight,
+  ArrowLeft,
 } from "lucide-react";
 import {
   SearchableStudentSelector,
@@ -205,7 +206,7 @@ export function AdminEnrollmentsManager({
   const [courseRequests, setCourseRequests] = useState<AdminCourseEnrollmentRequestItem[]>(initialCourseRequests);
   const [viewMode, setViewMode] = useState<"PLANNER" | "ROSTER">("PLANNER");
 
-  // Selected Student Context (URL parameter has top priority, then pending course requests)
+  // Selected Student Context (URL parameter has top priority; otherwise empty so admin first selects student)
   const [selectedStudentId, setSelectedStudentId] = useState<string>(() => {
     if (paramStudentId && students.some((s) => s.id === paramStudentId)) {
       return paramStudentId;
@@ -214,12 +215,7 @@ export function AdminEnrollmentsManager({
       const match = initialEnrollments.find((e) => e.id === paramEnrollmentId);
       if (match) return match.studentId;
     }
-    // High Priority: If any student has a pending course admission request, default to them so admin immediately sees it!
-    const pendingReq = initialCourseRequests.find((r) => r.status === "PENDING");
-    if (pendingReq && students.some((s) => s.id === pendingReq.studentId)) {
-      return pendingReq.studentId;
-    }
-    return students[0]?.id || "";
+    return "";
   });
 
   // Global pending course admission requests across converted students
@@ -598,6 +594,7 @@ export function AdminEnrollmentsManager({
   };
 
   const currentStudent = useMemo(() => {
+    if (!selectedStudentId) return null;
     return (
       students.find((s) => s.id === selectedStudentId) ||
       (activeEnrollment
@@ -611,7 +608,7 @@ export function AdminEnrollmentsManager({
             phone: activeEnrollment.studentPhone,
             country: activeEnrollment.studentCountry,
           }
-        : students[0])
+        : null)
     );
   }, [students, selectedStudentId, activeEnrollment]);
 
@@ -1025,7 +1022,11 @@ export function AdminEnrollmentsManager({
             ...enr,
             lessons: enr.lessons.map((l) =>
               l.id === lessonId
-                ? { ...l, startsAt: new Date(rescheduleDateInput).toISOString() }
+                ? {
+                    ...l,
+                    startsAt: new Date(rescheduleDateInput).toISOString(),
+                    status: "RESCHEDULED",
+                  }
                 : l
             ),
           }))
@@ -1154,35 +1155,6 @@ export function AdminEnrollmentsManager({
           <h1 className="font-serif text-2xl sm:text-3xl font-bold text-heading tracking-tight">
             Create enrollment
           </h1>
-          <p className="text-xs sm:text-sm text-body/70 mt-1">
-            Convert a qualified trial into a scheduled, billable learning plan
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={() => handleSaveEnrollment(true)}
-            disabled={isPending}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200/90 text-heading text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50"
-          >
-            <FileText className="w-3.5 h-3.5 text-body/80" />
-            <span>Save draft</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSaveEnrollment(false)}
-            disabled={isPending}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2F0755] text-white text-xs font-bold transition-all shadow-xs active:scale-95 disabled:opacity-50"
-          >
-            {isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin text-white" />
-            ) : (
-              <Check className="w-4 h-4 text-white" />
-            )}
-            <span>Save Enrollment</span>
-          </button>
         </div>
       </div>
 
@@ -1202,40 +1174,66 @@ export function AdminEnrollmentsManager({
         </div>
 
         {/* Step 2: Student */}
-        <div className="p-3.5 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+        <div className={`p-3.5 rounded-2xl bg-white border shadow-2xs flex items-center gap-3 ${
+          !selectedStudentId
+            ? "border-[#3C096C]/40 ring-1 ring-[#3C096C]/20"
+            : "border-neutral-200/80"
+        }`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 font-numeric ${
+            !selectedStudentId
+              ? "bg-[#3C096C] text-white"
+              : "bg-emerald-100 text-emerald-800"
+          }`}>
             2
           </div>
           <div className="min-w-0">
             <div className="text-xs font-bold text-heading">Student</div>
             <div className="text-[11px] text-body/60 truncate font-numeric">
-              {currentStudent?.name || "Student"} · Created
+              {currentStudent ? `${currentStudent.name} · Selected` : "Select student"}
             </div>
           </div>
         </div>
 
         {/* Step 3: Enrollment */}
-        <div className="p-3.5 rounded-2xl bg-white border border-[#3C096C]/30 ring-1 ring-[#3C096C]/20 shadow-2xs flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full bg-[#3C096C] text-white flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+        <div className={`p-3.5 rounded-2xl bg-white border shadow-2xs flex items-center gap-3 ${
+          selectedStudentId
+            ? "border-[#3C096C]/30 ring-1 ring-[#3C096C]/20"
+            : "border-neutral-200/80"
+        }`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 font-numeric ${
+            !selectedStudentId
+              ? "bg-neutral-100 text-body/40"
+              : "bg-[#3C096C] text-white"
+          }`}>
             3
           </div>
           <div className="min-w-0">
             <div className="text-xs font-bold text-heading">Enrollment</div>
             <div className="text-[11px] text-body/60 truncate font-numeric">
-              {activeEnrollment ? `ENR-${activeEnrollment.id.slice(-4)}` : "New record"} · In progress
+              {!selectedStudentId
+                ? "Awaiting student"
+                : activeEnrollment
+                ? `ENR-${activeEnrollment.id.slice(-4)} · Active`
+                : "New record · In progress"}
             </div>
           </div>
         </div>
 
         {/* Step 4: Sessions */}
         <div className="p-3.5 rounded-2xl bg-white border border-neutral-200/80 shadow-2xs flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full bg-neutral-100 text-body flex items-center justify-center font-bold text-xs shrink-0 font-numeric">
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 font-numeric ${
+            !selectedStudentId || !activeEnrollment
+              ? "bg-neutral-100 text-body/40"
+              : "bg-emerald-100 text-emerald-800"
+          }`}>
             4
           </div>
           <div className="min-w-0">
             <div className="text-xs font-bold text-heading">Sessions</div>
             <div className="text-[11px] text-body/60 truncate font-numeric">
-              {activeEnrollment?.lessons.length || 0} scheduled · Active
+              {!selectedStudentId
+                ? "Awaiting student"
+                : `${activeEnrollment?.lessons.length || 0} scheduled · Active`}
             </div>
           </div>
         </div>
@@ -1344,9 +1342,167 @@ export function AdminEnrollmentsManager({
             </table>
           </div>
         </div>
+      ) : !selectedStudentId ? (
+        /* ─── 4. APPLE-DESIGN STUDENT SELECTION WORKSPACE ───────────────── */
+        <div className="space-y-6">
+          {/* 1. Hero Prompt Card */}
+          <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-2xs p-6 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#3C096C] to-[#7B2CBF] text-white flex items-center justify-center shadow-xs shrink-0 ring-2 ring-purple-100">
+                  <GraduationCap className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-serif text-xl sm:text-2xl font-bold text-heading">
+                    Select a student to load enrollment details
+                  </h2>
+                </div>
+              </div>
+
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-[#3C096C] border border-purple-200/70 self-start sm:self-auto font-numeric shrink-0">
+                <Users className="w-3.5 h-3.5" />
+                <span>{students.length} Converted Students</span>
+              </span>
+            </div>
+
+            {/* Prominent Searchable Selector */}
+            {students.length > 0 && (
+              <div className="p-4 rounded-2xl bg-neutral-50/80 border border-neutral-200/80 space-y-2">
+                <label className="text-xs font-bold text-heading flex items-center gap-1.5">
+                  <Search className="w-3.5 h-3.5 text-[#3C096C]" />
+                  <span>Quick Student Search &amp; Filter</span>
+                </label>
+                <SearchableStudentSelector
+                  students={students}
+                  selectedStudentId={selectedStudentId}
+                  onSelectStudent={handleStudentChange}
+                  enrollments={enrollments}
+                  courseRequests={courseRequests}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* 2. Pending Course Admission Requests (if any) */}
+          {allPendingCourseRequests.length > 0 && (
+            <div className="bg-gradient-to-br from-purple-50/90 via-amber-50/40 to-white rounded-3xl border border-purple-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-2xs shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-base font-bold text-heading">
+                      Admission Requests Awaiting Review ({allPendingCourseRequests.length})
+                    </h3>
+                    <p className="text-xs text-body/70">
+                      These converted students have requested course enrollments. Click to select student and allot faculty.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {allPendingCourseRequests.map((req) => {
+                  const feeFormatted = `₹${Math.round(req.coursePriceMinorUnits / 100).toLocaleString("en-IN")}`;
+                  return (
+                    <div
+                      key={req.id}
+                      onClick={() => handleSelectRequestToAllot(req)}
+                      className="group p-4 rounded-2xl bg-white border border-purple-200/80 hover:border-[#3C096C] shadow-2xs hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between gap-3 active:scale-[0.98]"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-9 h-9 rounded-xl bg-[#3C096C] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                            {(req.studentName || "S")[0].toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-xs text-heading group-hover:text-[#3C096C] transition-colors truncate">
+                              {req.studentName}
+                            </h4>
+                            <p className="text-[11px] text-body/60 truncate">{req.courseTitle}</p>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-numeric bg-purple-100 text-[#3C096C] shrink-0">
+                          {feeFormatted}
+                        </span>
+                      </div>
+
+                      <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs">
+                        <span className="text-[11px] text-amber-700 font-semibold flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-amber-600 animate-pulse" />
+                          <span>Needs Allotment</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#3C096C] group-hover:translate-x-0.5 transition-transform">
+                          <span>Select &amp; Allot</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+
+        </div>
       ) : (
         /* ─── 4. MAIN 2-COLUMN WORKSPACE (MATCHING ATTACHED SCREENSHOT) ─── */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div className="space-y-5">
+          {/* Apple-style Selected Student Control Bar */}
+          <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#3C096C] to-[#7B2CBF] text-white flex items-center justify-center font-bold text-base shrink-0 shadow-2xs ring-2 ring-purple-100">
+                {(currentStudent?.name || "S")[0].toUpperCase()}
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-bold text-heading truncate">
+                    {currentStudent?.name}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-md bg-purple-50 text-[#3C096C] font-mono text-[11px] font-bold border border-purple-200/80">
+                    STU-{currentStudent?.id.slice(-4)}
+                  </span>
+                  {studentEnrollments.length > 0 ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      <span>{studentEnrollments.length} Active {studentEnrollments.length === 1 ? "Course" : "Courses"}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-50 text-[#3C096C] text-[10px] font-bold border border-purple-200">
+                      <Sparkles className="w-3 h-3 text-[#3C096C]" />
+                      <span>Converted Lead</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs text-body/60 truncate mt-1 flex items-center gap-2">
+                  <span className="truncate">{currentStudent?.email}</span>
+                  {currentStudent?.timezone && (
+                    <span className="hidden sm:inline text-body/40">· {currentStudent.timezone}</span>
+                  )}
+                  {currentStudent?.phone && (
+                    <span className="hidden md:inline text-body/40">· {currentStudent.phone}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => handleStudentChange("")}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#3C096C] text-xs font-bold border border-purple-200/80 transition-all shadow-2xs active:scale-95 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-[#3C096C]" />
+                <span>Change Student</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* ─── LEFT COLUMN: 4 NUMBERED SECTIONS (8 COLS / ~66%) ───────── */}
           <div className="lg:col-span-8 space-y-5">
             {/* ─── SECTION 1: STUDENT & COURSE ENROLLMENT ───────────────── */}
@@ -1365,9 +1521,6 @@ export function AdminEnrollmentsManager({
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-body/60 mt-0.5">
-                    Review student admission requests, confirm tuition ledger, and allot accredited faculty
-                  </p>
                 </div>
 
                 {/* Right Side: Compact Request Pill & Manual Allotment Toggle */}
@@ -1438,9 +1591,6 @@ export function AdminEnrollmentsManager({
                       <GraduationCap className="w-4 h-4 text-[#3C096C]" />
                       <span>Student (Converted &amp; Enrolled Roster)</span>
                     </label>
-                    <p className="text-[11px] text-body-muted mt-0.5">
-                      Search or select student to review admission requests, allot courses, and manage timetables.
-                    </p>
                   </div>
                   <span className="text-[11px] font-semibold text-purple-900 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200/70 self-start sm:self-auto font-numeric">
                     {students.length} Converted Students
@@ -1486,9 +1636,6 @@ export function AdminEnrollmentsManager({
                         Active Courses Allotted to {currentStudent?.name}:
                       </span>
                     </div>
-                    <span className="text-[11px] text-body/60">
-                      Click to switch course timetable below
-                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1887,9 +2034,6 @@ export function AdminEnrollmentsManager({
                   <h2 className="font-serif text-lg font-bold text-heading">
                     2 · Session plan
                   </h2>
-                  <p className="text-xs text-body/60 mt-0.5">
-                    Enrollment defines the plan; every class remains an individual session record
-                  </p>
                 </div>
 
                 {/* Faculty allotment quick indicator */}
@@ -1932,9 +2076,6 @@ export function AdminEnrollmentsManager({
                           · {currentTeacher.instruments.join(", ") || "Music Faculty"}
                         </span>
                       )}
-                    </div>
-                    <div className="text-[11px] text-body/60 mt-0.5 font-numeric">
-                      Institutional Remuneration: ₹{currentTeacher?.payoutRupees || 800} payout per completed session
                     </div>
                   </div>
                 </div>
@@ -2098,9 +2239,6 @@ export function AdminEnrollmentsManager({
                     <h3 className="font-serif text-sm font-bold text-heading">
                       Schedule Next 1-on-1 Session(s)
                     </h3>
-                    <p className="text-[11px] text-body/70 mt-0.5">
-                      Allot date and time instances with audited tracking IDs
-                    </p>
                   </div>
 
                   <div className="flex items-center bg-white border border-neutral-200 rounded-lg p-0.5 text-xs font-semibold">
@@ -2466,6 +2604,8 @@ export function AdminEnrollmentsManager({
                                     className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
                                       lesson.status === "SCHEDULED"
                                         ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                        : lesson.status === "RESCHEDULED"
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
                                         : lesson.status === "COMPLETED"
                                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                         : "bg-rose-50 text-rose-700 border border-rose-200"
@@ -2476,7 +2616,7 @@ export function AdminEnrollmentsManager({
                                 </td>
 
                                 <td className="py-3 px-3.5 text-right whitespace-nowrap">
-                                  {lesson.status === "SCHEDULED" && !isRescheduling && (
+                                  {(lesson.status === "SCHEDULED" || lesson.status === "RESCHEDULED") && !isRescheduling && (
                                     <div className="flex items-center justify-end gap-2">
                                       <button
                                         type="button"
@@ -2527,9 +2667,6 @@ export function AdminEnrollmentsManager({
                       INR Tuition Ledger
                     </span>
                   </div>
-                  <p className="text-xs text-body/60 mt-0.5">
-                    Multi-tranche installment recording, automated payment history &amp; admin ledger
-                  </p>
                 </div>
 
                 {/* Apple-style Record Next Installment CTA */}
@@ -3171,43 +3308,8 @@ export function AdminEnrollmentsManager({
               )}
             </div>
 
-            {/* 2. Ready to save checklist */}
-            <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-3">
-              <div>
-                <h3 className="font-serif text-base font-bold text-heading">Ready to save</h3>
-                <p className="text-xs text-body/60 mt-0.5">All required records validated</p>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Student identity and guardian verified</span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Course is active in catalog</span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Teacher available for recurrence</span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>INR fee and ledger balanced</span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-800 font-numeric">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{totalSessions} sessions ready to generate</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Action Card */}
+            {/* Action Card */}
             <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
-              <p className="text-xs text-body/70 leading-relaxed font-numeric">
-                Saving creates the enrollment and {totalSessions} traceable class sessions. No payment
-                is collected automatically.
-              </p>
 
               <button
                 type="button"
@@ -3237,7 +3339,8 @@ export function AdminEnrollmentsManager({
         )}
       </div>
     </div>
-  )}
+  </div>
+)}
 
       {/* ─── APPLE-DESIGN AUTO-SCHEDULE MODAL FOR ALLOTMENT ─── */}
       <AutoScheduleAllotModal

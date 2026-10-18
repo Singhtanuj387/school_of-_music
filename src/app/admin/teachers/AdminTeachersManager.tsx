@@ -594,9 +594,6 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
           <h1 className="font-serif text-2xl sm:text-3xl font-bold text-heading tracking-tight">
             Teachers
           </h1>
-          <p className="text-xs sm:text-sm text-body/70 mt-1">
-            Faculty accreditation, master credentials, remuneration control, and verified teaching timeline
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 self-start md:self-auto">
@@ -757,10 +754,10 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                       setInlinePayoutInput(Math.round(teacher.payoutPerSession / 100));
                       setAdminNotesInput(teacher.adminNotes || "");
                     }}
-                    className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                    className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between gap-3 cursor-pointer active:scale-[0.99] ${
                       isSelected
-                        ? "bg-[#3C096C]/5 border-[#3C096C] shadow-2xs ring-1 ring-[#3C096C]/30"
-                        : "bg-white hover:bg-neutral-50/80 border-neutral-200/80"
+                        ? "bg-[#3C096C]/10 shadow-2xs ring-1 ring-[#3C096C]/20"
+                        : "bg-neutral-50/70 hover:bg-neutral-100/80"
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -917,6 +914,27 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                 </div>
               </div>
 
+              {/* Login Disabled / Rejected Notice Banner */}
+              {selectedTeacher.approvalStatus === "REJECTED" && (
+                <div className="p-3 rounded-xl bg-rose-50/80 border border-rose-200 text-xs text-rose-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>
+                      <strong>Login access is disabled for this faculty member.</strong> When attempting to log in, they will be notified: <code className="bg-rose-100/90 text-rose-950 px-1.5 py-0.5 rounded font-mono font-bold">your application is rejected please contact administration</code>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateStatus(selectedTeacher.id, TeacherApprovalStatus.APPROVED)
+                    }
+                    className="btn-tactile px-3 py-1 rounded-lg bg-white border border-rose-200 hover:bg-rose-50 text-rose-800 text-[11px] font-bold shrink-0 transition-colors cursor-pointer shadow-2xs self-start sm:self-auto"
+                  >
+                    Re-evaluate & Approve
+                  </button>
+                </div>
+              )}
+
               {/* 6-Field Metadata Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-neutral-100 text-xs">
                 <div>
@@ -928,7 +946,7 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                 <div>
                   <div className="text-[11px] text-body/60 font-medium">Phone</div>
                   <div className="font-bold text-heading mt-0.5 font-numeric flex items-center gap-1.5">
-                    <span>{selectedTeacher.phone || "—"}</span>
+                    <span>{selectedTeacher.phone || "-"}</span>
                     {selectedTeacher.phoneVerified && (
                       <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1 rounded">
                         Verified
@@ -1082,9 +1100,6 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                           <h3 className="font-serif text-base font-bold text-heading">
                             Specialized Instruments & Disciplines
                           </h3>
-                          <p className="text-xs text-body/60 mt-0.5">
-                            Verified mastery and teaching competency
-                          </p>
                         </div>
                       </div>
 
@@ -1151,9 +1166,6 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                           <h3 className="font-serif text-base font-bold text-heading">
                             Upcoming & Recent Classes
                           </h3>
-                          <p className="text-xs text-body/60 mt-0.5">
-                            Individual 1:1 sessions conducted by this faculty
-                          </p>
                         </div>
                       </div>
 
@@ -1233,7 +1245,6 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                           <h3 className="font-serif text-base font-bold text-heading">
                             Remuneration Control
                           </h3>
-                          <p className="text-xs text-body/60 mt-0.5">Session rate configuration</p>
                         </div>
                       </div>
 
@@ -1503,7 +1514,7 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                                       {l.studentName || "Enrolled Student"}
                                     </div>
                                     <div className="text-[11px] text-body/60 truncate">
-                                      {l.studentEmail || "—"}
+                                      {l.studentEmail || "-"}
                                     </div>
                                   </div>
                                   {l.trackingCode && (
@@ -1746,7 +1757,7 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                               <div className="p-2 rounded-lg bg-neutral-100/70 border border-neutral-200/60">
                                 <div className="text-[10px] text-body/70 font-medium">Remaining</div>
                                 <div className="font-bold text-heading font-numeric mt-0.5">
-                                  {st.sessionsRemaining ?? "—"}
+                                  {st.sessionsRemaining ?? "-"}
                                 </div>
                               </div>
                             </div>

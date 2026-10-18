@@ -34,6 +34,7 @@ export function CourseCard({ course, basePath = "/student/dashboard/courses" }: 
   };
 
   const levelBadgeColors: Record<CourseLevel, string> = {
+    FOUNDATION: "text-primary border-primary/25 bg-primary-subtle font-bold",
     BEGINNER: "text-success border-success/30 bg-success-muted font-bold",
     INTERMEDIATE: "text-info border-info/30 bg-info-muted font-bold",
     ADVANCED: "text-accent-dark border-accent/30 bg-accent-subtle font-bold",
@@ -46,14 +47,14 @@ export function CourseCard({ course, basePath = "/student/dashboard/courses" }: 
         <div className="flex flex-wrap items-center gap-1.5">
           <span
             className={`px-2.5 py-0.5 rounded-full text-[11px] border ${
-              disciplineBadgeColors[course.discipline]
+              disciplineBadgeColors[course.discipline] || "bg-accent-subtle text-accent-dark border-accent/30 font-bold"
             }`}
           >
             {course.discipline}
           </span>
           <span
             className={`px-2 py-0.5 rounded-full text-[11px] border ${
-              levelBadgeColors[course.level]
+              levelBadgeColors[course.level] || "text-primary border-primary/25 bg-primary-subtle font-bold"
             }`}
           >
             {course.level}
@@ -100,14 +101,13 @@ export function CourseCard({ course, basePath = "/student/dashboard/courses" }: 
           <div className="text-[11px] text-body-muted font-medium">Tuition fee</div>
           <PriceDisplay
             priceMinorUnits={course.priceMinorUnits}
+            level={course.level}
+            sessionCount={course.sessionCount}
             size="lg"
-            showOriginalINR
+            showOriginalStrike
+            showDiscountBadge
+            showPerSessionBadge
           />
-          <div className="text-[11px] font-semibold text-accent-dark mt-0.5 flex items-center gap-1 font-numeric">
-            <span>
-              ₹{Math.round(course.priceMinorUnits / (course.sessionCount || 24) / 100).toLocaleString("en-IN")} / session
-            </span>
-          </div>
         </div>
 
         <Link

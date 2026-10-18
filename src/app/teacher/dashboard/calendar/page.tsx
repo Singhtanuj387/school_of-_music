@@ -23,6 +23,9 @@ export default async function TeacherCalendarPage() {
               orderBy: { date: "asc" },
             },
             lessonsAsTeacher: {
+              where: {
+                status: { in: ["SCHEDULED", "RESCHEDULED"] },
+              },
               include: {
                 student: {
                   select: {

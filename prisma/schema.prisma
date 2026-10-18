@@ -608,6 +608,7 @@ enum MessageType {
 
 enum LessonStatus {
   SCHEDULED
+  RESCHEDULED
   COMPLETED
   CANCELLED
 }
@@ -629,6 +630,7 @@ enum Discipline {
 }
 
 enum CourseLevel {
+  FOUNDATION
   BEGINNER
   INTERMEDIATE
   ADVANCED
@@ -726,6 +728,7 @@ enum NotificationType {
   NEW_COURSE_REQUEST
   COURSE_REQUEST_APPROVED
   COURSE_REQUEST_REJECTED
+  LESSON_RESCHEDULED
 }
 
 enum ResourceCategory {

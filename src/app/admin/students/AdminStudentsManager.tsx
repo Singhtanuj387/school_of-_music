@@ -25,6 +25,7 @@ import {
   Phone,
   Mail,
   UserCheck,
+  UserX,
   BookOpen,
   Download,
   ExternalLink,
@@ -44,6 +45,7 @@ import {
   createStudentEnrollmentAction,
   scheduleStudentLessonAction,
   sendStudentCommunicationAction,
+  toggleStudentAccessAction,
 } from "@/actions/student-admin";
 
 export interface StudentRecord {
@@ -200,6 +202,43 @@ export function AdminStudentsManager({
   const [isScheduleClassOpen, setIsScheduleClassOpen] = useState(false);
   const [isCreateEnrollmentOpen, setIsCreateEnrollmentOpen] = useState(false);
   const [isMessageOpen, setIsMessageOpen] = useState(false);
+  const [isTogglingAccess, setIsTogglingAccess] = useState(false);
+
+  const handleToggleAccess = async (studentToToggle?: StudentRecord) => {
+    const targetStudent = studentToToggle || selectedStudent;
+    if (!targetStudent || isTogglingAccess) return;
+
+    const nextActive = !targetStudent.isActive;
+    const confirmMessage = nextActive
+      ? `Restore login access for ${targetStudent.name}? They will be able to log in to the student portal.`
+      : `Remove login access for ${targetStudent.name}? When this inactive student tries to log in, they will be blocked and shown: "contact adminstrastation".`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsTogglingAccess(true);
+    try {
+      const res = await toggleStudentAccessAction(targetStudent.id, nextActive);
+      if (res.success) {
+        showToast(
+          res.message ||
+            (nextActive
+              ? `Login access granted for ${targetStudent.name}.`
+              : `Login access removed for ${targetStudent.name}.`)
+        );
+        setStudents((prev) =>
+          prev.map((s) =>
+            s.id === targetStudent.id ? { ...s, isActive: nextActive } : s
+          )
+        );
+      } else {
+        showToast(res.error || "Could not update login access.");
+      }
+    } catch {
+      showToast("An unexpected error occurred while updating login access.");
+    } finally {
+      setIsTogglingAccess(false);
+    }
+  };
 
   // Form states
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -601,9 +640,6 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
           <h1 className="font-serif text-2xl sm:text-3xl font-bold text-heading tracking-tight">
             Students
           </h1>
-          <p className="text-xs sm:text-sm text-body/70 mt-1">
-            Directory, learning records, billing context, and complete student timeline
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 self-start md:self-auto">
@@ -734,8 +770,8 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                               Active
                             </span>
                           ) : (
-                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">
-                              Paused
+                            <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-md">
+                              Access Disabled
                             </span>
                           )}
                         </div>
@@ -769,8 +805,12 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                       <h2 className="font-serif text-xl sm:text-2xl font-bold text-heading">
                         {selectedStudent.name}
                       </h2>
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-                        {selectedStudent.isActive ? "Active" : "Inactive"}
+                      <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${
+                        selectedStudent.isActive
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-rose-50 text-rose-700 border-rose-200"
+                      }`}>
+                        {selectedStudent.isActive ? "Active" : "Login Disabled"}
                       </span>
                     </div>
                     <p className="text-xs text-body/60 mt-1 font-numeric">
@@ -790,13 +830,61 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                   <button
                     type="button"
                     onClick={() => setIsMessageOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-heading text-xs font-semibold transition-colors shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-heading text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
                   >
                     <MessageSquare className="w-3.5 h-3.5 text-body" />
                     <span>Message</span>
                   </button>
+
+                  {/* Toggle Login Access button */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAccess()}
+                    disabled={isTogglingAccess}
+                    title={
+                      selectedStudent.isActive
+                        ? "Remove access from student to login"
+                        : "Grant access to student to login"
+                    }
+                    className={`btn-tactile inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs cursor-pointer ${
+                      selectedStudent.isActive
+                        ? "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300 active:scale-95"
+                        : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300 active:scale-95"
+                    }`}
+                  >
+                    {isTogglingAccess ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : selectedStudent.isActive ? (
+                      <UserX className="w-3.5 h-3.5 text-rose-600" />
+                    ) : (
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    )}
+                    <span>
+                      {selectedStudent.isActive ? "Remove Login Access" : "Grant Login Access"}
+                    </span>
+                  </button>
                 </div>
               </div>
+
+              {/* Login Disabled Notice Banner */}
+              {!selectedStudent.isActive && (
+                <div className="p-3 rounded-xl bg-rose-50/80 border border-rose-200 text-xs text-rose-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <UserX className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>
+                      <strong>Login access is disabled for this student.</strong> When trying to log in, they will be blocked with: <code className="bg-rose-100/90 text-rose-950 px-1.5 py-0.5 rounded font-mono font-bold">contact adminstrastation</code>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAccess()}
+                    disabled={isTogglingAccess}
+                    className="btn-tactile px-3 py-1 rounded-lg bg-white border border-rose-200 hover:bg-rose-50 text-rose-800 text-[11px] font-bold shrink-0 transition-colors cursor-pointer shadow-2xs self-start sm:self-auto"
+                  >
+                    Restore Access
+                  </button>
+                </div>
+              )}
 
               {/* 6-Field Metadata Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-neutral-100 text-xs">
@@ -1203,25 +1291,6 @@ Export Timestamp: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata
                         Delivered · Automated system
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* 3. Timeline Card */}
-                <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs p-5 sm:p-6 space-y-4">
-                  <h3 className="font-serif text-base font-bold text-heading">
-                    Timeline
-                  </h3>
-
-                  <div className="space-y-3.5 relative pl-4 border-l-2 border-purple-100 text-xs">
-                    {timelineEvents.map((ev) => (
-                      <div key={ev.id} className="relative">
-                        <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-[#3C096C] ring-4 ring-white" />
-                        <div className="font-bold text-heading">{ev.title}</div>
-                        <div className="text-[11px] text-body/60 mt-0.5 font-numeric">
-                          {ev.date}
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 </div>
               </div>

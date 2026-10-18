@@ -39,9 +39,17 @@ const providers: Provider[] = [
 
         const user = await db.user.findFirst({
           where: { phone },
+          include: {
+            teacherProfile: { select: { approvalStatus: true } },
+          },
         });
 
-        if (!user || !user.isActive) {
+        if (
+          !user ||
+          !user.isActive ||
+          ((user.role === "TEACHER" || user.teacherProfile) &&
+            user.teacherProfile?.approvalStatus === "REJECTED")
+        ) {
           return null;
         }
 
@@ -71,15 +79,27 @@ const providers: Provider[] = [
       if (rawIdentifier.includes("@")) {
         user = await db.user.findUnique({
           where: { email: rawIdentifier.toLowerCase() },
+          include: {
+            teacherProfile: { select: { approvalStatus: true } },
+          },
         });
       } else {
         const phone = normalizePhoneNumber(rawIdentifier);
         user = await db.user.findFirst({
           where: { phone },
+          include: {
+            teacherProfile: { select: { approvalStatus: true } },
+          },
         });
       }
 
-      if (!user || !user.passwordHash || !user.isActive) {
+      if (
+        !user ||
+        !user.passwordHash ||
+        !user.isActive ||
+        ((user.role === "TEACHER" || user.teacherProfile) &&
+          user.teacherProfile?.approvalStatus === "REJECTED")
+      ) {
         return null;
       }
 

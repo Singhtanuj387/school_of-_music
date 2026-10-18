@@ -20,6 +20,8 @@ export interface CurrencyConfig {
   inrPerUnit: number;
   formatLocale: string;
   decimals: number;
+  /** Multiplier from 1 USD to this target currency (1 USD * rateFromUSD = target currency) */
+  rateFromUSD: number;
 }
 
 export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
@@ -33,6 +35,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 1,
     formatLocale: "en-IN",
     decimals: 0,
+    rateFromUSD: 86.8,
   },
   USD: {
     code: "USD",
@@ -44,6 +47,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 86.8,
     formatLocale: "en-US",
     decimals: 0,
+    rateFromUSD: 1,
   },
   GBP: {
     code: "GBP",
@@ -55,6 +59,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 112.5,
     formatLocale: "en-GB",
     decimals: 0,
+    rateFromUSD: 0.75, // Exactly 16 USD = 12 GBP per user specification
   },
   EUR: {
     code: "EUR",
@@ -66,6 +71,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 95.0,
     formatLocale: "de-DE",
     decimals: 0,
+    rateFromUSD: 0.92,
   },
   CAD: {
     code: "CAD",
@@ -77,6 +83,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 62.0,
     formatLocale: "en-CA",
     decimals: 0,
+    rateFromUSD: 1.36,
   },
   AUD: {
     code: "AUD",
@@ -88,6 +95,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 56.5,
     formatLocale: "en-AU",
     decimals: 0,
+    rateFromUSD: 1.5,
   },
   AED: {
     code: "AED",
@@ -99,6 +107,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 23.65,
     formatLocale: "en-AE",
     decimals: 0,
+    rateFromUSD: 3.67,
   },
   SGD: {
     code: "SGD",
@@ -110,6 +119,7 @@ export const SUPPORTED_CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
     inrPerUnit: 65.0,
     formatLocale: "en-SG",
     decimals: 0,
+    rateFromUSD: 1.32,
   },
 };
 

@@ -596,6 +596,15 @@ export async function rescheduleEnrollmentLessonAction(input: {
 
     const lesson = await db.lesson.findUnique({
       where: { id: input.lessonId },
+      include: {
+        student: { select: { id: true, name: true, email: true, timezone: true } },
+        teacher: { select: { id: true, name: true, email: true, timezone: true } },
+        enrollment: {
+          include: {
+            course: { select: { id: true, title: true, instrument: true } },
+          },
+        },
+      },
     });
 
     if (!lesson) {
@@ -607,19 +616,71 @@ export async function rescheduleEnrollmentLessonAction(input: {
       return { success: false, error: "Invalid date and time." };
     }
 
+    // Automatically set status to RESCHEDULED
     await db.lesson.update({
       where: { id: input.lessonId },
       data: {
         startsAt: startsAtDate,
         durationMinutes: input.durationMinutes || lesson.durationMinutes,
-        status: LessonStatus.SCHEDULED,
+        status: LessonStatus.RESCHEDULED,
       },
     });
 
+    const courseOrInstrument =
+      lesson.enrollment?.course?.title || lesson.instrument || "Class";
+    const teacherName = lesson.teacher?.name || "your faculty mentor";
+
+    // 1. Send in-app notification to Student dashboard notification bell
+    if (lesson.studentId) {
+      const studentTz = lesson.student?.timezone || "Asia/Kolkata";
+      const studentFormattedDate = startsAtDate.toLocaleString("en-IN", {
+        timeZone: studentTz,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+
+      await createNotification({
+        userId: lesson.studentId,
+        type: NotificationType.LESSON_RESCHEDULED,
+        title: "Class Rescheduled",
+        body: `Your ${courseOrInstrument} session with ${teacherName} has been rescheduled to ${studentFormattedDate}.`,
+        link: "/student/dashboard/calendar",
+      });
+    }
+
+    // 2. Send in-app notification to Teacher dashboard notification bell
+    if (lesson.teacherId) {
+      const teacherTz = lesson.teacher?.timezone || "Asia/Kolkata";
+      const teacherFormattedDate = startsAtDate.toLocaleString("en-IN", {
+        timeZone: teacherTz,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+
+      await createNotification({
+        userId: lesson.teacherId,
+        type: NotificationType.LESSON_RESCHEDULED,
+        title: "Class Rescheduled",
+        body: `Your ${courseOrInstrument} session with ${lesson.student?.name || "student"} has been rescheduled to ${teacherFormattedDate}.`,
+        link: "/teacher/dashboard/calendar",
+      });
+    }
+
+    // 3. Revalidate paths for admin, student, and teacher calendars and dashboards
     revalidatePath("/admin/enrollments");
     revalidatePath("/admin/lessons");
     revalidatePath("/student/dashboard");
+    revalidatePath("/student/dashboard/calendar");
     revalidatePath("/teacher/dashboard");
+    revalidatePath("/teacher/dashboard/calendar");
 
     return { success: true };
   } catch (error) {
@@ -2180,12 +2241,21 @@ export async function updateTeacherApprovalAction(input: {
   try {
     const admin = await requireRole(Role.ADMIN);
 
-    const profile = await db.teacherProfile.findUnique({
+    let profile = await db.teacherProfile.findUnique({
       where: { id: input.teacherProfileId },
       include: {
         user: { select: { id: true, name: true, email: true } },
       },
     });
+
+    if (!profile) {
+      profile = await db.teacherProfile.findUnique({
+        where: { userId: input.teacherProfileId },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
+    }
 
     if (!profile) {
       return { success: false, error: "Teacher profile not found." };
@@ -2233,7 +2303,7 @@ export async function updateTeacherApprovalAction(input: {
     }
 
     await db.teacherProfile.update({
-      where: { id: input.teacherProfileId },
+      where: { id: profile.id },
       data: updateData,
     });
 

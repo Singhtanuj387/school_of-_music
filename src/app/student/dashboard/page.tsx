@@ -120,37 +120,31 @@ export default async function StudentDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* 1. High-Priority Trial & Session Remaining Indicator */}
-      <TrialStatusStrip
-        data={{
-          trialStatus: trialStatus
-            ? {
-                status: trialStatus.status,
-                lessonsGranted: trialStatus.lessonsGranted,
-                lessonsUsed: trialStatus.lessonsUsed,
-              }
-            : null,
-          activeEnrollment: activeEnrollment
-            ? {
-                id: activeEnrollment.id,
-                courseTitle: activeEnrollment.course.title,
-                sessionsRemaining: activeEnrollment.sessionsRemaining,
-                totalSessions: activeEnrollment.course.sessionCount,
-              }
-            : null,
-          pendingTrialRequest: pendingTrialRequest
-            ? {
-                id: pendingTrialRequest.id,
-                instrument: pendingTrialRequest.instrument,
-                ageGroup: pendingTrialRequest.ageGroup,
-                requestedStartsAt: pendingTrialRequest.requestedStartsAt.toISOString(),
-                preferredTimeSlot: pendingTrialRequest.preferredTimeSlot,
-                notes: pendingTrialRequest.studentNotes,
-              }
-            : null,
-          isConverted,
-        }}
-      />
+      {/* 1. High-Priority Trial Indicator (hidden for active enrolled students) */}
+      {!activeEnrollment && (
+        <TrialStatusStrip
+          data={{
+            trialStatus: trialStatus
+              ? {
+                  status: trialStatus.status,
+                  lessonsGranted: trialStatus.lessonsGranted,
+                  lessonsUsed: trialStatus.lessonsUsed,
+                }
+              : null,
+            pendingTrialRequest: pendingTrialRequest
+              ? {
+                  id: pendingTrialRequest.id,
+                  instrument: pendingTrialRequest.instrument,
+                  ageGroup: pendingTrialRequest.ageGroup,
+                  requestedStartsAt: pendingTrialRequest.requestedStartsAt.toISOString(),
+                  preferredTimeSlot: pendingTrialRequest.preferredTimeSlot,
+                  notes: pendingTrialRequest.studentNotes,
+                }
+              : null,
+            isConverted,
+          }}
+        />
+      )}
 
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pt-2">

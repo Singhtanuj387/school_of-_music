@@ -576,9 +576,6 @@ export function AdminTeacherPaymentsManager({
             as="h1"
             size="lg"
           />
-          <p className="text-xs text-body mt-1 max-w-3xl">
-            Disburse teacher session remuneration for completed sessions via verified UPI ID. Confirm payments with bank UTR transaction references to immediately update faculty ledgers.
-          </p>
         </div>
 
         <Link
@@ -788,9 +785,6 @@ export function AdminTeacherPaymentsManager({
             <h2 className="font-serif text-lg font-bold text-heading">
               Faculty Session Payouts Ledger
             </h2>
-            <p className="text-xs text-body">
-              Search by Session ID or filter by instructor to disburse fees for completed sessions and view payment coordinates.
-            </p>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">

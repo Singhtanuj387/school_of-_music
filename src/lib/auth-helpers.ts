@@ -32,11 +32,18 @@ export const getCurrentUser = cache(async () => {
           timezone: true,
           emailVerified: true,
           isActive: true,
+          teacherProfile: { select: { approvalStatus: true } },
         },
       });
 
       if (dbUser) {
         if (!dbUser.isActive) {
+          return null;
+        }
+        if (
+          (dbUser.role === Role.TEACHER || dbUser.teacherProfile) &&
+          dbUser.teacherProfile?.approvalStatus === "REJECTED"
+        ) {
           return null;
         }
         return {

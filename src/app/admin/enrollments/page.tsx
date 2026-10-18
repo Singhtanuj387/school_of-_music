@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import {
   AdminEnrollmentsManager,
   EnrollmentRecord,
@@ -17,20 +18,19 @@ export const metadata = {
   description: "Convert qualified trials into scheduled billable learning plans, allot faculty, and manage 1-on-1 timetables.",
 };
 
-export default async function AdminEnrollmentsPage() {
-  await requireRole(Role.ADMIN);
+const getCachedAdminEnrollmentsData = unstable_cache(
+  async () => {
+    let dbCourses: any[] = [];
+    let dbTeachers: any[] = [];
+    let dbStudents: any[] = [];
+    let dbTrialLeads: any[] = [];
+    let dbEnrollments: any[] = [];
+    let dbCourseRequests: any[] = [];
 
-  let dbCourses: any[] = [];
-  let dbTeachers: any[] = [];
-  let dbStudents: any[] = [];
-  let dbTrialLeads: any[] = [];
-  let dbEnrollments: any[] = [];
-  let dbCourseRequests: any[] = [];
-
-  try {
-    // Run ALL queries in parallel — cuts total time from sum(all) to max(slowest)
-    [dbCourses, dbTeachers, dbStudents, dbTrialLeads, dbEnrollments, dbCourseRequests] =
-      await Promise.all([
+    try {
+      // Run ALL queries in parallel — cuts total time from sum(all) to max(slowest)
+      [dbCourses, dbTeachers, dbStudents, dbTrialLeads, dbEnrollments, dbCourseRequests] =
+        await Promise.all([
         // 1. Fetch catalog
         db.course.findMany({
           where: { isPublished: true },
@@ -343,15 +343,46 @@ export default async function AdminEnrollmentsPage() {
     createdAt: r.createdAt.toISOString(),
   }));
 
+    return {
+      formattedEnrollments,
+      formattedCourses,
+      formattedTeachers,
+      formattedStudents,
+      formattedTrialLeads,
+      formattedCourseRequests,
+    };
+  },
+  ["admin-enrollments-data-v1"],
+  { revalidate: 30, tags: ["admin-enrollments", "enrollments"] }
+);
+
+export default async function AdminEnrollmentsPage() {
+  await requireRole(Role.ADMIN);
+
+  let data = {
+    formattedEnrollments: [] as EnrollmentRecord[],
+    formattedCourses: [] as CourseCatalogOption[],
+    formattedTeachers: [] as FacultyOption[],
+    formattedStudents: [] as StudentOption[],
+    formattedTrialLeads: [] as TrialLeadOption[],
+    formattedCourseRequests: [] as AdminCourseEnrollmentRequestItem[],
+  };
+
+  try {
+    data = await getCachedAdminEnrollmentsData();
+  } catch (err) {
+    console.error("[AdminEnrollmentsPage] Failed to load cached enrollments data, using fallback:", err);
+  }
+
   return (
     <Suspense fallback={<div className="p-12 text-center text-xs text-body">Loading enrollment planner...</div>}>
       <AdminEnrollmentsManager
-        initialEnrollments={formattedEnrollments}
-        courses={formattedCourses}
-        teachers={formattedTeachers}
-        students={formattedStudents}
-        trialLeads={formattedTrialLeads}
-        initialCourseRequests={formattedCourseRequests}
+        initialEnrollments={data.formattedEnrollments}
+        courses={data.formattedCourses}
+        teachers={data.formattedTeachers}
+        students={data.formattedStudents}
+        trialLeads={data.formattedTrialLeads}
+        initialCourseRequests={data.formattedCourseRequests}
       />
     </Suspense>
   );

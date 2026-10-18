@@ -295,6 +295,13 @@ export async function sendPhoneOtpAction(
 
     const existingUser = await db.user.findFirst({
       where: { phone },
+      select: {
+        role: true,
+        isActive: true,
+        teacherProfile: {
+          select: { approvalStatus: true },
+        },
+      },
     });
 
     if (purpose === "LOGIN" && !existingUser) {
@@ -302,6 +309,25 @@ export async function sendPhoneOtpAction(
         success: false,
         error: "No account found with this mobile number. Please create an account first.",
       };
+    }
+
+    if (purpose === "LOGIN" && existingUser) {
+      if (
+        (existingUser.role === "TEACHER" || existingUser.teacherProfile) &&
+        existingUser.teacherProfile?.approvalStatus === "REJECTED"
+      ) {
+        return {
+          success: false,
+          error: "your application is rejected please contact administration",
+        };
+      }
+
+      if (!existingUser.isActive) {
+        return {
+          success: false,
+          error: "contact adminstrastation",
+        };
+      }
     }
 
     if (purpose === "SIGNUP" && existingUser) {
@@ -409,21 +435,45 @@ export async function loginAction(
     if (identifier.includes("@")) {
       user = await db.user.findUnique({
         where: { email: identifier.toLowerCase() },
-        select: { role: true, isActive: true },
+        select: {
+          role: true,
+          isActive: true,
+          teacherProfile: {
+            select: { approvalStatus: true },
+          },
+        },
       });
     } else {
       const phone = normalizePhoneNumber(identifier);
       user = await db.user.findFirst({
         where: { phone },
-        select: { role: true, isActive: true },
+        select: {
+          role: true,
+          isActive: true,
+          teacherProfile: {
+            select: { approvalStatus: true },
+          },
+        },
       });
     }
 
-    if (user && !user.isActive) {
-      return {
-        success: false,
-        error: "Your account has been deactivated. Please contact academy support.",
-      };
+    if (user) {
+      if (
+        (user.role === "TEACHER" || user.teacherProfile) &&
+        user.teacherProfile?.approvalStatus === "REJECTED"
+      ) {
+        return {
+          success: false,
+          error: "your application is rejected please contact administration",
+        };
+      }
+
+      if (!user.isActive) {
+        return {
+          success: false,
+          error: "contact adminstrastation",
+        };
+      }
     }
 
     const target =
@@ -520,7 +570,13 @@ export async function verifyOtpAndLoginAction(
 
     const user = await db.user.findFirst({
       where: { phone },
-      select: { role: true, isActive: true },
+      select: {
+        role: true,
+        isActive: true,
+        teacherProfile: {
+          select: { approvalStatus: true },
+        },
+      },
     });
 
     if (!user) {
@@ -530,10 +586,20 @@ export async function verifyOtpAndLoginAction(
       };
     }
 
+    if (
+      (user.role === "TEACHER" || user.teacherProfile) &&
+      user.teacherProfile?.approvalStatus === "REJECTED"
+    ) {
+      return {
+        success: false,
+        error: "your application is rejected please contact administration",
+      };
+    }
+
     if (!user.isActive) {
       return {
         success: false,
-        error: "Your account has been deactivated. Please contact academy support.",
+        error: "contact adminstrastation",
       };
     }
 

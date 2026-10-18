@@ -12,8 +12,6 @@ import {
   XCircle,
   ExternalLink,
   Loader2,
-  ArrowUpDown,
-  Sparkles,
 } from "lucide-react";
 
 export interface AdminLessonItem {
@@ -33,8 +31,6 @@ export interface AdminLessonItem {
   studentEmail: string;
 }
 
-export type LessonSortOrder = "LATEST_FIRST" | "DATE_DESC" | "DATE_ASC";
-
 export function AdminLessonsManager({
   initialLessons,
 }: {
@@ -43,7 +39,6 @@ export function AdminLessonsManager({
   const [lessons, setLessons] = useState<AdminLessonItem[]>(initialLessons);
   const [statusFilter, setStatusFilter] = useState<"ALL" | LessonStatus>("ALL");
   const [sourceFilter, setSourceFilter] = useState<"ALL" | LessonSource>("ALL");
-  const [sortOrder, setSortOrder] = useState<LessonSortOrder>("LATEST_FIRST");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [isPending, startTransition] = useTransition();
@@ -81,16 +76,8 @@ export function AdminLessonsManager({
       return matchesStatus && matchesSource && matchesSearch;
     })
     .sort((a, b) => {
-      if (sortOrder === "LATEST_FIRST") {
-        // Latest class first (created / scheduled date descending)
-        const diffCreated = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        if (diffCreated !== 0) return diffCreated;
-        return new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime();
-      } else if (sortOrder === "DATE_DESC") {
-        return new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime();
-      } else {
-        return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
-      }
+      // Default: Upcoming closest first (scheduled date ascending)
+      return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
     });
 
   return (
@@ -121,6 +108,17 @@ export function AdminLessonsManager({
               }`}
             >
               Scheduled
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(LessonStatus.RESCHEDULED)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors active:scale-95 ${
+                statusFilter === LessonStatus.RESCHEDULED
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-body hover:text-heading hover:bg-bg-alt/30"
+              }`}
+            >
+              Rescheduled
             </button>
             <button
               type="button"
@@ -183,50 +181,6 @@ export function AdminLessonsManager({
             </button>
           </div>
 
-          {/* Sort Order Selector */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-white border border-primary/10 shadow-xs">
-            <span className="text-[10px] uppercase font-bold text-body/50 px-2 flex items-center gap-1 font-mono select-none">
-              <ArrowUpDown className="w-3 h-3 text-body/60" />
-              Order:
-            </span>
-            <button
-              type="button"
-              onClick={() => setSortOrder("LATEST_FIRST")}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 flex items-center gap-1 ${
-                sortOrder === "LATEST_FIRST"
-                  ? "bg-primary text-white shadow-xs"
-                  : "text-body hover:text-heading hover:bg-bg-alt/30"
-              }`}
-              title="Show newest scheduled / created class first"
-            >
-              <Sparkles className="w-3 h-3" />
-              Latest Class First
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortOrder("DATE_DESC")}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 ${
-                sortOrder === "DATE_DESC"
-                  ? "bg-primary text-white shadow-xs"
-                  : "text-body hover:text-heading hover:bg-bg-alt/30"
-              }`}
-              title="Order by scheduled date (furthest future first)"
-            >
-              Class Date (Desc)
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortOrder("DATE_ASC")}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 ${
-                sortOrder === "DATE_ASC"
-                  ? "bg-primary text-white shadow-xs"
-                  : "text-body hover:text-heading hover:bg-bg-alt/30"
-              }`}
-              title="Order by scheduled date (upcoming closest first)"
-            >
-              Upcoming First
-            </button>
-          </div>
         </div>
 
         {/* Search */}
@@ -330,6 +284,8 @@ export function AdminLessonsManager({
                       <span
                         className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           l.status === "SCHEDULED"
+                            ? "bg-purple-50 text-purple-700 border border-purple-200"
+                            : l.status === "RESCHEDULED"
                             ? "bg-amber-50 text-amber-700 border border-amber-200"
                             : l.status === "COMPLETED"
                             ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -351,7 +307,7 @@ export function AdminLessonsManager({
                           <ExternalLink className="w-3.5 h-3.5" />
                         </Link>
 
-                        {l.status === "SCHEDULED" && (
+                        {(l.status === "SCHEDULED" || l.status === "RESCHEDULED") && (
                           <button
                             type="button"
                             disabled={isPending}

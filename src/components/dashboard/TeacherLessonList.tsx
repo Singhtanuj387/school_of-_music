@@ -15,7 +15,7 @@ export interface TeacherDashboardLesson {
   startsAt: string; // ISO string
   endsAt: string; // ISO string
   durationMinutes: number;
-  status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
+  status: "SCHEDULED" | "COMPLETED" | "CANCELLED" | "RESCHEDULED";
   lessonSource?: "TRIAL" | "ENROLLMENT";
   studentTimezone?: string;
   courseTitle?: string;
@@ -59,12 +59,15 @@ export function TeacherLessonList({
 
   const upcomingLessons = lessons.filter((l) => {
     const endsAtTime = new Date(l.endsAt).getTime();
-    return l.status === "SCHEDULED" && endsAtTime >= now;
+    return (l.status === "SCHEDULED" || l.status === "RESCHEDULED") && endsAtTime >= now;
   });
 
   const pastLessons = lessons.filter((l) => {
     const endsAtTime = new Date(l.endsAt).getTime();
-    return l.status === "COMPLETED" || (l.status === "SCHEDULED" && endsAtTime < now);
+    return (
+      l.status === "COMPLETED" ||
+      ((l.status === "SCHEDULED" || l.status === "RESCHEDULED") && endsAtTime < now)
+    );
   });
 
   const cancelledLessons = lessons.filter((l) => l.status === "CANCELLED");
@@ -214,6 +217,11 @@ export function TeacherLessonList({
                                 ) : (
                                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary-subtle text-primary border border-primary/30">
                                     Course Session
+                                  </span>
+                                )}
+                                {lesson.status === "RESCHEDULED" && (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                                    Rescheduled
                                   </span>
                                 )}
                               </div>

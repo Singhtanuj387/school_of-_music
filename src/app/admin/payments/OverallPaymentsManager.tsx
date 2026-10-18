@@ -28,6 +28,7 @@ import {
   Layers,
   Music,
   ExternalLink,
+  ArrowRight,
 } from "lucide-react";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 import {
@@ -40,6 +41,10 @@ import {
   startOfYear,
   endOfYear,
   subYears,
+  startOfDay,
+  endOfDay,
+  subDays,
+  differenceInDays,
   format,
   isWithinInterval,
 } from "date-fns";
@@ -87,7 +92,8 @@ export type TimeFilterRange =
   | "LAST_MONTH"
   | "THIS_YEAR"
   | "LAST_YEAR"
-  | "ALL_TIME";
+  | "ALL_TIME"
+  | "CUSTOM";
 
 interface OverallPaymentsManagerProps {
   initialPayments: FormattedPaymentItem[];
@@ -99,6 +105,14 @@ export function OverallPaymentsManager({
   courses,
 }: OverallPaymentsManagerProps) {
   const [timeFilter, setTimeFilter] = useState<TimeFilterRange>("THIS_MONTH");
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 29);
+    return format(d, "yyyy-MM-dd");
+  });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    return format(new Date(), "yyyy-MM-dd");
+  });
   const [selectedCourseId, setSelectedCourseId] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusTab, setStatusTab] = useState<"ALL" | "PAID" | "CREATED" | "FAILED" | "REFUNDED">("ALL");
@@ -112,6 +126,36 @@ export function OverallPaymentsManager({
     revenue: number;
     count: number;
   } | null>(null);
+
+  // Quick range helper functions
+  const handleQuickPreset = (days: number) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - (days - 1));
+    setCustomStartDate(format(start, "yyyy-MM-dd"));
+    setCustomEndDate(format(end, "yyyy-MM-dd"));
+    setTimeFilter("CUSTOM");
+  };
+
+  const handleMonthToDate = () => {
+    const end = new Date();
+    const start = startOfMonth(end);
+    setCustomStartDate(format(start, "yyyy-MM-dd"));
+    setCustomEndDate(format(end, "yyyy-MM-dd"));
+    setTimeFilter("CUSTOM");
+  };
+
+  const customDaysCount = useMemo(() => {
+    if (!customStartDate || !customEndDate) return 0;
+    try {
+      const s = new Date(`${customStartDate}T00:00:00`);
+      const e = new Date(`${customEndDate}T23:59:59`);
+      const diff = differenceInDays(e >= s ? e : s, e >= s ? s : e) + 1;
+      return Math.max(1, diff);
+    } catch {
+      return 0;
+    }
+  }, [customStartDate, customEndDate]);
 
   // Reference timestamp
   const now = useMemo(() => new Date(), []);
@@ -191,6 +235,34 @@ export function OverallPaymentsManager({
           comparisonLabel: "vs. 2 years prior",
         };
       }
+      case "CUSTOM": {
+        if (!customStartDate || !customEndDate) {
+          return {
+            currentInterval: null,
+            previousInterval: null,
+            filterLabel: "Custom Range (Select Dates)",
+            comparisonLabel: "no comparison period",
+          };
+        }
+
+        const rawStart = new Date(`${customStartDate}T00:00:00`);
+        const rawEnd = new Date(`${customEndDate}T23:59:59.999`);
+
+        // Gracefully handle date order
+        const start = rawStart <= rawEnd ? startOfDay(rawStart) : startOfDay(rawEnd);
+        const end = rawStart <= rawEnd ? endOfDay(rawEnd) : endOfDay(rawStart);
+
+        const daySpan = Math.max(1, differenceInDays(end, start) + 1);
+        const prevEnd = endOfDay(subDays(start, 1));
+        const prevStart = startOfDay(subDays(prevEnd, daySpan - 1));
+
+        return {
+          currentInterval: { start, end },
+          previousInterval: { start: prevStart, end: prevEnd },
+          filterLabel: `${format(start, "MMM d, yyyy")} to ${format(end, "MMM d, yyyy")}`,
+          comparisonLabel: `vs. previous ${daySpan} days`,
+        };
+      }
       case "ALL_TIME":
       default: {
         return {
@@ -201,7 +273,7 @@ export function OverallPaymentsManager({
         };
       }
     }
-  }, [timeFilter, now]);
+  }, [timeFilter, now, customStartDate, customEndDate]);
 
   // Payments filtered by Time and Course
   const timeAndCourseFiltered = useMemo(() => {
@@ -411,6 +483,111 @@ export function OverallPaymentsManager({
       });
     }
 
+    // Custom date range view
+    if (timeFilter === "CUSTOM") {
+      if (!customStartDate || !customEndDate) {
+        return [{ key: "custom-empty", label: "No Dates", sublabel: "Select dates above", revenue: 0, count: 0 }];
+      }
+
+      const rawStart = new Date(`${customStartDate}T00:00:00`);
+      const rawEnd = new Date(`${customEndDate}T23:59:59.999`);
+      const start = rawStart <= rawEnd ? startOfDay(rawStart) : startOfDay(rawEnd);
+      const end = rawStart <= rawEnd ? endOfDay(rawEnd) : endOfDay(rawStart);
+      const daySpan = Math.max(1, differenceInDays(end, start) + 1);
+
+      // 1. If 31 days or fewer: Show daily bars
+      if (daySpan <= 31) {
+        const days = [];
+        for (let i = 0; i < daySpan; i++) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const dayKey = format(d, "yyyy-MM-dd");
+          const dayLabel = daySpan <= 14 ? format(d, "EEE d") : format(d, "d MMM");
+          const fullDate = format(d, "EEE, MMM d, yyyy");
+
+          const matching = timeAndCourseFiltered.filter((p) => {
+            if (p.status !== "PAID") return false;
+            const pDate = new Date(p.createdAt);
+            return format(pDate, "yyyy-MM-dd") === dayKey;
+          });
+
+          const rev = matching.reduce((sum, p) => sum + p.amountRupees, 0);
+          days.push({
+            key: dayKey,
+            label: dayLabel,
+            sublabel: fullDate,
+            revenue: rev,
+            count: matching.length,
+          });
+        }
+        return days;
+      }
+
+      // 2. If between 32 and 120 days: Group by ~7-day segments
+      if (daySpan <= 120) {
+        const segmentCount = Math.min(8, Math.ceil(daySpan / 7));
+        const daysPerSegment = Math.ceil(daySpan / segmentCount);
+        const segments = [];
+
+        for (let s = 0; s < segmentCount; s++) {
+          const segStart = new Date(start);
+          segStart.setDate(start.getDate() + s * daysPerSegment);
+          const segEnd = new Date(start);
+          segEnd.setDate(Math.min(end.getDate(), start.getDate() + (s + 1) * daysPerSegment - 1));
+          if (segStart > end) break;
+          const actualEnd = segEnd > end ? end : segEnd;
+
+          const segLabel = `${format(segStart, "MMM d")} to ${format(actualEnd, "MMM d")}`;
+          const matching = timeAndCourseFiltered.filter((p) => {
+            if (p.status !== "PAID") return false;
+            const pDate = new Date(p.createdAt);
+            return isWithinInterval(pDate, { start: startOfDay(segStart), end: endOfDay(actualEnd) });
+          });
+
+          const rev = matching.reduce((sum, p) => sum + p.amountRupees, 0);
+          segments.push({
+            key: `seg-${s}`,
+            label: format(segStart, "d MMM"),
+            sublabel: segLabel,
+            revenue: rev,
+            count: matching.length,
+          });
+        }
+        return segments;
+      }
+
+      // 3. If > 120 days: Group by calendar month
+      const monthsMap = new Map<string, { label: string; sublabel: string; revenue: number; count: number }>();
+      timeAndCourseFiltered.forEach((p) => {
+        if (p.status === "PAID") {
+          const pDate = new Date(p.createdAt);
+          const monthKey = format(pDate, "yyyy-MM");
+          const cur = monthsMap.get(monthKey) || {
+            label: format(pDate, "MMM yy"),
+            sublabel: format(pDate, "MMMM yyyy"),
+            revenue: 0,
+            count: 0,
+          };
+          cur.revenue += p.amountRupees;
+          cur.count += 1;
+          monthsMap.set(monthKey, cur);
+        }
+      });
+
+      const sortedMonthKeys = Array.from(monthsMap.keys()).sort();
+      if (sortedMonthKeys.length === 0) {
+        return [{ key: "custom-empty", label: "No Revenue", sublabel: "No transactions in range", revenue: 0, count: 0 }];
+      }
+
+      return sortedMonthKeys.map((k) => ({
+        key: k,
+        label: monthsMap.get(k)!.label,
+        sublabel: monthsMap.get(k)!.sublabel,
+        revenue: monthsMap.get(k)!.revenue,
+        count: monthsMap.get(k)!.count,
+      }));
+    }
+
     // All Time view: Group by Years
     const yearsMap = new Map<number, { revenue: number; count: number }>();
     timeAndCourseFiltered.forEach((p) => {
@@ -435,7 +612,7 @@ export function OverallPaymentsManager({
       revenue: yearsMap.get(y)?.revenue || 0,
       count: yearsMap.get(y)?.count || 0,
     }));
-  }, [timeFilter, now, timeAndCourseFiltered]);
+  }, [timeFilter, now, timeAndCourseFiltered, customStartDate, customEndDate]);
 
   // Max value for trend scaling
   const maxTrendRevenue = useMemo(() => {
@@ -535,18 +712,12 @@ export function OverallPaymentsManager({
       {/* 1. Header Section */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-sans">
-            Financial Intelligence & Student Tuition
-          </span>
           <SplitHeading
             firstClause="Institutional"
             accentClause="Payments"
             as="h1"
             size="lg"
           />
-          <p className="text-xs text-body mt-1 max-w-3xl">
-            Real-time revenue telemetry across all academy courses. Analyze enrollment receipts, time-series income trends, and course financial distribution.
-          </p>
         </div>
 
         {/* Header Actions */}
@@ -588,19 +759,21 @@ export function OverallPaymentsManager({
               { id: "THIS_YEAR", label: "Current Year" },
               { id: "LAST_YEAR", label: "Last Year" },
               { id: "ALL_TIME", label: "All Time" },
+              { id: "CUSTOM", label: "Custom Range", isCustom: true },
             ].map((tab) => {
               const active = timeFilter === tab.id;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setTimeFilter(tab.id as TimeFilterRange)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all active:scale-95 flex-shrink-0 ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all active:scale-95 flex-shrink-0 cursor-pointer ${
                     active
                       ? "bg-[#3C096C] text-white shadow-xs"
                       : "bg-surface-subtle/80 hover:bg-surface-raised text-body hover:text-heading"
                   }`}
                 >
-                  {tab.label}
+                  {tab.isCustom && <Calendar className="w-3.5 h-3.5" />}
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
@@ -614,7 +787,7 @@ export function OverallPaymentsManager({
             <select
               value={selectedCourseId}
               onChange={(e) => setSelectedCourseId(e.target.value)}
-              className="text-xs bg-surface-subtle/90 hover:bg-surface-raised border border-border-default rounded-xl px-3 py-1.5 font-medium text-heading focus:outline-none focus:ring-2 focus:ring-[#3C096C]/20 transition-all max-w-[280px] truncate"
+              className="text-xs bg-surface-subtle/90 hover:bg-surface-raised border border-border-default rounded-xl px-3 py-1.5 font-medium text-heading focus:outline-none focus:ring-2 focus:ring-[#3C096C]/20 transition-all max-w-[280px] truncate cursor-pointer"
             >
               <option value="ALL">All Academy Courses ({courses.length})</option>
               {courses.map((c) => (
@@ -627,7 +800,7 @@ export function OverallPaymentsManager({
             {selectedCourseId !== "ALL" && (
               <button
                 onClick={() => setSelectedCourseId("ALL")}
-                className="p-1.5 rounded-lg text-body hover:text-heading hover:bg-surface-subtle transition-all active:scale-95"
+                className="p-1.5 rounded-lg text-body hover:text-heading hover:bg-surface-subtle transition-all active:scale-95 cursor-pointer"
                 title="Reset course filter"
               >
                 <X className="w-3.5 h-3.5" />
@@ -635,6 +808,88 @@ export function OverallPaymentsManager({
             )}
           </div>
         </div>
+
+        {/* Custom Date Range Picker Toolbar */}
+        {timeFilter === "CUSTOM" && (
+          <div className="pt-3 border-t border-purple-100/70 flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-gradient-to-r from-purple-50/40 via-surface-subtle/40 to-purple-50/30 p-3.5 rounded-xl border border-purple-100/80">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-body uppercase tracking-wider">
+                  From:
+                </span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="text-xs bg-white border border-border-default hover:border-[#3C096C]/40 focus:border-[#3C096C] rounded-xl px-3 py-1.5 font-medium text-heading focus:outline-none focus:ring-2 focus:ring-[#3C096C]/20 transition-all shadow-2xs cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 text-body/50">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-body uppercase tracking-wider">
+                  To:
+                </span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="text-xs bg-white border border-border-default hover:border-[#3C096C]/40 focus:border-[#3C096C] rounded-xl px-3 py-1.5 font-medium text-heading focus:outline-none focus:ring-2 focus:ring-[#3C096C]/20 transition-all shadow-2xs cursor-pointer"
+                />
+              </div>
+
+              {/* Day count badge */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-border-default text-[11px] font-medium text-body shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3C096C]" />
+                <span className="font-numeric font-semibold text-heading">
+                  {customDaysCount}
+                </span>{" "}
+                day{customDaysCount === 1 ? "" : "s"} selected
+              </div>
+            </div>
+
+            {/* Quick Range Presets */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-semibold text-body/70 hidden sm:inline mr-1">
+                Presets:
+              </span>
+              {[
+                { label: "Last 7 Days", days: 7 },
+                { label: "Last 14 Days", days: 14 },
+                { label: "Last 30 Days", days: 30 },
+                { label: "Last 90 Days", days: 90 },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => handleQuickPreset(p.days)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white hover:bg-surface-raised border border-border-default text-body hover:text-heading transition-all active:scale-95 shadow-2xs cursor-pointer"
+                >
+                  {p.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={handleMonthToDate}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white hover:bg-surface-raised border border-border-default text-body hover:text-heading transition-all active:scale-95 shadow-2xs cursor-pointer"
+              >
+                Month to Date
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimeFilter("THIS_MONTH")}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 transition-all active:scale-95 cursor-pointer"
+                title="Reset to current month"
+              >
+                <X className="w-3 h-3" />
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Active Filter Scope Summary Badge */}
         <div className="flex items-center justify-between text-[11px] text-body pt-1 border-t border-gray-100">
@@ -746,9 +1001,6 @@ export function OverallPaymentsManager({
                 <TrendingUp className="w-4 h-4 text-[#3C096C]" />
                 Revenue Trend Over Time
               </h2>
-              <p className="text-[11px] text-body mt-0.5">
-                Trajectory for {filterLabel}. Hover bars to inspect exact period earnings.
-              </p>
             </div>
 
             {/* Peak day/period indicator */}

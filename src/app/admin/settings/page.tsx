@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { AdminSettingsForm } from "./AdminSettingsForm";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 
@@ -9,12 +10,36 @@ export const metadata = {
   description: "Configure global trial allocations, institution metadata, and platform policies.",
 };
 
+const getCachedAdminSettingsData = unstable_cache(
+  async () => {
+    const settings = await db.platformSettings.findUnique({
+      where: { id: 1 },
+    });
+
+    return {
+      freeTrialLessonCount: settings?.freeTrialLessonCount ?? 2,
+      googleDriveFolderLink: settings?.googleDriveFolderId
+        ? `https://drive.google.com/drive/folders/${settings.googleDriveFolderId}`
+        : "",
+    };
+  },
+  ["admin-settings-data-v1"],
+  { revalidate: 60, tags: ["admin-settings", "settings"] }
+);
+
 export default async function AdminSettingsPage() {
   await requireRole(Role.ADMIN);
 
-  const settings = await db.platformSettings.findUnique({
-    where: { id: 1 },
-  });
+  let initialSettings = {
+    freeTrialLessonCount: 2,
+    googleDriveFolderLink: "",
+  };
+
+  try {
+    initialSettings = await getCachedAdminSettingsData();
+  } catch (err) {
+    console.error("[AdminSettingsPage] Failed to load cached settings, using fallback:", err);
+  }
 
   return (
     <div className="space-y-6">
@@ -34,14 +59,7 @@ export default async function AdminSettingsPage() {
         </p>
       </div>
 
-      <AdminSettingsForm
-        initialSettings={{
-          freeTrialLessonCount: settings?.freeTrialLessonCount ?? 2,
-          googleDriveFolderLink: settings?.googleDriveFolderId
-            ? `https://drive.google.com/drive/folders/${settings.googleDriveFolderId}`
-            : "",
-        }}
-      />
+      <AdminSettingsForm initialSettings={initialSettings} />
     </div>
   );
 }

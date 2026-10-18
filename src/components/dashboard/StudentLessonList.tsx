@@ -16,7 +16,7 @@ export interface StudentDashboardLesson {
   startsAt: string; // ISO string
   endsAt: string; // ISO string
   durationMinutes: number;
-  status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
+  status: "SCHEDULED" | "COMPLETED" | "CANCELLED" | "RESCHEDULED";
   formattedTime: string;
   timezoneAbbr: string;
   teacherName: string;
@@ -56,12 +56,15 @@ export function StudentLessonList({
 
   const upcomingLessons = lessons.filter((l) => {
     const endsAtTime = new Date(l.endsAt).getTime();
-    return l.status === "SCHEDULED" && endsAtTime >= now;
+    return (l.status === "SCHEDULED" || l.status === "RESCHEDULED") && endsAtTime >= now;
   });
 
   const pastLessons = lessons.filter((l) => {
     const endsAtTime = new Date(l.endsAt).getTime();
-    return l.status === "COMPLETED" || (l.status === "SCHEDULED" && endsAtTime < now);
+    return (
+      l.status === "COMPLETED" ||
+      ((l.status === "SCHEDULED" || l.status === "RESCHEDULED") && endsAtTime < now)
+    );
   });
 
   const cancelledLessons = lessons.filter((l) => l.status === "CANCELLED");
@@ -74,9 +77,6 @@ export function StudentLessonList({
           <h2 className="font-serif text-xl font-bold text-heading">
             My Lessons and Practice
           </h2>
-          <p className="text-xs text-body mt-0.5">
-            Times displayed in your timezone: <strong className="text-heading font-semibold">{userTimezone}</strong>
-          </p>
         </div>
 
         {/* Tab Pills */}
@@ -169,6 +169,11 @@ export function StudentLessonList({
                             {lesson.lessonSource === "ENROLLMENT" && (
                               <span className="px-2.5 py-0.5 rounded-lg bg-primary/10 text-primary border border-primary/20 text-[11px] font-bold">
                                 1:1 Course Session
+                              </span>
+                            )}
+                            {lesson.status === "RESCHEDULED" && (
+                              <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
+                                Rescheduled
                               </span>
                             )}
                           </div>
@@ -267,8 +272,8 @@ export function StudentLessonList({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {lesson.recordingUrl && (
+                  {lesson.recordingUrl && (
+                    <div className="flex items-center gap-2">
                       <a
                         href={lesson.recordingUrl}
                         target="_blank"
@@ -278,14 +283,8 @@ export function StudentLessonList({
                       >
                         🎬 Lesson Recording
                       </a>
-                    )}
-                    <Link
-                      href={`/teachers/${lesson.teacherProfileId}`}
-                      className="btn-tactile px-3.5 py-1.5 rounded-lg bg-bg-alt/40 hover:bg-bg-alt border border-surface-muted text-primary text-xs font-bold transition-colors text-center"
-                    >
-                      Book Again →
-                    </Link>
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

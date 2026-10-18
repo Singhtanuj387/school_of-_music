@@ -67,7 +67,7 @@ export default async function TeacherDashboardPage() {
   else if (!hasAvailability) blockReason = "Configure weekly availability";
 
   const allLessons = profile?.lessonsAsTeacher || [];
-  const scheduledLessons = allLessons.filter((l) => l.status === "SCHEDULED");
+  const scheduledLessons = allLessons.filter((l) => l.status === "SCHEDULED" || l.status === "RESCHEDULED");
   const completedLessons = allLessons.filter((l) => l.status === "COMPLETED");
 
   const formattedLessons: TeacherDashboardLesson[] = allLessons.map((l) => {

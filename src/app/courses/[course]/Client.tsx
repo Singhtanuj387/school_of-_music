@@ -11,6 +11,8 @@ import Com247 from "@/components/Com247";
 import { FaWhatsapp } from "react-icons/fa";
 import BookFreeTrial from "@/components/BookFreeTrial";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useCurrency } from "@/context/CurrencyContext";
+import { getCourseTierPricing } from "@/lib/pricing-tiers";
 
 type Category = "Foundation" | "Beginner" | "Intermediate" | "Advanced";
 
@@ -44,41 +46,7 @@ export type CourseDataAllType = {
 } & Record<Category, CourseDetails[]>;
 
 function CoursePage({ params }: { params: { courseData: CourseDataAllType } }) {
-  // 1. Change your initial state to check localStorage first
-const [currency, setCurrency] = useState(() => {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("user-currency") || "USD";
-  }
-  return "USD";
-});
-
-useEffect(() => {
-  // 2. If we already have the currency in storage, don't fetch again
-  const savedCurrency = localStorage.getItem("user-currency");
-  if (savedCurrency) return;
-
-  const detectLocation = async () => {
-    try {
-      const response = await fetch("https://ipapi.co/json/");
-      const data = await response.json();
-      
-      const detected = (data.country_code === "IN" || data.country === "IN") ? "INR" : "USD";
-      
-      // 3. Save to state AND localStorage
-      setCurrency(detected);
-      localStorage.setItem("user-currency", detected);
-    } catch (err) {
-      // Fallback to Timezone if API fails
-      const isIndia = Intl.DateTimeFormat().resolvedOptions().timeZone.includes("Calcutta") || 
-                      Intl.DateTimeFormat().resolvedOptions().timeZone.includes("Kolkata");
-      const fallback = isIndia ? "INR" : "USD";
-      setCurrency(fallback);
-      localStorage.setItem("user-currency", fallback);
-    }
-  };
-
-  detectLocation();
-}, []);
+  const { currency } = useCurrency();
 
   const router = useRouter();
   const pathname = usePathname();
@@ -213,6 +181,7 @@ useEffect(() => {
                   price={course.price}
                   discountedPrice={course.discountedPrice}
                   currency={currency}
+                  category={currentCategory}
                 />
               ))
             ) : (
@@ -1043,6 +1012,7 @@ interface CourseInfoCardProps {
   price: Price;
   discountedPrice: Price;
   currency: string;
+  category?: Category;
 }
 
 const CourseInfoCard: React.FC<CourseInfoCardProps> = ({
@@ -1055,10 +1025,16 @@ const CourseInfoCard: React.FC<CourseInfoCardProps> = ({
   price,
   discountedPrice,
   currency,
+  category = "Beginner",
 }) => {
-
   const [isExpanded, setIsExpanded] = useState(false);
-    return (
+  const pricing = getCourseTierPricing({
+    level: category,
+    sessionCount: 1,
+    currency: currency as any,
+  });
+
+  return (
     <div className="bg-white shadow-md rounded-md flex flex-col h-full w-full max-w-md border border-gray-100 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl group">
       <div className="p-6 flex flex-col flex-grow">
         
@@ -1116,23 +1092,28 @@ const CourseInfoCard: React.FC<CourseInfoCardProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span
+                suppressHydrationWarning
                 className="relative inline-block text-[#1A022D] text-[15px] font-bold"
                 style={{ fontFamily: "var(--font-dm-sans)" }}
               >
-                {currency === "INR" ? `INR ${price.INR}` : `USD ${price.USD}`}
+                {pricing.formattedOriginalPerSession}
                 <span className="absolute left-0 top-1/2 w-full h-[1.5px] bg-[#1A022D] -translate-y-1/2"></span>
               </span>
 
-              <span className="text-red-700 text-[13px] font-extrabold uppercase tracking-tight">
-                {Math.round(
-                  ((currency === "INR" ? price.INR - discountedPrice.INR : price.USD - discountedPrice.USD) / 
-                  (currency === "INR" ? price.INR : price.USD)) * 100
-                )}% OFF
+              <span
+                suppressHydrationWarning
+                className="text-red-700 text-[13px] font-extrabold uppercase tracking-tight"
+              >
+                {pricing.discountPercent}% OFF
               </span>
             </div>
             
-            <p className="text-[#107C10] text-[20px] font-bold leading-tight" style={{ fontFamily: "var(--font-dm-sans)" }}>
-              {currency === "INR" ? `INR ${discountedPrice.INR}` : `USD ${discountedPrice.USD}`}
+            <p
+              suppressHydrationWarning
+              className="text-[#107C10] text-[20px] font-bold leading-tight"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              {pricing.formattedPerSession}
               <span className="text-[12px] text-[#1A022D] font-normal ml-1">/Session</span>
             </p>
           </div>

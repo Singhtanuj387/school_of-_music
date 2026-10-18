@@ -96,6 +96,7 @@ export function AdminCoursesManager({
 
   // Filter tab: ALL, INSTRUMENTS, or SINGING
   const [disciplineTab, setDisciplineTab] = useState<"ALL" | "INSTRUMENTS" | "SINGING">("ALL");
+  const [levelFilter, setLevelFilter] = useState<"ALL" | CourseLevel>("ALL");
 
   // Curriculum Management Drawer/Modal State
   const [curriculumCourse, setCurriculumCourse] = useState<AdminCourseItem | null>(null);
@@ -190,8 +191,8 @@ export function AdminCoursesManager({
     setInstrument(defaultInstrument || "Piano");
     setLevel(CourseLevel.BEGINNER);
     setAccreditation("");
-    setPriceRupees(14999);
-    setPerSessionCost(Math.round(14999 / 24));
+    setPriceRupees(19200);
+    setPerSessionCost(800);
     setSessionCount(24);
     setDurationWeeks(12);
     setStartDate("");
@@ -581,6 +582,10 @@ export function AdminCoursesManager({
         return false;
       }
 
+      if (levelFilter !== "ALL" && String(c.level).toUpperCase() !== levelFilter) {
+        return false;
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesTitle = c.title.toLowerCase().includes(q);
@@ -593,108 +598,154 @@ export function AdminCoursesManager({
 
       return true;
     });
-  }, [courses, disciplineTab, searchQuery]);
+  }, [courses, disciplineTab, levelFilter, searchQuery]);
 
   return (
     <div className="space-y-6">
       {/* ── COURSE CATALOG FILTER & ACTIONS BAR ── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-2 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-        {/* Filter Pills: All, Instruments, Singing */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setDisciplineTab("ALL")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
-              disciplineTab === "ALL"
-                ? "bg-[#3C096C] text-white shadow-xs"
-                : "text-gray-600 hover:text-black hover:bg-slate-100"
-            }`}
-          >
-            <span>All</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                disciplineTab === "ALL" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+      <div className="flex flex-col gap-3 p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+        {/* Top Controls Row: Discipline Filters, Search, Create Button */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Filter Pills: All, Instruments, Singing */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setDisciplineTab("ALL")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                disciplineTab === "ALL"
+                  ? "bg-[#3C096C] text-white shadow-xs"
+                  : "text-gray-600 hover:text-black hover:bg-slate-100"
               }`}
             >
-              {courses.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDisciplineTab("INSTRUMENTS")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
-              disciplineTab === "INSTRUMENTS"
-                ? "bg-[#3C096C] text-white shadow-xs"
-                : "text-gray-600 hover:text-black hover:bg-slate-100"
-            }`}
-          >
-            <Music className="w-3.5 h-3.5" />
-            <span>Instruments</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                disciplineTab === "INSTRUMENTS"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200 text-slate-700"
-              }`}
-            >
-              {courses.filter((c) => c.discipline === Discipline.INSTRUMENT).length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDisciplineTab("SINGING")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
-              disciplineTab === "SINGING"
-                ? "bg-[#3C096C] text-white shadow-xs"
-                : "text-gray-600 hover:text-black hover:bg-slate-100"
-            }`}
-          >
-            <Mic className="w-3.5 h-3.5" />
-            <span>Singing</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                disciplineTab === "SINGING"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200 text-slate-700"
-              }`}
-            >
-              {courses.filter((c) => c.discipline === Discipline.VOCALS).length}
-            </span>
-          </button>
-        </div>
-
-        {/* Right side: Search bar & Create Course button */}
-        <div className="flex items-center gap-2 flex-1 md:flex-initial">
-          <div className="relative flex-1 md:w-64">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search courses by title or guru..."
-              className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-heading placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-2xs transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+              <span>All</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                  disciplineTab === "ALL" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                }`}
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+                {courses.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDisciplineTab("INSTRUMENTS")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                disciplineTab === "INSTRUMENTS"
+                  ? "bg-[#3C096C] text-white shadow-xs"
+                  : "text-gray-600 hover:text-black hover:bg-slate-100"
+              }`}
+            >
+              <Music className="w-3.5 h-3.5" />
+              <span>Instruments</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                  disciplineTab === "INSTRUMENTS"
+                    ? "bg-white/20 text-white"
+                    : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {courses.filter((c) => c.discipline === Discipline.INSTRUMENT).length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDisciplineTab("SINGING")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                disciplineTab === "SINGING"
+                  ? "bg-[#3C096C] text-white shadow-xs"
+                  : "text-gray-600 hover:text-black hover:bg-slate-100"
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span>Singing</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                  disciplineTab === "SINGING"
+                    ? "bg-white/20 text-white"
+                    : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {courses.filter((c) => c.discipline === Discipline.VOCALS).length}
+              </span>
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => openCreateModal()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2D0752] text-white text-xs font-bold shadow-xs transition-all shrink-0 active:scale-[0.98] cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create Course Curriculum</span>
-          </button>
+          {/* Right side: Search bar & Create Course button */}
+          <div className="flex items-center gap-2 flex-1 lg:flex-initial">
+            <div className="relative flex-1 lg:w-64">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search courses by title or guru..."
+                className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-heading placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-2xs transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => openCreateModal()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#3C096C] hover:bg-[#2D0752] text-white text-xs font-bold shadow-xs transition-all shrink-0 active:scale-[0.98] cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Course Curriculum</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Level Filters: All Levels, Foundation, Beginner, Intermediate, Advanced */}
+        <div className="flex items-center gap-2 flex-wrap pt-2.5 border-t border-slate-100 text-xs">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-body-muted mr-1">
+            Proficiency Level:
+          </span>
+          {(["ALL", "FOUNDATION", "BEGINNER", "INTERMEDIATE", "ADVANCED"] as const).map((lvl) => {
+            const count = lvl === "ALL"
+              ? courses.filter((c) => {
+                  if (disciplineTab === "INSTRUMENTS" && c.discipline !== Discipline.INSTRUMENT) return false;
+                  if (disciplineTab === "SINGING" && c.discipline !== Discipline.VOCALS) return false;
+                  return true;
+                }).length
+              : courses.filter((c) => {
+                  if (disciplineTab === "INSTRUMENTS" && c.discipline !== Discipline.INSTRUMENT) return false;
+                  if (disciplineTab === "SINGING" && c.discipline !== Discipline.VOCALS) return false;
+                  return String(c.level).toUpperCase() === lvl;
+                }).length;
+            const label = lvl === "ALL" ? "All Levels" : lvl.charAt(0) + lvl.slice(1).toLowerCase();
+            const isActive = levelFilter === lvl;
+            return (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setLevelFilter(lvl as any)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                  isActive
+                    ? "bg-accent text-white shadow-xs"
+                    : "text-body hover:text-heading hover:bg-bg-alt/50 border border-slate-200/80 bg-white"
+                }`}
+              >
+                <span>{label}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                    isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -718,8 +769,9 @@ export function AdminCoursesManager({
               onClick={() => {
                 setSearchQuery("");
                 setDisciplineTab("ALL");
+                setLevelFilter("ALL");
               }}
-              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer active:scale-[0.98]"
             >
               Clear All Filters
             </button>
@@ -763,7 +815,17 @@ export function AdminCoursesManager({
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-bg-alt/70 text-accent-dark border border-accent/20">
                         {c.discipline}
                       </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-primary-subtle text-primary border border-primary/20">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                          String(c.level).toUpperCase() === "FOUNDATION"
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : String(c.level).toUpperCase() === "BEGINNER"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : String(c.level).toUpperCase() === "INTERMEDIATE"
+                            ? "bg-sky-50 text-sky-700 border-sky-200"
+                            : "bg-amber-50 text-amber-800 border-amber-200"
+                        }`}
+                      >
                         {c.level}
                       </span>
                       {c.accreditation && (
@@ -870,16 +932,29 @@ export function AdminCoursesManager({
                   </div>
 
                   {/* Flat Tuition & Per-Session Breakdown */}
-                  <div className="mt-2.5 px-3.5 py-2.5 rounded-xl bg-purple-50/70 border border-purple-200/60 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 text-purple-900 font-semibold">
-                      <CreditCard className="w-3.5 h-3.5 text-primary" />
-                      <span>Tuition Cost</span>
+                  <div className="mt-2.5 px-3.5 py-2.5 rounded-xl bg-purple-50/70 border border-purple-200/60 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-purple-900 font-semibold">
+                        <CreditCard className="w-3.5 h-3.5 text-primary" />
+                        <span>Tuition Cost</span>
+                      </div>
+                      <div className="flex items-center gap-2 font-numeric text-xs font-bold text-heading">
+                        <span className="text-emerald-700">₹{(c.priceMinorUnits / 100).toLocaleString("en-IN")} total</span>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-primary font-bold">
+                          ₹{Math.round(c.priceMinorUnits / 100 / (c.sessionCount || 1)).toLocaleString("en-IN")}/session
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 font-numeric text-xs font-bold text-heading">
-                      <span className="text-emerald-700">₹{(c.priceMinorUnits / 100).toLocaleString("en-IN")} total</span>
-                      <span className="text-slate-300">·</span>
-                      <span className="text-primary font-bold">
-                        ₹{Math.round(c.priceMinorUnits / 100 / (c.sessionCount || 1)).toLocaleString("en-IN")}/session
+                    {/* Abroad converted rates */}
+                    <div className="flex items-center justify-between pt-1 border-t border-purple-200/40 text-[10px] text-body-muted">
+                      <span>Abroad Pricing:</span>
+                      <span className="font-semibold text-accent-dark font-numeric">
+                        {String(c.level).toUpperCase() === "ADVANCED"
+                          ? "$28 USD · £21 GBP / session"
+                          : String(c.level).toUpperCase() === "INTERMEDIATE"
+                          ? "$21 USD · £16 GBP / session"
+                          : "$16 USD · £12 GBP / session"}
                       </span>
                     </div>
                   </div>
@@ -1254,9 +1329,27 @@ export function AdminCoursesManager({
                   <label className="text-xs font-semibold text-heading">Level</label>
                   <select
                     value={level}
-                    onChange={(e) => setLevel(e.target.value as CourseLevel)}
+                    onChange={(e) => {
+                      const newLvl = e.target.value as CourseLevel;
+                      setLevel(newLvl);
+                      if (modalMode === "CREATE") {
+                        let rate = 800;
+                        let count = 24;
+                        if (newLvl === CourseLevel.INTERMEDIATE) {
+                          rate = 1000;
+                          count = 30;
+                        } else if (newLvl === CourseLevel.ADVANCED) {
+                          rate = 1250;
+                          count = 36;
+                        }
+                        setSessionCount(count);
+                        setPerSessionCost(rate);
+                        setPriceRupees(count * rate);
+                      }
+                    }}
                     className="w-full rounded-xl bg-white border border-border-default px-3 py-2 text-xs text-heading focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-xs"
                   >
+                    <option value={CourseLevel.FOUNDATION}>FOUNDATION</option>
                     <option value={CourseLevel.BEGINNER}>BEGINNER</option>
                     <option value={CourseLevel.INTERMEDIATE}>INTERMEDIATE</option>
                     <option value={CourseLevel.ADVANCED}>ADVANCED</option>

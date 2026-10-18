@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role, LessonSource } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { AdminLessonsManager, AdminLessonItem } from "./AdminLessonsManager";
 import { formatInViewerTimezone } from "@/lib/timezone";
 import { SplitHeading } from "@/components/ui/SplitHeading";
@@ -11,52 +12,66 @@ export const metadata = {
   description: "Global schedule inspector across all faculty members and enrolled students.",
 };
 
-export default async function AdminLessonsPage() {
-  await requireRole(Role.ADMIN);
-
-  const dbLessons = await db.lesson.findMany({
-    include: {
-      teacher: { select: { name: true, email: true } },
-      student: { select: { name: true, email: true } },
-      enrollment: {
-        select: {
-          id: true,
-          course: {
-            select: { id: true, title: true, instrument: true },
+const getCachedAdminLessonsData = unstable_cache(
+  async () => {
+    const dbLessons = await db.lesson.findMany({
+      include: {
+        teacher: { select: { name: true, email: true } },
+        student: { select: { name: true, email: true } },
+        enrollment: {
+          select: {
+            id: true,
+            course: {
+              select: { id: true, title: true, instrument: true },
+            },
           },
         },
       },
-    },
-    orderBy: [
-      { createdAt: "desc" },
-      { startsAt: "desc" },
-    ],
-  });
+      orderBy: [
+        { startsAt: "asc" },
+      ],
+    });
 
-  const formattedLessons: AdminLessonItem[] = dbLessons.map((l) => ({
-    id: l.id,
-    trackingCode: getLessonTrackingId(l),
-    startsAt: l.startsAt.toISOString(),
-    createdAt: l.createdAt.toISOString(),
-    formattedTime: formatInViewerTimezone(
-      l.startsAt,
-      "UTC",
-      "MMM d, yyyy 'at' h:mm a zzz",
-    ),
-    formattedCreatedDate: formatInViewerTimezone(
-      l.createdAt,
-      "UTC",
-      "MMM d, yyyy",
-    ),
-    durationMinutes: l.durationMinutes,
-    instrument: l.instrument,
-    courseTitle: l.enrollment?.course?.title || null,
-    status: l.status,
-    lessonSource: l.lessonSource || (l.enrollmentId ? LessonSource.ENROLLMENT : LessonSource.TRIAL),
-    teacherName: l.teacher?.name || "Teacher",
-    studentName: l.student?.name || "Student",
-    studentEmail: l.student?.email || "",
-  }));
+    const formattedLessons: AdminLessonItem[] = dbLessons.map((l) => ({
+      id: l.id,
+      trackingCode: getLessonTrackingId(l),
+      startsAt: l.startsAt.toISOString(),
+      createdAt: l.createdAt.toISOString(),
+      formattedTime: formatInViewerTimezone(
+        l.startsAt,
+        "UTC",
+        "MMM d, yyyy 'at' h:mm a zzz",
+      ),
+      formattedCreatedDate: formatInViewerTimezone(
+        l.createdAt,
+        "UTC",
+        "MMM d, yyyy",
+      ),
+      durationMinutes: l.durationMinutes,
+      instrument: l.instrument,
+      courseTitle: l.enrollment?.course?.title || null,
+      status: l.status,
+      lessonSource: l.lessonSource || (l.enrollmentId ? LessonSource.ENROLLMENT : LessonSource.TRIAL),
+      teacherName: l.teacher?.name || "Teacher",
+      studentName: l.student?.name || "Student",
+      studentEmail: l.student?.email || "",
+    }));
+
+    return formattedLessons;
+  },
+  ["admin-lessons-data-v1"],
+  { revalidate: 30, tags: ["admin-lessons", "lessons"] }
+);
+
+export default async function AdminLessonsPage() {
+  await requireRole(Role.ADMIN);
+
+  let formattedLessons: AdminLessonItem[] = [];
+  try {
+    formattedLessons = await getCachedAdminLessonsData();
+  } catch (err) {
+    console.error("[AdminLessonsPage] Failed to load cached lessons data, using fallback:", err);
+  }
 
   return (
     <div className="space-y-6">

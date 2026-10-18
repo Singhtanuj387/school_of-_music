@@ -411,15 +411,22 @@ export function TeacherCalendarView({
                         <span className="text-xs font-bold text-heading">
                           {l.studentName}
                         </span>
-                        {l.lessonSource === "TRIAL" ? (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-accent-subtle text-accent-dark border border-accent/30">
-                            Trial
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-primary-subtle text-primary border border-primary/30">
-                            Course
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {l.lessonSource === "TRIAL" ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-accent-subtle text-accent-dark border border-accent/30">
+                              Trial
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-primary-subtle text-primary border border-primary/30">
+                              Course
+                            </span>
+                          )}
+                          {l.status === "RESCHEDULED" && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                              Rescheduled
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-[11px] text-body-muted">
                         {l.instrument} • {l.durationMinutes}m

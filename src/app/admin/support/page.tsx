@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { AdminTicketsManager, AdminTicketItem } from "./AdminTicketsManager";
 import { SplitHeading } from "@/components/ui/SplitHeading";
 
@@ -9,36 +10,51 @@ export const metadata = {
   description: "Monitor and respond to student inquiries and faculty support tickets.",
 };
 
+const getCachedAdminSupportData = unstable_cache(
+  async () => {
+    const dbTickets = await db.supportTicket.findMany({
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+        _count: {
+          select: { messages: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const formattedTickets: AdminTicketItem[] = dbTickets.map((t) => ({
+      id: t.id,
+      subject: t.subject,
+      category: t.category,
+      status: t.status,
+      createdAt: t.createdAt.toISOString(),
+      userName: t.user.name || "User",
+      userEmail: t.user.email,
+      userRole: t.user.role,
+      messagesCount: t._count.messages,
+    }));
+
+    return formattedTickets;
+  },
+  ["admin-support-data-v1"],
+  { revalidate: 30, tags: ["admin-support", "support"] }
+);
+
 export default async function AdminSupportPage() {
   await requireRole(Role.ADMIN);
 
-  const dbTickets = await db.supportTicket.findMany({
-    include: {
-      user: {
-        select: {
-          name: true,
-          email: true,
-          role: true,
-        },
-      },
-      _count: {
-        select: { messages: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const formattedTickets: AdminTicketItem[] = dbTickets.map((t) => ({
-    id: t.id,
-    subject: t.subject,
-    category: t.category,
-    status: t.status,
-    createdAt: t.createdAt.toISOString(),
-    userName: t.user.name || "User",
-    userEmail: t.user.email,
-    userRole: t.user.role,
-    messagesCount: t._count.messages,
-  }));
+  let formattedTickets: AdminTicketItem[] = [];
+  try {
+    formattedTickets = await getCachedAdminSupportData();
+  } catch (err) {
+    console.error("[AdminSupportPage] Failed to load cached support tickets, using fallback:", err);
+  }
 
   return (
     <div className="space-y-6">

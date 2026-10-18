@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Sparkles, ArrowRight, Music, Clock } from "lucide-react";
+import { Sparkles, ArrowRight, Clock } from "lucide-react";
 
 export type TrialStatusData = {
   trialStatus: {
@@ -7,7 +7,7 @@ export type TrialStatusData = {
     lessonsGranted: number;
     lessonsUsed: number;
   } | null;
-  activeEnrollment: {
+  activeEnrollment?: {
     id: string;
     courseTitle: string;
     sessionsRemaining: number;
@@ -136,54 +136,9 @@ export function TrialStatusStrip({ data }: { data: TrialStatusData }) {
     );
   }
 
-  // Case 2: Active paid enrollment
-  if (activeEnrollment && activeEnrollment.sessionsRemaining > 0) {
-    const total = activeEnrollment.totalSessions || 24;
-    const completed = total - activeEnrollment.sessionsRemaining;
-    const percent = Math.min(100, Math.round((completed / total) * 100));
-
-    return (
-      <div className="relative overflow-hidden rounded-2xl border-2 border-primary/30 bg-gradient-to-r from-bg-alt/50 via-white to-surface-muted/30 p-6 shadow-md shadow-primary/5">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-cta to-accent" />
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-primary/15 text-primary border border-primary/30">
-                <Music className="w-3.5 h-3.5 text-primary" />
-                Active Enrollment
-              </span>
-              <span className="text-xs font-semibold text-body">
-                {activeEnrollment.courseTitle}
-              </span>
-            </div>
-            <h3 className="font-serif text-xl sm:text-2xl font-bold text-heading">
-              <span className="text-primary font-extrabold">{activeEnrollment.sessionsRemaining} of {total}</span> Sessions Remaining
-            </h3>
-            <p className="text-xs sm:text-sm text-body max-w-xl leading-relaxed">
-              Keep your practice momentum steady. Review your curriculum and scheduled sessions with your assigned mentor.
-            </p>
-            {/* Progress bar */}
-            <div className="w-full max-w-md bg-surface-muted/60 rounded-full h-2.5 mt-2 overflow-hidden border border-surface-muted">
-              <div
-                className="bg-gradient-to-r from-primary via-cta to-accent h-full rounded-full transition-all duration-500"
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/student/dashboard/courses"
-              className="btn-tactile inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary hover:bg-primary-light text-white font-bold text-sm shadow-md shadow-primary/20 transition-all"
-            >
-              <span>View Enrolled Courses</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+  // Active paid enrollment: do not show banner in upcoming sessions
+  if (activeEnrollment) {
+    return null;
   }
 
   // Case 3: Trials exhausted and no active sessions remaining (High Commercial Priority)

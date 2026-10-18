@@ -96,6 +96,12 @@ function getNotificationIcon(type: NotificationType) {
         bg: "bg-blue-100 text-blue-700",
         border: "border-blue-200",
       };
+    case NotificationType.LESSON_RESCHEDULED:
+      return {
+        icon: Clock,
+        bg: "bg-amber-100 text-amber-700",
+        border: "border-amber-200",
+      };
     case NotificationType.NEW_ENROLLMENT:
       return {
         icon: GraduationCap,
